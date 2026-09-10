@@ -228,7 +228,7 @@ async function prepareMakersCommand(
     lifecycle.state,
     masterToken,
   );
-  const env = buildSandboxMakersEnv(sandboxToken);
+  const env = buildSandboxMakersEnv(sandboxToken, lifecycle.state.makersApiRegion);
   // Whatever name the model typed is replaced here. It has no way to know
   // which project belongs to this conversation, and a name it invents to dodge
   // a collision would strand the site somewhere nobody can find again.

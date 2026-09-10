@@ -304,7 +304,7 @@ export async function runDeployPipeline(
       {
         projectName: resolveMakersProjectName(context, state),
         appDir: state.appDir,
-        env: buildSandboxMakersEnv(sandboxToken),
+        env: buildSandboxMakersEnv(sandboxToken, state.makersApiRegion),
         area: resolveMakersPublishTarget(state.siteDomain || '').area,
       },
       // `send` and not `emit`: this fires every couple of seconds and the row

@@ -34,7 +34,7 @@ test('the deploy pipeline publishes without the model in the loop', async () => 
   assert.match(pipeline, /readMakersDeployOutcome\(stdout, '', sandboxToken\)/);
   // Same short-lived tenant credential as every other sandbox CLI call.
   assert.match(pipeline, /resolveSandboxMakersToken\(/);
-  assert.match(pipeline, /buildSandboxMakersEnv\(sandboxToken\)/);
+  assert.match(pipeline, /buildSandboxMakersEnv\(sandboxToken, state\.makersApiRegion\)/);
   // Nothing to publish is answered before the CLI is ever started.
   assert.match(pipeline, /if \(!files\.some\(\(item\) => item\.type === 'file'\)\)/);
   // The live URL is the deliverable, so the reply carries it in full.

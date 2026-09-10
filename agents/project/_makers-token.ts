@@ -68,12 +68,20 @@ export async function issueSandboxMakersSubToken(
   }
 
   const tenantId = ensureMakersTenantId(state);
+  const client = getPlatformClient(masterToken);
   try {
-    return await getPlatformClient(masterToken).tokens.create({
+    const created = await client.tokens.create({
       tenantId,
       name: `vibe-coding-${tenantId}`,
       expiresIn: SUB_TOKEN_TTL_SECONDS,
     });
+    const region = client.region === 'china' || client.region === 'global'
+      ? client.region
+      : undefined;
+    if (region) {
+      state.makersApiRegion = region;
+    }
+    return created;
   } catch (error) {
     throw new Error(formatTokenIssueError(error));
   }
@@ -115,10 +123,19 @@ export function describeMissingMakersRuntimeToken(output = '') {
   ].join(' ');
 }
 
-export function buildSandboxMakersEnv(sandboxToken = ''): Record<string, string> {
+export function buildSandboxMakersEnv(
+  sandboxToken = '',
+  region?: ProjectState['makersApiRegion'],
+): Record<string, string> {
   return {
     PAGES_SOURCE: 'skills',
     ...(sandboxToken ? { EDGEONE_PAGES_API_TOKEN: sandboxToken } : {}),
+    // The CLI's getLoginRegion() does not probe EDGEONE_PAGES_API_TOKEN: without
+    // this it logs "Invalid region: undefined" and every CAPI call becomes
+    // Invalid URL, including the AI Gateway credential describe that makers
+    // dev runs for an agents/ project. The value is the site the SDK just
+    // probed for this token, not an operator switch.
+    ...(region === 'china' || region === 'global' ? { EDGEONE_PAGES_API_REGION: region } : {}),
     // A generated project that imports @edgeone/pages-blob trades the API token
     // for storage credentials on every request, and that exchange is scoped to
     // this variable. Deploys never perform it — the pipeline substitutes a

@@ -161,7 +161,7 @@ export async function startPreviewServer(
     {
       cwd: state.appDir,
       timeout: MAKERS_DEV_LAUNCH_TIMEOUT_SECONDS,
-      env: buildSandboxMakersEnv(sandboxToken),
+      env: buildSandboxMakersEnv(sandboxToken, state.makersApiRegion),
     },
   );
   const startOutput = [startResult.stdout, startResult.stderr].filter(Boolean).join('\n');

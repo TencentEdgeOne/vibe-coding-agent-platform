@@ -22,6 +22,8 @@ export type ProjectState = {
   makersTenantId?: string;
   /** Public site root (`edgeone.dev` / `edgeone.cool`) used to pick the publish acceleration area. */
   siteDomain?: string;
+  /** Site the minted sandbox token belongs to. Injected as EDGEONE_PAGES_API_REGION so the CLI can pick a CAPI host. */
+  makersApiRegion?: 'china' | 'global';
   previewUrl?: string;
   sandboxDebugUrl?: string;
   /** Latched once Makers dev succeeds so resume can restore the sandbox preview. */

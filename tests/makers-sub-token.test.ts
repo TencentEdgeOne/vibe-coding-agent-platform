@@ -32,6 +32,12 @@ test('the sandbox is handed the credential and the storage environment, nothing 
     EDGEONE_PAGES_API_TOKEN: 'tenant-token',
     PAGES_BLOB_STS_ENV: 'prod',
   });
+  assert.deepEqual(buildSandboxMakersEnv('tenant-token', 'china'), {
+    PAGES_SOURCE: 'skills',
+    EDGEONE_PAGES_API_TOKEN: 'tenant-token',
+    EDGEONE_PAGES_API_REGION: 'china',
+    PAGES_BLOB_STS_ENV: 'prod',
+  });
   assert.deepEqual(buildSandboxMakersEnv(), {
     PAGES_SOURCE: 'skills',
     PAGES_BLOB_STS_ENV: 'prod',
@@ -56,12 +62,15 @@ test('no environment switch is left for a deployment to get wrong', async () => 
   for (const name of [
     'MAKERS_API_ENV',
     'MAKERS_API_REGION',
-    'EDGEONE_PAGES_API_REGION',
     'MAKERS_SUB_TOKEN_TTL_SECONDS',
   ]) {
     assert.doesNotMatch(tokenSource, new RegExp(name), `${name} must not come back`);
   }
-  // No host and no region: the SDK probes China first and caches whichever answers.
+  // Region is probed by the SDK, then copied into the sandbox so the CLI can
+  // pick a CAPI host. It is never an operator-facing switch.
+  assert.doesNotMatch(tokenSource, /pickEnvValue\(context, 'EDGEONE_PAGES_API_REGION'\)/);
+  assert.match(tokenSource, /EDGEONE_PAGES_API_REGION: region/);
+  assert.match(tokenSource, /client\.region/);
   assert.doesNotMatch(tokenSource, /baseUrl/);
   assert.match(tokenSource, /new Makers\(\{ token: masterToken \}\)/);
   assert.doesNotMatch(tokenSource, /resolveMakersPublishTarget/);
@@ -143,9 +152,9 @@ test('direct CLI calls route the runtime credential through one resolver', async
   // deploy calls are intercepted on the generic sandbox commands tool. Neither
   // may reach past the resolver for a credential of its own.
   assert.match(previewSource, /resolveSandboxMakersToken\(state, masterToken\)/);
-  assert.match(previewSource, /env: buildSandboxMakersEnv\(sandboxToken\)/);
+  assert.match(previewSource, /env: buildSandboxMakersEnv\(sandboxToken, state\.makersApiRegion\)/);
   assert.match(commandSource, /resolveSandboxMakersToken\(/);
-  assert.match(commandSource, /buildSandboxMakersEnv\(sandboxToken\)/);
+  assert.match(commandSource, /buildSandboxMakersEnv\(sandboxToken, lifecycle\.state\.makersApiRegion\)/);
   for (const source of [previewSource, commandSource]) {
     assert.doesNotMatch(source, /issueSandboxMakersSubToken/);
   }
