@@ -20,6 +20,8 @@ export type ProjectState = {
   appDir: string;
   /** Opaque, non-secret tenant ID used to mint short-lived Makers tokens for direct sandbox CLI calls. */
   makersTenantId?: string;
+  /** Public site root (`edgeone.dev` / `edgeone.cool`) used to pick the publish region. */
+  siteDomain?: string;
   previewUrl?: string;
   sandboxDebugUrl?: string;
   /** Latched once Makers dev succeeds so resume can restore the sandbox preview. */
@@ -59,6 +61,8 @@ export type ChatTask = {
   message: string;
   /** Absent on tasks persisted before deploy became a task of its own. */
   intent?: ChatTaskIntent;
+  /** Public site root from the browser; picks china vs overseas publish. */
+  siteDomain?: string;
   /** Model this turn runs on. Absent means the deployment's configured default. */
   model?: string;
   resetProject: boolean;

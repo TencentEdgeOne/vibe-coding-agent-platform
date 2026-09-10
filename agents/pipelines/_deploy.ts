@@ -26,6 +26,7 @@ import {
   readMakersDeployOutcome,
   redactSecret,
 } from '../../shared/makers-deploy.ts';
+import { resolveMakersPublishTarget } from '../../shared/publish-target.ts';
 import { resolveConversationId } from '../utils/_request.ts';
 import {
   createProjectCheckpointController,
@@ -107,12 +108,15 @@ function summarizeDeployError(error: string) {
  */
 async function publishWithProgress(
   context: any,
-  target: { projectName: string; appDir: string; env: Record<string, string> },
+  target: { projectName: string; appDir: string; env: Record<string, string>; area: string },
   onTail: (tail: string) => void,
 ): Promise<{ log: string; timedOut: boolean }> {
   await runSandboxCommand(
     context,
-    buildMakersDeployLaunchCommand(target.projectName, '', { stopDevPort: MAKERS_DEV_PORT }),
+    buildMakersDeployLaunchCommand(target.projectName, '', {
+      stopDevPort: MAKERS_DEV_PORT,
+      area: target.area,
+    }),
     { cwd: target.appDir, env: target.env, timeout: DEPLOY_LAUNCH_TIMEOUT_SECONDS },
   );
 
@@ -163,7 +167,7 @@ export async function runDeployPipeline(
   context: any,
   message: string,
   send: StreamSend,
-  options: { turnId?: string; userMessagePersisted?: boolean } = {},
+  options: { turnId?: string; userMessagePersisted?: boolean; siteDomain?: string } = {},
 ) {
   const { conversationId } = resolveConversationId(context);
   const request = message.trim() || DEFAULT_DEPLOY_REQUEST;
@@ -186,6 +190,11 @@ export async function runDeployPipeline(
   send({ type: 'status', message: 'Publishing the project to Makers' });
 
   const state = await prepareProjectWorkspace(context, conversationId, false, send);
+  const siteDomain = String(options.siteDomain || '').trim();
+  if (siteDomain && state.siteDomain !== siteDomain) {
+    state.siteDomain = siteDomain;
+    await saveProjectState(context, conversationId, state);
+  }
   const turn = createTurnLifecycle({
     context,
     conversationId,
@@ -296,6 +305,7 @@ export async function runDeployPipeline(
         projectName: resolveMakersProjectName(context, state),
         appDir: state.appDir,
         env: buildSandboxMakersEnv(sandboxToken),
+        area: resolveMakersPublishTarget(state.siteDomain || '').area,
       },
       // `send` and not `emit`: this fires every couple of seconds and the row
       // it patches is already recorded. recordProgress merges a repeated

@@ -415,7 +415,7 @@ test('direct makers deploy reports durable deployment state without replacing pr
   assert.match(
     String(received.command),
     new RegExp(
-      `edgeone makers deploy -n '${resolveMakersProjectName({ env: {} }, state)}' --json -e preview`,
+      `edgeone makers deploy -n '${resolveMakersProjectName({ env: {} }, state)}' --json --area global -e preview`,
     ),
   );
   assert.equal(received.cwd, state.appDir);
@@ -429,6 +429,34 @@ test('direct makers deploy reports durable deployment state without replacing pr
   assert.equal(state.deployment?.deploymentId, 'dp-1');
   assert.equal(state.deployment?.consoleUrl, consoleUrl);
   assert.match((result.content.at(-1) as { text: string }).text, /"status":"published"/);
+});
+
+test('a .dev host wraps deploy onto the overseas area', async () => {
+  let received: Record<string, unknown> = {};
+  const commandsTool = {
+    name: 'commands',
+    description: 'run',
+    inputSchema: {},
+    handler: async (args: Record<string, unknown>) => {
+      received = args;
+      return { content: [{ type: 'text', text: 'MAKERS_DEPLOY_EXIT:1\n' }] };
+    },
+  } as unknown as ClaudeMcpTool;
+  const state = projectState('projects/demo', { siteDomain: 'edgeone.dev' });
+  const [wrapped] = wrapSandboxTools([commandsTool], {
+    context: {
+      env: {},
+      sandbox: {
+        files: { write: async () => {} },
+        commands: { run: async () => ({ stdout: '', stderr: '', exitCode: 0 }) },
+      },
+    },
+    state,
+  });
+
+  await wrapped.handler({ command: 'edgeone makers deploy' }, {});
+  assert.match(String(received.command), /--area overseas/);
+  assert.doesNotMatch(String(received.command), /--area global/);
 });
 
 test('direct makers deploy surfaces the captured CLI failure', async () => {

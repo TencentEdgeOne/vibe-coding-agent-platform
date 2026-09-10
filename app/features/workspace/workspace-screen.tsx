@@ -1384,6 +1384,7 @@ export function WorkspaceScreen() {
         resetProject: isStartingFromHome,
         ...(options.intent ? { intent: options.intent } : {}),
         ...(model ? { model } : {}),
+        siteDomain: extractProjectName().domain,
         signal: requestAbortController.signal,
       });
       await attachChatStream({

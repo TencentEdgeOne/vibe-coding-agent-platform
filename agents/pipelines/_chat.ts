@@ -45,6 +45,7 @@ export async function runChatPipeline(
     userMessagePersisted?: boolean;
     /** Validated model for this turn; '' or absent runs the configured default. */
     model?: string;
+    siteDomain?: string;
   } = {},
 ) {
   const { conversationId } = resolveConversationId(context);
@@ -96,6 +97,11 @@ export async function runChatPipeline(
     shouldResetProject,
     send,
   );
+  const siteDomain = String(options.siteDomain || '').trim();
+  if (siteDomain && state.siteDomain !== siteDomain) {
+    state.siteDomain = siteDomain;
+    await saveProjectState(context, conversationId, state);
+  }
   const history = shouldResetProject
     ? []
     : await getHistory(context, conversationId, {

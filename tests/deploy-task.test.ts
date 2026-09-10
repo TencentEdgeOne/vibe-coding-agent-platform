@@ -16,7 +16,9 @@ test('publishing occupies the chat task slot instead of a route of its own', asy
 
   assert.match(tasks, /intent === 'deploy'[\s\S]*?runDeployPipeline/);
   assert.match(route, /body\?\.intent === 'deploy'/);
+  assert.match(route, /siteDomain: String\(body\?\.siteDomain/);
   assert.match(client, /\.\.\.\(options\.intent \? \{ intent: options\.intent \} : \{\}\)/);
+  assert.match(client, /siteDomain: options\.siteDomain/);
   assert.match(resume, /streamUrl: `\/chat\?runId=/);
 });
 
@@ -28,6 +30,7 @@ test('the deploy pipeline publishes without the model in the loop', async () => 
   assert.doesNotMatch(pipeline, /runCodingAgent|from '\.\.\/_agent'/);
   assert.match(pipeline, /projectName: resolveMakersProjectName\(context, state\),/);
   assert.match(pipeline, /buildMakersDeployLaunchCommand\(target\.projectName,/);
+  assert.match(pipeline, /resolveMakersPublishTarget\(state\.siteDomain/);
   assert.match(pipeline, /readMakersDeployOutcome\(stdout, '', sandboxToken\)/);
   // Same short-lived tenant credential as every other sandbox CLI call.
   assert.match(pipeline, /resolveSandboxMakersToken\(/);
@@ -199,6 +202,7 @@ test('the deploy button is disabled until a project exists and nothing is runnin
     /const canDeployProject = hasDeployableProject && !deployRunning && !workspaceRestoring/,
   );
   assert.match(screen, /sendMessage\(t\.workspace\.deployRequest, \{ intent: 'deploy' \}\)/);
+  assert.match(screen, /siteDomain: extractProjectName\(\)\.domain/);
   assert.match(screen, /disabled=\{!canDeployProject\}/);
   // The rocket stays put while a publish runs. A spinner here was a second
   // progress indicator next to the preview overlay that already says so.

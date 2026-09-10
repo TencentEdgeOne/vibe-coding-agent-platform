@@ -167,6 +167,7 @@ type ChatTaskOptions = {
   intent?: ChatTaskIntent;
   /** Already validated against this deployment's catalogue; '' means no choice. */
   model?: string;
+  siteDomain?: string;
 };
 
 async function createChatTask(
@@ -208,10 +209,12 @@ async function createChatTask(
   const requestedModel = (options.model || '').trim();
   const model = requestedModel || await getModelPreference(context, conversationId);
 
+  const siteDomain = (options.siteDomain || '').trim();
   const task: ChatTask = {
     id: taskId,
     message,
     ...(options.intent === 'deploy' ? { intent: 'deploy' as const } : {}),
+    ...(siteDomain ? { siteDomain } : {}),
     ...(model ? { model } : {}),
     resetProject: options.resetProject === true,
     status: 'queued',
@@ -259,6 +262,7 @@ async function executeLiveTask(context: any, liveTask: LiveChatTask) {
       await runDeployPipeline(taskContext, liveTask.task.message, send, {
         turnId: liveTask.task.id,
         userMessagePersisted: true,
+        siteDomain: liveTask.task.siteDomain,
       });
     } else {
       await runChatPipeline(taskContext, liveTask.task.message, send, {
@@ -266,6 +270,7 @@ async function executeLiveTask(context: any, liveTask: LiveChatTask) {
         turnId: liveTask.task.id,
         userMessagePersisted: true,
         model: liveTask.task.model,
+        siteDomain: liveTask.task.siteDomain,
       });
     }
   } catch (runError) {

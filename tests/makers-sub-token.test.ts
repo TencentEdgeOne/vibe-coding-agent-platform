@@ -61,8 +61,10 @@ test('no environment switch is left for a deployment to get wrong', async () => 
   ]) {
     assert.doesNotMatch(tokenSource, new RegExp(name), `${name} must not come back`);
   }
-  // No host either: the SDK probes China first and caches whichever answers.
+  // Region comes from the public site root, never from an operator switch.
   assert.doesNotMatch(tokenSource, /baseUrl/);
+  assert.match(tokenSource, /new Makers\(\{ token: masterToken, region \}\)/);
+  assert.match(tokenSource, /resolveMakersPublishTarget\(state\.siteDomain/);
 });
 
 // "…tenant token: Automatic region detection failed." trips the activity

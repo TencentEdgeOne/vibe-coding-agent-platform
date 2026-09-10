@@ -28,10 +28,16 @@ import { projectState } from './helpers/fixtures.ts';
 test('builds a non-interactive direct CLI deploy command', () => {
   const production = buildMakersDeployCommand('vibe-coding-playground');
   const preview = buildMakersDeployCommand('demo', 'edgeone makers deploy -e preview');
-  assert.match(production, /edgeone makers deploy -n 'vibe-coding-playground' --json/);
-  assert.match(preview, /edgeone makers deploy -n 'demo' --json -e preview/);
+  assert.match(production, /edgeone makers deploy -n 'vibe-coding-playground' --json --area global/);
+  assert.match(preview, /edgeone makers deploy -n 'demo' --json --area global -e preview/);
   assert.match(production, /MAKERS_DEPLOY_EXIT:\$deploy_status/);
   assert.match(production, /exit 0/);
+});
+
+test('an international site deploys to the overseas area', () => {
+  const command = buildMakersDeployCommand('demo', '', { area: 'overseas' });
+  assert.match(command, /edgeone makers deploy -n 'demo' --json --area overseas/);
+  assert.doesNotMatch(command, /--area global/);
 });
 
 // The quota the publish has to fit in holds one project, and a Next build asks

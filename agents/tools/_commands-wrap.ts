@@ -17,6 +17,7 @@ import {
   startPreviewServer,
 } from '../project/_preview.ts';
 import { resolveMakersProjectName } from '../project/_makers-deploy.ts';
+import { resolveMakersPublishTarget } from '../../shared/publish-target.ts';
 import {
   buildSandboxMakersEnv,
   describeMissingMakersRuntimeToken,
@@ -256,7 +257,10 @@ async function prepareMakersCommand(
   return {
     args: withCommandOptions(
       args,
-      buildMakersDeployCommand(projectName, command, { stopDevPort: MAKERS_DEV_PORT }),
+      buildMakersDeployCommand(projectName, command, {
+        stopDevPort: MAKERS_DEV_PORT,
+        area: resolveMakersPublishTarget(lifecycle.state.siteDomain || '').area,
+      }),
       lifecycle.state.appDir,
       env,
       600,

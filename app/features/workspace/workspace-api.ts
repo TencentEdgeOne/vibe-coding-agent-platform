@@ -84,6 +84,7 @@ export function startChatTask(options: {
   intent?: 'deploy';
   /** Omitted runs the deployment default; the server drops anything it does not offer. */
   model?: string;
+  siteDomain?: string;
   signal?: AbortSignal;
 }) {
   return fetch('/chat', {
@@ -95,6 +96,7 @@ export function startChatTask(options: {
       ...(options.resetProject ? { resetProject: true } : {}),
       ...(options.intent ? { intent: options.intent } : {}),
       ...(options.model ? { model: options.model } : {}),
+      ...(options.siteDomain ? { siteDomain: options.siteDomain } : {}),
     }),
     signal: options.signal,
   });

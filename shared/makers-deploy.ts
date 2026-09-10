@@ -100,13 +100,18 @@ const MAKERS_DEPLOY_DISK_REPORT = [
   'fi',
 ].join('\n');
 
-function makersDeployLaunch(projectName: string, requestedCommand: string) {
+function makersDeployLaunch(
+  projectName: string,
+  requestedCommand: string,
+  area = 'global',
+) {
   const previewEnvironment = /(?:^|\s)(?:-e|--environment)(?:\s+|=)preview(?:\s|$)/i
     .test(requestedCommand);
   return [
     'edgeone makers deploy',
     `-n ${shellQuote(projectName)}`,
     '--json',
+    `--area ${area}`,
     previewEnvironment ? '-e preview' : '',
   ].filter(Boolean).join(' ');
 }
@@ -184,10 +189,10 @@ function buildMakersDeploySteps(
 export function buildMakersDeployCommand(
   projectName: string,
   requestedCommand = '',
-  options: { stopDevPort?: number } = {},
+  options: { stopDevPort?: number; area?: string } = {},
 ) {
   return buildMakersDeploySteps(
-    makersDeployLaunch(projectName, requestedCommand),
+    makersDeployLaunch(projectName, requestedCommand, options.area),
     options,
     false,
   );
@@ -204,10 +209,10 @@ export function buildMakersDeployCommand(
 export function buildMakersDeployLaunchCommand(
   projectName: string,
   requestedCommand = '',
-  options: { stopDevPort?: number } = {},
+  options: { stopDevPort?: number; area?: string } = {},
 ) {
   const body = buildMakersDeploySteps(
-    makersDeployLaunch(projectName, requestedCommand),
+    makersDeployLaunch(projectName, requestedCommand, options.area),
     options,
     true,
   );
