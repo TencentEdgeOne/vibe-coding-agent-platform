@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import { Makers, MakersError } from '@edgeone/makers-sdk';
-import { resolveMakersPublishTarget, type MakersPublishRegion } from '../../shared/publish-target.ts';
 import type { ProjectState } from '../_types.ts';
 
 // Every preview start, wrapped CLI call and deploy mints its own token, so this
@@ -8,7 +7,7 @@ import type { ProjectState } from '../_types.ts';
 // that, which leaves nothing here worth configuring.
 const SUB_TOKEN_TTL_SECONDS = 60 * 60;
 
-let cachedPlatformClient: { masterToken: string; region: MakersPublishRegion; client: Makers } | null = null;
+let cachedPlatformClient: { masterToken: string; client: Makers } | null = null;
 
 function pickEnvValue(context: any, key: string) {
   const value = context?.env?.[key];
@@ -32,18 +31,15 @@ export function ensureMakersTenantId(state: ProjectState) {
   return tenantId;
 }
 
-function getPlatformClient(masterToken: string, region: MakersPublishRegion) {
-  if (
-    cachedPlatformClient?.masterToken === masterToken
-    && cachedPlatformClient.region === region
-  ) {
+function getPlatformClient(masterToken: string) {
+  if (cachedPlatformClient?.masterToken === masterToken) {
     return cachedPlatformClient.client;
   }
 
-  // Region comes from the public site root, never from an env switch: a .dev
-  // host mints against the global endpoint, everything else against China.
-  const client = new Makers({ token: masterToken, region });
-  cachedPlatformClient = { masterToken, region, client };
+  // No host and no region: a production token finds its own home, because the
+  // SDK probes the China endpoint first and caches whichever one answers.
+  const client = new Makers({ token: masterToken });
+  cachedPlatformClient = { masterToken, client };
   return client;
 }
 
@@ -72,9 +68,8 @@ export async function issueSandboxMakersSubToken(
   }
 
   const tenantId = ensureMakersTenantId(state);
-  const { region } = resolveMakersPublishTarget(state.siteDomain || '');
   try {
-    return await getPlatformClient(masterToken, region).tokens.create({
+    return await getPlatformClient(masterToken).tokens.create({
       tenantId,
       name: `vibe-coding-${tenantId}`,
       expiresIn: SUB_TOKEN_TTL_SECONDS,

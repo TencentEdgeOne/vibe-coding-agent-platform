@@ -20,7 +20,7 @@ export type ProjectState = {
   appDir: string;
   /** Opaque, non-secret tenant ID used to mint short-lived Makers tokens for direct sandbox CLI calls. */
   makersTenantId?: string;
-  /** Public site root (`edgeone.dev` / `edgeone.cool`) used to pick the publish region. */
+  /** Public site root (`edgeone.dev` / `edgeone.cool`) used to pick the publish acceleration area. */
   siteDomain?: string;
   previewUrl?: string;
   sandboxDebugUrl?: string;
@@ -61,7 +61,7 @@ export type ChatTask = {
   message: string;
   /** Absent on tasks persisted before deploy became a task of its own. */
   intent?: ChatTaskIntent;
-  /** Public site root from the browser; picks china vs overseas publish. */
+  /** Public site root from the browser; picks overseas vs global acceleration. */
   siteDomain?: string;
   /** Model this turn runs on. Absent means the deployment's configured default. */
   model?: string;
