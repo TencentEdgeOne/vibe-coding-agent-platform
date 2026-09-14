@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import {
   compactUserFacingReply,
+  GATEWAY_CREDENTIALS_USER_REPLY,
   resolveFinishedTurn,
   withLiveDeploymentUrl,
 } from '../shared/user-facing-reply.ts';
@@ -68,6 +69,21 @@ test('a turn that stopped to ask a question is not a preview that failed', () =>
   // Whole, including the options — compaction would have kept the preamble and
   // dropped everything the user was being asked to choose between.
   assert.equal(outcome.reply, QUESTION_TURN);
+});
+
+test('waiting for an API key is not a preview that failed', () => {
+  const outcome = resolveFinishedTurn({
+    filesWritten: true,
+    previewUrl: '',
+    buildFailed: false,
+    waitingForUser: true,
+    modelReply: 'AI 聊天助手已经做好了：支持流式输出、多轮对话。',
+    fallbackReply: GATEWAY_CREDENTIALS_USER_REPLY.zh,
+    failureReply: '项目已生成，但预览暂时不可用，请重试。',
+  });
+
+  assert.equal(outcome.failed, false);
+  assert.equal(outcome.previewMissing, false);
 });
 
 test('a preview that was attempted and never came up is still a failure', () => {

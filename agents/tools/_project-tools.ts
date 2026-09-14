@@ -164,8 +164,8 @@ export function buildWriteProjectFileTool(
         await onResult?.({ written: relPath, content: file.content });
         // An agents/ project needs agents.framework and .env.example declared,
         // and meeting that at the preview gate instead costs the user a failed
-        // attempt. Values for those keys are collected in the conversation, not
-        // written here. Best effort: the lint remains the authority, so a
+        // attempt. Values for those keys are collected in a later user turn,
+        // not written here. Best effort: the lint remains the authority, so a
         // failure here costs the old behaviour and nothing more.
         let adapterAdded = false;
         const declared = relPath.startsWith('agents/')

@@ -26,6 +26,10 @@ import {
   isWebSearchToolName,
 } from '../shared/web-search.ts';
 import {
+  buildRequestGatewayCredentialsTool,
+  REQUEST_GATEWAY_CREDENTIALS_TOOL,
+} from './project/_gateway-prompt.ts';
+import {
   buildProjectScaffoldTool,
   buildWriteProjectFileTool,
 } from './tools/_project-tools.ts';
@@ -357,17 +361,25 @@ export async function runCodingAgent(
       },
     );
     const loadMakersSkillTool = buildLoadMakersSkillTool();
+    const requestGatewayTool = buildRequestGatewayCredentialsTool({
+      context,
+      state,
+      conversationId,
+      send: runOptions.send,
+    });
     const mcpTools = [
       ...sandboxTools,
       scaffoldTool,
       loadMakersSkillTool,
       writeProjectFileTool,
+      requestGatewayTool,
     ];
     const mcpAllowedTools = [
       ...sandboxAllowedTools,
       `mcp__${mcpServerName}__ensure_project_scaffold`,
       `mcp__${mcpServerName}__load_makers_skill`,
       `mcp__${mcpServerName}__write_project_file`,
+      `mcp__${mcpServerName}__${REQUEST_GATEWAY_CREDENTIALS_TOOL}`,
       'Skill',
     ];
 

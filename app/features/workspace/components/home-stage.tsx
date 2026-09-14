@@ -1,7 +1,7 @@
 'use client';
 
 import type { FormEvent, KeyboardEvent } from 'react';
-import { BookOpen, Bot, Server, Sparkles } from 'lucide-react';
+import { BookOpen, Server, Sparkles } from 'lucide-react';
 import type { HomeFeatureIcon, Locale, UiCopy } from '@/app/i18n';
 import { ModelPicker } from '@/app/components/model-picker';
 import type { ModelOption } from '../../../../shared/models';
@@ -24,15 +24,13 @@ type HomeStageProps = {
 // lucide fits every glyph to the same 24×24 box but they fill very different
 // amounts of it, so one shared size draws them at visibly different weights.
 // These are matched on each drawing's own extent instead: Server and BookOpen
-// reach all four edges of the box, Bot reaches 18–20, so it is set larger to
-// land at the same optical size.
+// both reach all four edges of the box, so they share a size.
 function FeatureIcon({ icon }: { icon: HomeFeatureIcon }) {
   if (icon === 'skills') return <BookOpen aria-hidden="true" size={15} />;
-  if (icon === 'functions') return <Server aria-hidden="true" size={15} />;
-  return <Bot aria-hidden="true" size={16.5} />;
+  return <Server aria-hidden="true" size={15} />;
 }
 
-// What makes the three cells read as one ordered run rather than three unordered
+// What makes the two cells read as one ordered run rather than two unordered
 // claims. The ordinals live only here, in array order.
 function phaseNumber(index: number) {
   return String(index + 1).padStart(2, '0');
@@ -116,7 +114,7 @@ export function HomeStage({
         </form>
 
         {/* One cell per capability, in order, each carrying its own ordinal.
-            The third sits on its own row. Read-only — nothing here is a control. */}
+            Read-only — nothing here is a control. */}
         <ol className="home-features">
           {copy.home.features.map((feature, index) => (
             <li key={feature.title} className="home-feature">

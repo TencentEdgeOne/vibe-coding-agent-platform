@@ -1,10 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Makers, MakersError } from '@edgeone/makers-sdk';
 import type { ProjectState } from '../_types.ts';
-import {
-  resolveGatewayEnvForMakers,
-  type GatewayPromptOptions,
-} from './_gateway-prompt.ts';
+import { readProjectGatewayEnv } from './_gateway-prompt.ts';
 
 // Every preview start, wrapped CLI call and deploy mints its own token, so this
 // only has to outlive a single CLI invocation. An hour is already far more than
@@ -140,17 +137,17 @@ export function resolveSandboxGatewayEnv(context: any): Record<string, string> {
 }
 
 /**
- * Ask for gateway values when needed and write them to the project's `.env`.
+ * Read gateway values the user already wrote into the project's `.env`.
  *
  * `--skip-ai-gateway-sync` keeps the CLI from fetching a key of its own; it
- * then loads whatever this wrote.
+ * then loads whatever that file holds. Asking for a missing key is the
+ * agent's turn, not this helper's.
  */
 export async function prepareSandboxGatewayEnv(
   context: any,
   state: ProjectState,
-  options: GatewayPromptOptions = {},
 ) {
-  return resolveGatewayEnvForMakers(context, state, options);
+  return readProjectGatewayEnv(context, state);
 }
 
 export function buildSandboxMakersEnv(

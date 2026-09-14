@@ -31,6 +31,10 @@ export type ProjectState = {
   previewKind?: PreviewKind;
   /** Latest live deployment, kept separate from the sandbox preview iframe. */
   deployment?: DeploymentInfo;
+  /** The host is waiting for a Models API key in the next user turn. */
+  gatewayPromptPending?: boolean;
+  /** The user skipped the Models API key for this conversation. */
+  gatewaySkipped?: boolean;
 };
 
 // A base64 archive of the whole project, persisted outside the volatile sandbox so

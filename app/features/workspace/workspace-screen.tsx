@@ -51,6 +51,7 @@ import {
   sanitizeThinkingContent,
 } from '@/app/lib/conversation';
 import { LANGUAGE_STORAGE_KEY, TRANSLATIONS, type Locale } from '@/app/i18n';
+import { extractApiKeyFromUserText, maskApiKey } from '../../../shared/gateway-secret';
 import { isMakersDeployUrl } from '../../../shared/makers-deploy';
 import { previewDisplayPathFromPath } from '../../../shared/preview-display-path';
 import { previewDeepLink } from '../../../shared/preview-link';
@@ -83,7 +84,6 @@ import {
   openResumeStream,
   startChatTask,
   stopChatTask,
-  submitGatewayCredentials,
 } from './workspace-api';
 
 // Covers a panel while its chunk arrives. Only reachable when the warm-up below
@@ -553,6 +553,7 @@ export function WorkspaceScreen() {
       });
 
       setMessages(nextMessages);
+      setGatewayNeeded(Boolean(data.gatewayNeeded));
       // Authoritative: this payload always carries the conversation's stored
       // deployment, so an absent one means there is none to show. Setting only on
       // presence left a card from an earlier session on screen indefinitely —
@@ -576,6 +577,7 @@ export function WorkspaceScreen() {
     };
 
     const applyWorkspace = (data: ResumeData) => {
+      if (data.gatewayNeeded) setGatewayNeeded(true);
       const hasFiles = Boolean(data.files?.items.some((item) => item.type === 'file'));
       if (data.files) {
         setFileTree(data.files);
@@ -1027,7 +1029,8 @@ export function WorkspaceScreen() {
       finalContent: string,
       finalStatus: AssistantStatus,
     ) => {
-      setGatewayNeeded(false);
+      // The API key card outlives this turn: the user fills it after the
+      // assistant stops. Clearing it here made the input flash and vanish.
       setGatewayBusy(false);
       setMessages((current) =>
         current.map((item) =>
@@ -1131,6 +1134,9 @@ export function WorkspaceScreen() {
         if (data.files.items.some((item) => item.type === 'file')) {
           setResultPanelOpen(true);
         }
+      }
+      if (data.gatewayNeeded) {
+        setGatewayNeeded(true);
       }
       setFilesRefreshing(false);
 
@@ -1328,16 +1334,29 @@ export function WorkspaceScreen() {
 
   attachChatStreamRef.current = attachChatStream;
 
-  async function sendMessage(message: string, options: { intent?: 'deploy' } = {}) {
+  async function sendMessage(message: string, options: {
+    intent?: 'deploy';
+    apiKey?: string;
+    gatewaySkip?: boolean;
+  } = {}) {
     const trimmed = message.trim();
     if (!trimmed || loading) {
       return;
     }
 
-    // Publishing acts on the project that is already here: it never starts a
-    // workspace, never clears what the user is typing, and touches no files.
+    const extractedKey = options.apiKey
+      ? undefined
+      : extractApiKeyFromUserText(trimmed);
+    const inboundApiKey = options.apiKey || extractedKey?.apiKey;
+    const displayMessage = extractedKey?.maskedText || trimmed;
+
+    // Publishing and the API key card act on the project that is already here:
+    // they never start a workspace and never clear what the user is typing.
+    // A key typed in the composer is not the card: it can still start a project.
     const isDeploy = options.intent === 'deploy';
-    const isStartingFromHome = !isDeploy && !hasWorkspace;
+    const isGatewayCard = Boolean(options.apiKey || options.gatewaySkip);
+    const isGatewayContinue = Boolean(inboundApiKey || options.gatewaySkip);
+    const isStartingFromHome = !isDeploy && !isGatewayCard && !hasWorkspace;
     const requestConversationId = isStartingFromHome
       ? createConversationId()
       : conversationId || getOrCreateCachedConversationId();
@@ -1375,7 +1394,7 @@ export function WorkspaceScreen() {
 
     setMessages((current) => [
       ...current,
-      { id: userMessageId, role: 'user', content: trimmed },
+      { id: userMessageId, role: 'user', content: displayMessage },
       {
         id: assistantMessageId,
         role: 'assistant',
@@ -1386,7 +1405,11 @@ export function WorkspaceScreen() {
     ]);
     if (!isDeploy) {
       setFilesRefreshing(true);
-      setInput('');
+      if (!isGatewayCard) setInput('');
+    }
+    if (isGatewayContinue) {
+      setGatewayNeeded(false);
+      setGatewayBusy(false);
     }
     setLoading(true);
 
@@ -1398,10 +1421,12 @@ export function WorkspaceScreen() {
       // Reconnects still use GET /chat?runId=..., but the normal path is one request.
       const response = await startChatTask({
         conversationId: requestConversationId,
-        message: trimmed,
+        message: displayMessage,
         turnId: assistantMessageId,
         resetProject: isStartingFromHome,
         ...(options.intent ? { intent: options.intent } : {}),
+        ...(inboundApiKey ? { apiKey: inboundApiKey } : {}),
+        ...(options.gatewaySkip ? { gatewaySkip: true } : {}),
         ...(model ? { model } : {}),
         siteDomain: extractProjectName().domain,
         signal: requestAbortController.signal,
@@ -1732,7 +1757,7 @@ export function WorkspaceScreen() {
           onInputChange={setInput}
           onSubmit={handleConversationSubmit}
           onStop={handleConversationStop}
-          deployOffer={deployOffer}
+          deployOffer={gatewayNeeded ? null : deployOffer}
           onDeployOffer={handleDeployProject}
           onDismissDeployOffer={() => {
             if (deployOfferTurnId) setDismissedDeployTurnId(deployOfferTurnId);
@@ -1745,28 +1770,15 @@ export function WorkspaceScreen() {
             continue: t.workspace.gatewayPromptContinue,
             skip: t.workspace.gatewayPromptSkip,
           } : null}
-          gatewayBusy={gatewayBusy}
+          gatewayBusy={loading || gatewayBusy}
           onGatewaySubmit={(values) => {
-            const cid = conversationIdRef.current || conversationId;
-            if (!cid || gatewayBusy) return;
-            setGatewayBusy(true);
-            void submitGatewayCredentials({
-              conversationId: cid,
-              apiKey: values.apiKey,
-            }).then((result) => {
-              if (!result?.ok) setGatewayBusy(false);
-            }).catch(() => setGatewayBusy(false));
+            const apiKey = values.apiKey.trim();
+            if (!apiKey || loading || gatewayBusy) return;
+            void sendMessage(`${t.workspace.gatewayPromptApiKey}: ${maskApiKey(apiKey)}`, { apiKey });
           }}
           onGatewaySkip={() => {
-            const cid = conversationIdRef.current || conversationId;
-            if (!cid || gatewayBusy) return;
-            setGatewayBusy(true);
-            void submitGatewayCredentials({
-              conversationId: cid,
-              skip: true,
-            }).then((result) => {
-              if (!result?.ok) setGatewayBusy(false);
-            }).catch(() => setGatewayBusy(false));
+            if (loading || gatewayBusy) return;
+            void sendMessage(t.workspace.gatewayPromptSkip, { gatewaySkip: true });
           }}
         />}
 

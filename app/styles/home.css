@@ -203,10 +203,8 @@
    Laid out the way the product's own solution pages lay out a feature grid:
    square cells on white, divided by hairlines.
 
-   Two columns for the first pair; the third cell takes the full row because
-   three cells will not share 820px without starving the descriptions, and the
-   ordinals already carry the order that a single row would have carried
-   positionally.
+   Two columns side by side. The ordinals already carry the order that a
+   single row would have carried positionally.
 
    This is the one block on the screen that cannot be acted on, so it gives up
    every mark the rest of the page spends on controls — no box of its own per
@@ -217,7 +215,7 @@
 .home-features {
   /* The height of a title row. The icon box sets it, being taller than the
      title's own line box, so that is the figure the ordinal has to match rather
-     than the text's. All three read it from here so none can drift. */
+     than the text's. Both cells read it from here so neither can drift. */
   --feature-title-line: 18px;
 
   display: grid;
@@ -262,20 +260,9 @@
   line-height: var(--feature-title-line);
 }
 
-/* Hairlines only between cells — the panel draws its own outer edge.
-   The last cell, when it is the leftover of an odd count, owns the full row
-   and must not keep the right rule that odd cells otherwise draw. */
+/* Hairlines only between cells — the panel draws its own outer edge. */
 .home-feature:nth-child(odd) {
   border-right: 1px solid var(--n-150);
-}
-
-.home-feature:nth-child(-n + 2) {
-  border-bottom: 1px solid var(--n-150);
-}
-
-.home-feature:last-child:nth-child(odd) {
-  grid-column: 1 / -1;
-  border-right: 0;
 }
 
 /* A bare glyph rather than a filled square: the tinted chip was the last thing
@@ -352,14 +339,10 @@
   }
 
   /* A single column has no column to divide, and every cell but the last now
-     needs the rule that only the first row carried. Same specificity as the
-     two-column rules above, so these have to come after them to win. */
+     needs a row hairline. Same specificity as the two-column rule above, so
+     these have to come after it to win. */
   .home-feature:nth-child(odd) {
     border-right: 0;
-  }
-
-  .home-feature:nth-child(-n + 2) {
-    border-bottom: 0;
   }
 
   .home-feature:not(:last-child) {

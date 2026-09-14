@@ -148,7 +148,9 @@ test('the prompt keeps the sandbox corrections the skills cannot know about', ()
   assert.ok(prompt.includes(makersProjectName));
   assert.match(prompt, /Declare AI_GATEWAY_API_KEY= and AI_GATEWAY_BASE_URL=/);
   assert.match(prompt, /Never write a \.env file yourself/);
-  assert.match(prompt, /writes them to \.env/);
+  assert.match(prompt, /request_gateway_credentials/);
+  assert.match(prompt, /masked API Key/);
+  assert.doesNotMatch(prompt, /The host asks the user/);
   assert.match(prompt, /Normalize it to end in exactly \/v1/);
   assert.match(
     prompt,

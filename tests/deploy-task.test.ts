@@ -34,7 +34,9 @@ test('the deploy pipeline publishes without the model in the loop', async () => 
   assert.match(pipeline, /readMakersDeployOutcome\(stdout, '', sandboxToken\)/);
   // Same short-lived tenant credential as every other sandbox CLI call.
   assert.match(pipeline, /resolveSandboxMakersToken\(/);
-  assert.match(pipeline, /prepareSandboxGatewayEnv\(context, state/);
+  assert.match(pipeline, /prepareSandboxGatewayEnv\(context, state\)/);
+  assert.match(pipeline, /shouldPauseForGatewayCredentials/);
+  assert.doesNotMatch(pipeline, /waitForGatewayDecision/);
   assert.match(pipeline, /buildSandboxMakersEnv\(/);
   assert.doesNotMatch(pipeline, /sandboxEnv\.AI_GATEWAY/);
   assert.doesNotMatch(pipeline, /buildSandboxMakersEnv\([^)]*gateway/);
@@ -185,7 +187,7 @@ test('publish is offered above the composer after a finished project turn', asyn
   ]);
 
   assert.match(screen, /resolveDeployOffer/);
-  assert.match(screen, /deployOffer=\{deployOffer\}/);
+  assert.match(screen, /deployOffer=\{gatewayNeeded \? null : deployOffer\}/);
   assert.match(screen, /onDeployOffer=\{handleDeployProject\}/);
   assert.match(conversation, /className="deploy-offer"/);
   assert.match(conversation, /className="conversation-composer-dock"/);
@@ -284,6 +286,7 @@ test('publishing leaves the composer and the files panel alone', async () => {
   const body = screen.slice(start, screen.indexOf('async function handleSubmit(', start));
 
   assert.ok(start >= 0 && body.length > 0);
-  assert.match(body, /const isStartingFromHome = !isDeploy && !hasWorkspace/);
-  assert.match(body, /if \(!isDeploy\) \{\s*setFilesRefreshing\(true\);\s*setInput\(''\);/);
+  assert.match(body, /const isStartingFromHome = !isDeploy && !isGatewayCard && !hasWorkspace/);
+  assert.match(body, /if \(!isDeploy\) \{\s*setFilesRefreshing\(true\);/);
+  assert.match(body, /if \(!isGatewayCard\) setInput\(''\)/);
 });

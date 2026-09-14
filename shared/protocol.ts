@@ -107,6 +107,8 @@ export type ResumeData = {
   activeTask?: ActiveChatTask | null;
   /** Model chosen for this conversation; '' or absent means the deployment default. */
   model?: string;
+  /** Resume should show the Models API key card. */
+  gatewayNeeded?: boolean;
   error?: string;
 };
 
@@ -121,6 +123,8 @@ export type ChatResponse = {
   download?: LinkInfo;
   error?: string;
   stopped?: boolean;
+  /** Keep the Models API key card up after this turn ends. */
+  gatewayNeeded?: boolean;
 };
 
 type ProgressPhase = 'scaffold' | 'modify' | 'code' | 'install' | 'preview' | 'link';

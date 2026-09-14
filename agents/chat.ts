@@ -24,6 +24,7 @@ export async function onRequestPost(context: any) {
   }
 
   try {
+    const apiKey = String(body?.apiKey || '').trim();
     return await createChatTaskAndStreamResponse(context, message, {
       intent,
       resetProject: body?.resetProject === true,
@@ -32,6 +33,8 @@ export async function onRequestPost(context: any) {
       // cannot name an arbitrary model and have it billed through the gateway.
       model: resolveRequestedModel(context, body?.model),
       siteDomain: String(body?.siteDomain || '').trim() || undefined,
+      ...(apiKey ? { apiKey } : {}),
+      ...(body?.gatewaySkip === true ? { gatewaySkip: true } : {}),
     });
   } catch (error) {
     return new Response(JSON.stringify({

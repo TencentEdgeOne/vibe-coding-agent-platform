@@ -2,6 +2,7 @@ import { getFileTree, runSandboxCommand } from '../_project.ts';
 import type { FileTreeItem, ProjectState, StreamSend } from '../_types.ts';
 export {
   compactUserFacingReply,
+  GATEWAY_CREDENTIALS_USER_REPLY,
   replyLocaleFor,
   resolveFinishedTurn,
   STOPPED_TURN_REPLY,

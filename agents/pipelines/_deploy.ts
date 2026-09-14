@@ -5,6 +5,12 @@ import { assertMakersProjectCompatible } from '../project/_makers-compat.ts';
 import { resolveMakersProjectName } from '../project/_makers-deploy.ts';
 import { startPreviewServer } from '../project/_preview.ts';
 import {
+  applyUserGatewayDecision,
+  askUserForGatewayCredentials,
+  shouldPauseForGatewayCredentials,
+} from '../project/_gateway-prompt.ts';
+import { resolveGatewayUserTurn } from '../../shared/gateway-secret.ts';
+import {
   buildSandboxMakersEnv,
   describeMissingMakersRuntimeToken,
   prepareSandboxGatewayEnv,
@@ -79,12 +85,14 @@ const COPY = {
     noProject: '还没有可部署的项目，请先生成一个项目。',
     success: '已发布到线上。',
     failedPrefix: '部署失败：',
+    needGateway: '请先在下方填写 Models API Key，填写后我会继续部署。',
   },
   en: {
     missingConversation: 'Missing conversationId, so this project cannot be deployed.',
     noProject: 'There is no project to deploy yet. Generate one first.',
     success: 'The project is live.',
     failedPrefix: 'Deploy failed: ',
+    needGateway: 'Enter a Models API Key below. I will continue the deploy after that.',
   },
 } as const;
 
@@ -168,10 +176,15 @@ export async function runDeployPipeline(
   context: any,
   message: string,
   send: StreamSend,
-  options: { turnId?: string; userMessagePersisted?: boolean; siteDomain?: string } = {},
+  options: {
+    turnId?: string;
+    userMessagePersisted?: boolean;
+    siteDomain?: string;
+    apiKey?: string;
+    gatewaySkip?: boolean;
+  } = {},
 ) {
   const { conversationId } = resolveConversationId(context);
-  const abortSignal = context?.request?.signal as AbortSignal | undefined;
   const request = message.trim() || DEFAULT_DEPLOY_REQUEST;
   const copy = /[\u3400-\u9fff]/.test(request) ? COPY.zh : COPY.en;
 
@@ -219,6 +232,7 @@ export async function runDeployPipeline(
         ok: status === 'completed',
         reply,
         conversation_id: conversationId,
+        ...(state.gatewayPromptPending ? { gatewayNeeded: true } : {}),
         preview: previewLinkFromState(state),
         deployment: state.deployment,
       },
@@ -228,6 +242,26 @@ export async function runDeployPipeline(
   const files = await getFileTree(context, state).catch(() => []);
   if (!files.some((item) => item.type === 'file')) {
     await finish(copy.noProject, 'failed');
+    return;
+  }
+
+  const inboundGateway = resolveGatewayUserTurn(request, options.apiKey);
+  if (inboundGateway.apiKey || options.gatewaySkip) {
+    await applyUserGatewayDecision(
+      context,
+      state,
+      conversationId,
+      {
+        ...(inboundGateway.apiKey ? { apiKey: inboundGateway.apiKey } : {}),
+        ...(options.gatewaySkip ? { skip: true } : {}),
+      },
+      send,
+    );
+  }
+
+  if (await shouldPauseForGatewayCredentials(context, state)) {
+    await askUserForGatewayCredentials(context, state, { conversationId, send });
+    await finish(copy.needGateway, 'completed');
     return;
   }
 
@@ -292,11 +326,7 @@ export async function runDeployPipeline(
       state,
       resolveMakersMasterToken(context),
     );
-    const gateway = await prepareSandboxGatewayEnv(context, state, {
-      conversationId,
-      send,
-      signal: abortSignal,
-    });
+    const gateway = await prepareSandboxGatewayEnv(context, state);
     sandboxEnv = buildSandboxMakersEnv(
       sandboxToken,
       state.makersApiRegion,

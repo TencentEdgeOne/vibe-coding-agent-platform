@@ -194,11 +194,12 @@ test('direct CLI calls route the runtime credential through one resolver', async
   // deploy calls are intercepted on the generic sandbox commands tool. Neither
   // may reach past the resolver for a credential of its own.
   assert.match(previewSource, /resolveSandboxMakersToken\(state, masterToken\)/);
-  assert.match(previewSource, /prepareSandboxGatewayEnv\(context, state/);
+  assert.match(previewSource, /prepareSandboxGatewayEnv\(context, state\)/);
   assert.match(previewSource, /buildSandboxMakersEnv\(sandboxToken, state\.makersApiRegion\)/);
   assert.doesNotMatch(previewSource, /buildSandboxMakersEnv\([^)]*gateway/);
   assert.match(commandSource, /resolveSandboxMakersToken\(/);
-  assert.match(commandSource, /prepareSandboxGatewayEnv\(lifecycle\.context, lifecycle\.state/);
+  assert.match(commandSource, /prepareSandboxGatewayEnv\(lifecycle\.context, lifecycle\.state\)/);
+  assert.match(commandSource, /pauseForGatewayCredentialsIfNeeded/);
   assert.match(commandSource, /buildSandboxMakersEnv\(/);
   assert.doesNotMatch(commandSource, /buildSandboxMakersEnv\([^)]*gateway/);
   assert.doesNotMatch(tokenSource, /\.\.\.gateway/);

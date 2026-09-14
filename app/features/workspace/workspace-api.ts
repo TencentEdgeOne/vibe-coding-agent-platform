@@ -85,6 +85,9 @@ export function startChatTask(options: {
   /** Omitted runs the deployment default; the server drops anything it does not offer. */
   model?: string;
   siteDomain?: string;
+  /** Real key from the input card; the visible message stays masked. */
+  apiKey?: string;
+  gatewaySkip?: boolean;
   signal?: AbortSignal;
 }) {
   return fetch('/chat', {
@@ -97,6 +100,8 @@ export function startChatTask(options: {
       ...(options.intent ? { intent: options.intent } : {}),
       ...(options.model ? { model: options.model } : {}),
       ...(options.siteDomain ? { siteDomain: options.siteDomain } : {}),
+      ...(options.apiKey ? { apiKey: options.apiKey } : {}),
+      ...(options.gatewaySkip ? { gatewaySkip: true } : {}),
     }),
     signal: options.signal,
   });
@@ -148,23 +153,6 @@ export function fetchProjectArchive(url: string, conversationId: string) {
         }
       : {},
   });
-}
-
-export function submitGatewayCredentials(options: {
-  conversationId: string;
-  skip?: boolean;
-  apiKey?: string;
-}) {
-  return fetch('/gateway-credentials', {
-    method: 'POST',
-    headers: conversationHeaders(options.conversationId),
-    body: JSON.stringify({
-      conversation_id: options.conversationId,
-      ...(options.skip ? { skip: true } : {
-        apiKey: options.apiKey || '',
-      }),
-    }),
-  }).then((response) => readJson<{ ok?: boolean; skipped?: boolean; error?: string }>(response));
 }
 
 export function fetchConversationTranscript(conversationId: string) {

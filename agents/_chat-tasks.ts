@@ -9,7 +9,7 @@ import {
 import type { ChatTask, ChatTaskIntent, ChatTaskStatus, StreamSend } from './_types.ts';
 import { createSSEResponse, sseEvent } from './_shared.ts';
 import { resolveConversationId } from './utils/_request.ts';
-import { cancelGatewayPrompt } from './project/_gateway-prompt.ts';
+import { resolveGatewayUserTurn } from '../shared/gateway-secret.ts';
 
 type TaskEvent = Record<string, unknown>;
 
@@ -30,6 +30,9 @@ type LiveChatTask = {
   // stop generation. Only /stop (via abortLiveChatTask) should abort this.
   abortController: AbortController;
   runPromise?: Promise<void>;
+  /** In-memory only: written to `.env` at pipeline start, never persisted. */
+  gatewayApiKey?: string;
+  gatewaySkip?: boolean;
 };
 
 const liveTasks = new Map<string, LiveChatTask>();
@@ -38,7 +41,6 @@ const liveTasks = new Map<string, LiveChatTask>();
 export function abortLiveChatTask(conversationId: string) {
   const trimmed = conversationId.trim();
   if (!trimmed) return;
-  cancelGatewayPrompt(trimmed);
   for (const liveTask of liveTasks.values()) {
     if (liveTask.conversationId === trimmed && !liveTask.abortController.signal.aborted) {
       liveTask.abortController.abort();
@@ -170,6 +172,8 @@ type ChatTaskOptions = {
   /** Already validated against this deployment's catalogue; '' means no choice. */
   model?: string;
   siteDomain?: string;
+  apiKey?: string;
+  gatewaySkip?: boolean;
 };
 
 async function createChatTask(
@@ -265,6 +269,8 @@ async function executeLiveTask(context: any, liveTask: LiveChatTask) {
         turnId: liveTask.task.id,
         userMessagePersisted: true,
         siteDomain: liveTask.task.siteDomain,
+        apiKey: liveTask.gatewayApiKey,
+        gatewaySkip: liveTask.gatewaySkip,
       });
     } else {
       await runChatPipeline(taskContext, liveTask.task.message, send, {
@@ -273,7 +279,11 @@ async function executeLiveTask(context: any, liveTask: LiveChatTask) {
         userMessagePersisted: true,
         model: liveTask.task.model,
         siteDomain: liveTask.task.siteDomain,
+        apiKey: liveTask.gatewayApiKey,
+        gatewaySkip: liveTask.gatewaySkip,
       });
+      liveTask.gatewayApiKey = undefined;
+      liveTask.gatewaySkip = undefined;
     }
   } catch (runError) {
     error = runError instanceof Error ? runError.message : 'Request processing failed.';
@@ -311,8 +321,15 @@ async function executeLiveTask(context: any, liveTask: LiveChatTask) {
   }, 5 * 60 * 1_000);
 }
 
-function ensureChatTaskStarted(context: any, conversationId: string, task: ChatTask) {
+function ensureChatTaskStarted(
+  context: any,
+  conversationId: string,
+  task: ChatTask,
+  extras?: { gatewayApiKey?: string; gatewaySkip?: boolean },
+) {
   const liveTask = getOrCreateLiveTask(conversationId, task);
+  if (extras?.gatewayApiKey) liveTask.gatewayApiKey = extras.gatewayApiKey;
+  if (extras?.gatewaySkip) liveTask.gatewaySkip = true;
   if (!liveTask.runPromise && isTaskActive(liveTask.task)) {
     liveTask.runPromise = executeLiveTask(context, liveTask).catch((error) => {
       console.error('[chat-task] execution failed', error);
@@ -356,8 +373,9 @@ function createLiveTaskStreamResponse(
   context: any,
   conversationId: string,
   task: ChatTask,
+  extras?: { gatewayApiKey?: string; gatewaySkip?: boolean },
 ) {
-  const liveTask = ensureChatTaskStarted(context, conversationId, task);
+  const liveTask = ensureChatTaskStarted(context, conversationId, task, extras);
 
   return createSSEResponse(async function* (signal) {
     yield sseEvent({
@@ -418,14 +436,21 @@ export async function createChatTaskAndStreamResponse(
   message: string,
   options: ChatTaskOptions = {},
 ) {
-  const result = await createChatTask(context, message, options);
+  const resolved = resolveGatewayUserTurn(message, options.apiKey);
+  const result = await createChatTask(context, resolved.message, {
+    ...options,
+    ...(resolved.apiKey ? { apiKey: resolved.apiKey } : {}),
+  });
   if (!result.ok) {
     return new Response(JSON.stringify(result), {
       status: result.status,
       headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
     });
   }
-  return createLiveTaskStreamResponse(context, result.conversationId, result.task);
+  return createLiveTaskStreamResponse(context, result.conversationId, result.task, {
+    ...(resolved.apiKey ? { gatewayApiKey: resolved.apiKey } : {}),
+    ...(options.gatewaySkip ? { gatewaySkip: true } : {}),
+  });
 }
 
 /** Reconnect to a running or completed task without creating a second run. */

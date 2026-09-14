@@ -157,6 +157,7 @@ async function loadProjectResumeHistory(context: any, conversationId: string) {
     // Empty until someone picks a model, which leaves the composer on whatever
     // the /models route reports as this deployment's default.
     model,
+    gatewayNeeded: state.gatewayPromptPending === true,
   };
 }
 
@@ -355,6 +356,7 @@ async function runWorkspaceRestoreBody(context: any, conversationId: string) {
     preview,
     deployment: state.deployment,
     files: { root: state.appDir, items },
+    gatewayNeeded: state.gatewayPromptPending === true,
     ...(hasFileItems
       ? { download: { url: '/download', filename: 'source.zip' } }
       : {}),

@@ -22,6 +22,7 @@ import {
   createFileTreePushController,
   createProjectCheckpointController,
   extendExistingSandboxTimeout,
+  GATEWAY_CREDENTIALS_USER_REPLY,
   isGenericCompletionReply,
   previewLinkFromState,
   replyLocaleFor,
@@ -34,6 +35,11 @@ import {
 import { createTurnLifecycle } from './_turn-lifecycle.ts';
 import { prepareProjectWorkspace } from './_workspace.ts';
 import { isMakersDeployUrl } from '../../shared/makers-deploy.ts';
+import {
+  applyUserGatewayDecision,
+  isRequestGatewayCredentialsTool,
+} from '../project/_gateway-prompt.ts';
+import { resolveGatewayUserTurn } from '../../shared/gateway-secret.ts';
 
 export async function runChatPipeline(
   context: any,
@@ -46,6 +52,9 @@ export async function runChatPipeline(
     /** Validated model for this turn; '' or absent runs the configured default. */
     model?: string;
     siteDomain?: string;
+    /** Real Models API key from the card or a chat sentence; never persisted. */
+    apiKey?: string;
+    gatewaySkip?: boolean;
   } = {},
 ) {
   const { conversationId } = resolveConversationId(context);
@@ -102,6 +111,20 @@ export async function runChatPipeline(
     state.siteDomain = siteDomain;
     await saveProjectState(context, conversationId, state);
   }
+  const inboundGateway = resolveGatewayUserTurn(message, options.apiKey);
+  message = inboundGateway.message;
+  if (inboundGateway.apiKey || options.gatewaySkip) {
+    await applyUserGatewayDecision(
+      context,
+      state,
+      conversationId,
+      {
+        ...(inboundGateway.apiKey ? { apiKey: inboundGateway.apiKey } : {}),
+        ...(options.gatewaySkip ? { skip: true } : {}),
+      },
+      send,
+    );
+  }
   const history = shouldResetProject
     ? []
     : await getHistory(context, conversationId, {
@@ -147,15 +170,16 @@ export async function runChatPipeline(
   };
   const forwardProgress = (event: AgentProgressEvent) => {
     // Forward structured progress events directly; the frontend renders by type.
-    if (
-      !isInitialProjectTurn
-      && event.type === 'tool_use'
-      && (event.data.name === 'ensure_project_scaffold' || event.data.name.endsWith('__ensure_project_scaffold'))
-    ) {
-      hiddenScaffoldToolUseIds.add(event.data.id);
-      return;
+    if (event.type === 'tool_use') {
+      const name = event.data.name || '';
+      const hideScaffold = !isInitialProjectTurn
+        && (name === 'ensure_project_scaffold' || name.endsWith('__ensure_project_scaffold'));
+      if (hideScaffold || isRequestGatewayCredentialsTool(name)) {
+        hiddenScaffoldToolUseIds.add(event.data.id);
+        return;
+      }
     }
-    if (!isInitialProjectTurn && event.type === 'tool_result' && hiddenScaffoldToolUseIds.has(event.data.tool_use_id)) {
+    if (event.type === 'tool_result' && hiddenScaffoldToolUseIds.has(event.data.tool_use_id)) {
       return;
     }
     if (event.type === 'text_segment') {
@@ -273,6 +297,51 @@ export async function runChatPipeline(
         reply: stoppedReply,
         conversation_id: conversationId,
         build: { status: 'skipped' as BuildStatus },
+        preview: previewLinkFromState(state),
+        deployment: state.deployment,
+      },
+    });
+    return;
+  }
+
+  // Dest was skipped so the user can type a key. That is not a missing preview
+  // and not a failed build — running verification here would paint the model's
+  // wrap-up as a red error and then wipe the input card when the turn ended.
+  if (state.gatewayPromptPending) {
+    const pauseReply = GATEWAY_CREDENTIALS_USER_REPLY[replyLocale];
+    send({
+      type: 'agent',
+      data: {
+        ok: true,
+        reply: pauseReply,
+      },
+    });
+
+    let fileTree: FileTreeItem[] = [];
+    if (modelResult.projectTouched) {
+      await checkpoint.flush();
+      fileTree = await fileTreePush.flush('Failed to read the file list.');
+    }
+    await finalizeTurn(pauseReply, 'completed', {
+      withSnapshot: modelResult.projectTouched,
+    });
+    send({
+      type: 'result',
+      data: {
+        ok: true,
+        reply: pauseReply,
+        conversation_id: conversationId,
+        gatewayNeeded: true,
+        project: {
+          dir: state.appDir,
+          created: modelResult.wasCreated,
+        },
+        build: { status: 'skipped' as BuildStatus },
+        files: {
+          root: state.appDir,
+          items: fileTree,
+        },
+        download: { url: '/download', filename: 'source.zip' },
         preview: previewLinkFromState(state),
         deployment: state.deployment,
       },

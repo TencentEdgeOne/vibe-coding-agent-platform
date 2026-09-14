@@ -149,8 +149,7 @@ export async function startPreviewServer(
   // Scoped to this conversation, and redacted out of CLI output before the
   // model or the UI sees it.
   const sandboxToken = await resolveSandboxMakersToken(state, masterToken);
-  const { conversationId } = resolveConversationId(context);
-  await prepareSandboxGatewayEnv(context, state, { conversationId });
+  await prepareSandboxGatewayEnv(context, state);
 
   const startResult = await runSandboxCommand(
     context,

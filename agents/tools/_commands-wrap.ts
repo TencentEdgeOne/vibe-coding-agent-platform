@@ -19,6 +19,7 @@ import {
 } from '../project/_preview.ts';
 import { resolveMakersProjectName } from '../project/_makers-deploy.ts';
 import { resolveMakersPublishTarget } from '../../shared/publish-target.ts';
+import { pauseForGatewayCredentialsIfNeeded } from '../project/_gateway-prompt.ts';
 import {
   buildSandboxMakersEnv,
   describeMissingMakersRuntimeToken,
@@ -233,11 +234,7 @@ async function prepareMakersCommand(
     lifecycle.state,
     masterToken,
   );
-  const gateway = await prepareSandboxGatewayEnv(lifecycle.context, lifecycle.state, {
-    conversationId: lifecycle.conversationId,
-    send: lifecycle.send,
-    signal: lifecycle.signal,
-  });
+  const gateway = await prepareSandboxGatewayEnv(lifecycle.context, lifecycle.state);
   const env = buildSandboxMakersEnv(
     sandboxToken,
     lifecycle.state.makersApiRegion,
@@ -348,6 +345,20 @@ export function wrapSandboxTools(
           | undefined;
         if (lifecycle && isMakersCommand) {
           try {
+            const pause = await pauseForGatewayCredentialsIfNeeded(
+              lifecycle.context,
+              lifecycle.state,
+              {
+                conversationId: lifecycle.conversationId,
+                send: lifecycle.send,
+              },
+            );
+            if (pause) {
+              return {
+                content: [{ type: 'text' as const, text: pause }],
+                isError: true,
+              };
+            }
             await assertMakersProjectCompatible(lifecycle.context, lifecycle.state);
             makers = await prepareMakersCommand(args, command, lifecycle);
             nextArgs = makers.args as typeof args;

@@ -4,15 +4,14 @@ export type Locale = 'zh' | 'en';
 
 export const LANGUAGE_STORAGE_KEY = 'vibe-coding-platform-language';
 
-export type HomeFeatureIcon = 'skills' | 'functions' | 'agent';
+export type HomeFeatureIcon = 'skills' | 'functions';
 
 // One capability the generated project gets out of the platform, described by
 // what comes back from the prompt rather than by what the platform offers. The
 // distinction is the whole point of these cards: a capability list belongs on a
 // product site, but the question being asked here is what the run produces.
 //
-// The three are ordered, and `home-stage.tsx` numbers them in array order. The
-// third sits on its own row because three cells will not share 820px.
+// The two are ordered, and `home-stage.tsx` numbers them in array order.
 type HomeFeature = {
   readonly icon: HomeFeatureIcon;
   readonly title: string;
@@ -88,11 +87,6 @@ export const TRANSLATIONS = {
           icon: 'functions',
           title: '框架适配与校验',
           desc: '内置主流框架的平台适配，适配器、产物目录与构建命令自动就绪。部署前自动执行兼容性检查，失败时尝试自动修复。',
-        },
-        {
-          icon: 'agent',
-          title: '多形态应用生成',
-          desc: '支持生成基于主流全栈框架、适配 ISR 等多种渲染模式的 Web 应用，以及具备会话管理与工具调用能力的 Agent 应用。',
         },
       ] as readonly HomeFeature[],
     },
@@ -269,11 +263,6 @@ export const TRANSLATIONS = {
           icon: 'functions',
           title: 'Framework adaptation & checks',
           desc: 'Built-in adaptation for major frameworks — adapters, output dirs and build commands auto-configured. Compatibility checks and auto-fix run before deploy.',
-        },
-        {
-          icon: 'agent',
-          title: 'Multi-form generation',
-          desc: 'Generate full-stack web apps on major frameworks with ISR and other rendering modes, plus Agent apps with session management and tool calling.',
         },
       ] as readonly HomeFeature[],
     },

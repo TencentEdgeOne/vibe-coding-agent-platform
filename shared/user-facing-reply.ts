@@ -29,6 +29,16 @@ export const STOPPED_TURN_REPLY: Readonly<Record<ReplyLocale, string>> = {
   en: 'Generation stopped. You can continue with another change.',
 };
 
+/**
+ * A turn that stopped so the user can type a Models API key. Same contract as
+ * a question turn: the project may already be on disk, preview is intentionally
+ * not up, and that must not read as a failed build.
+ */
+export const GATEWAY_CREDENTIALS_USER_REPLY: Readonly<Record<ReplyLocale, string>> = {
+  zh: '项目已经写好。预览和部署需要 Models API Key，请在下方输入，或点击跳过。',
+  en: 'The project is ready. Preview and deploy need a Models API key — enter it below, or skip.',
+};
+
 export function compactUserFacingReply(text: string, fallback: string) {
   const normalized = text.replace(/\r/g, '').trim();
   if (!normalized) return fallback;
@@ -74,6 +84,11 @@ export type FinishedTurn = {
   previewUrl?: string;
   /** Whether verification failed. */
   buildFailed: boolean;
+  /**
+   * The turn stopped to wait for the user (API key card, a clarifying
+   * question). A missing preview is then intentional, not a failed dest.
+   */
+  waitingForUser?: boolean;
   /** The model's own reply, empty when it produced nothing usable. */
   modelReply: string;
   /** What to say instead when the model said nothing and the turn succeeded. */
@@ -93,8 +108,9 @@ export type FinishedTurn = {
  * waiting for an answer.
  */
 export function resolveFinishedTurn(turn: FinishedTurn) {
-  // Nothing was built, so there is no preview to be missing.
-  const previewMissing = turn.filesWritten && !turn.previewUrl;
+  // Nothing was built, so there is no preview to be missing. Waiting for the
+  // user is the same: dest was skipped on purpose until they answer.
+  const previewMissing = !turn.waitingForUser && turn.filesWritten && !turn.previewUrl;
   const failed = turn.buildFailed || previewMissing;
   if (!turn.modelReply) {
     return {

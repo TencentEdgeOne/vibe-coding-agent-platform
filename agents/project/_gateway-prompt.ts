@@ -1,28 +1,34 @@
 /**
- * In-conversation collection of AI Gateway values for a generated project.
+ * Models API key collection for a generated AI project.
  *
- * `.env.example` declares the names. When the user types values here they are
- * written to `.env` so the CLI can load them; skip leaves that file alone.
+ * `.env.example` declares the names. The agent checks before preview or deploy
+ * and asks the user when `.env` has no key. The host shows the input card; the
+ * next user turn carries the key (masked in the transcript) or a skip, and
+ * this module writes `.env` so the CLI can load it.
  */
 
-import type { ProjectState, StreamSend } from '../_types.ts';
+import { tool as defineClaudeTool } from '@anthropic-ai/claude-agent-sdk';
+import { saveProjectState } from '../_memory.ts';
+import type { ClaudeMcpTool, ProjectState, StreamSend } from '../_types.ts';
+import { stringifyToolResult } from '../utils/_text.ts';
 import { getFileTree } from './_fs.ts';
 import { AGENT_GATEWAY_ENV_KEYS } from './_makers-declarations.ts';
 
 export const DEFAULT_AI_GATEWAY_BASE_URL = 'https://ai-gateway.edgeone.link';
 
-export type GatewayDecision =
-  | { status: 'provided'; apiKey: string }
-  | { status: 'skipped' };
+export const REQUEST_GATEWAY_CREDENTIALS_TOOL = 'request_gateway_credentials';
 
-type GatewayWaiter = {
-  promise: Promise<GatewayDecision>;
-  resolve: (decision: GatewayDecision) => void;
-  reject: (error: Error) => void;
-};
+export const GATEWAY_CREDENTIALS_PAUSE_MESSAGE = [
+  'AI_GATEWAY_API_KEY is not set in the project .env.',
+  'The user has been shown the API key input card.',
+  'End this turn now. Do not run preview or deploy, and do not call this again.',
+  'A later turn will continue after they provide a key or skip.',
+].join(' ');
 
-const decisions = new Map<string, GatewayDecision>();
-const waiters = new Map<string, GatewayWaiter>();
+export function isRequestGatewayCredentialsTool(name: string) {
+  return name === REQUEST_GATEWAY_CREDENTIALS_TOOL
+    || name.endsWith(`__${REQUEST_GATEWAY_CREDENTIALS_TOOL}`);
+}
 
 export function declaredGatewayKeys(content: string): string[] {
   return AGENT_GATEWAY_ENV_KEYS.filter((key) => (
@@ -30,23 +36,72 @@ export function declaredGatewayKeys(content: string): string[] {
   ));
 }
 
+export function envAssignmentValue(content: string, key: string): string {
+  const match = content.match(new RegExp(`^\\s*(?:export\\s+)?${key}\\s*=(.*)$`, 'm'));
+  if (!match) return '';
+  let value = match[1].trim();
+  if (
+    (value.startsWith('"') && value.endsWith('"'))
+    || (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    value = value.slice(1, -1);
+  }
+  return value.trim();
+}
+
+async function readProjectFile(context: any, state: ProjectState, relPath: string) {
+  try {
+    const content = await context.sandbox.files.read(`${state.appDir}/${relPath}`);
+    return typeof content === 'string' ? content : '';
+  } catch {
+    return '';
+  }
+}
+
 export async function projectDeclaresGatewayKeys(
   context: any,
   state: ProjectState,
 ): Promise<boolean> {
+  const content = await readProjectFile(context, state, '.env.example');
+  return Boolean(content) && declaredGatewayKeys(content).length > 0;
+}
+
+async function projectHasAgentsDirectory(context: any, state: ProjectState) {
   try {
-    const content = await context.sandbox.files.read(`${state.appDir}/.env.example`);
-    return typeof content === 'string' && declaredGatewayKeys(content).length > 0;
+    return Boolean(await context.sandbox.files.exists(`${state.appDir}/agents`));
   } catch {
     return false;
   }
 }
 
-export function gatewayEnvFromDecision(decision?: GatewayDecision): Record<string, string> {
-  if (!decision || decision.status !== 'provided' || !decision.apiKey) return {};
+export async function projectNeedsGatewayKey(
+  context: any,
+  state: ProjectState,
+): Promise<boolean> {
+  return await projectDeclaresGatewayKeys(context, state)
+    || await projectHasAgentsDirectory(context, state);
+}
+
+export async function sandboxGatewayKeyIsSet(
+  context: any,
+  state: ProjectState,
+): Promise<boolean> {
+  const content = await readProjectFile(context, state, '.env');
+  return Boolean(content) && Boolean(envAssignmentValue(content, 'AI_GATEWAY_API_KEY'));
+}
+
+export async function readProjectGatewayEnv(
+  context: any,
+  state: ProjectState,
+): Promise<Record<string, string>> {
+  const content = await readProjectFile(context, state, '.env');
+  if (!content) return {};
+  const apiKey = envAssignmentValue(content, 'AI_GATEWAY_API_KEY');
+  if (!apiKey) return {};
   return {
-    AI_GATEWAY_API_KEY: decision.apiKey,
-    AI_GATEWAY_BASE_URL: DEFAULT_AI_GATEWAY_BASE_URL,
+    AI_GATEWAY_API_KEY: apiKey,
+    AI_GATEWAY_BASE_URL: envAssignmentValue(content, 'AI_GATEWAY_BASE_URL')
+      || DEFAULT_AI_GATEWAY_BASE_URL,
   };
 }
 
@@ -101,136 +156,158 @@ async function publishFileTreeAfterEnvWrite(
   }
 }
 
-export function getGatewayDecision(conversationId: string): GatewayDecision | undefined {
-  const id = conversationId.trim();
-  return id ? decisions.get(id) : undefined;
-}
-
-export function submitGatewayDecision(conversationId: string, decision: GatewayDecision) {
-  const id = conversationId.trim();
-  if (!id) return;
-  decisions.set(id, decision);
-  const waiter = waiters.get(id);
-  if (!waiter) return;
-  waiters.delete(id);
-  waiter.resolve(decision);
-}
-
-export function cancelGatewayPrompt(conversationId: string) {
-  const id = conversationId.trim();
-  if (!id) return;
-  const waiter = waiters.get(id);
-  if (!waiter) return;
-  waiters.delete(id);
-  waiter.reject(new Error('Gateway credential prompt cancelled.'));
-}
-
-export function waitForGatewayDecision(
-  conversationId: string,
-  signal?: AbortSignal,
-): Promise<GatewayDecision> {
-  const id = conversationId.trim();
-  if (!id) {
-    return Promise.reject(new Error('Gateway credential prompt cancelled.'));
-  }
-
-  const existing = decisions.get(id);
-  if (existing) return Promise.resolve(existing);
-
-  const pending = waiters.get(id);
-  if (pending) return pending.promise;
-
-  let resolve!: (decision: GatewayDecision) => void;
-  let reject!: (error: Error) => void;
-  const promise = new Promise<GatewayDecision>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-
-  const onAbort = () => {
-    if (!waiters.has(id)) return;
-    waiters.delete(id);
-    reject(new Error('Gateway credential prompt cancelled.'));
-  };
-  if (signal?.aborted) {
-    onAbort();
-    return promise;
-  }
-  signal?.addEventListener('abort', onAbort, { once: true });
-
-  waiters.set(id, {
-    promise,
-    resolve: (decision) => {
-      signal?.removeEventListener('abort', onAbort);
-      resolve(decision);
-    },
-    reject,
-  });
-  return promise;
-}
-
 export type GatewayPromptOptions = {
   conversationId?: string;
   send?: StreamSend;
-  signal?: AbortSignal;
 };
 
-/**
- * Ask once per conversation when `.env.example` declares gateway keys.
- *
- * A provided answer is written to `.env`. No `send` means there is no card
- * to show (resume/restart): reuse a decision if one exists, otherwise continue.
- */
-export async function resolveGatewayEnvForMakers(
+export async function askUserForGatewayCredentials(
   context: any,
   state: ProjectState,
   options: GatewayPromptOptions = {},
-): Promise<Record<string, string>> {
-  const conversationId = (options.conversationId || '').trim();
-  if (conversationId) {
-    const existing = getGatewayDecision(conversationId);
-    if (existing) {
-      const values = gatewayEnvFromDecision(existing);
-      await writeSandboxGatewayEnv(context, state, values);
-      await publishFileTreeAfterEnvWrite(context, state, options.send);
-      return values;
-    }
-  }
-
-  if (!await projectDeclaresGatewayKeys(context, state)) {
-    return {};
-  }
-
-  if (!conversationId || !options.send) {
-    return {};
-  }
-
-  options.send({
+) {
+  state.gatewayPromptPending = true;
+  await persistGatewayState(context, options.conversationId || '', state);
+  options.send?.({
     type: 'gateway_credentials',
     data: {
       status: 'needed',
       keys: [...AGENT_GATEWAY_ENV_KEYS],
     },
   });
+}
 
+export async function shouldPauseForGatewayCredentials(
+  context: any,
+  state: ProjectState,
+): Promise<boolean> {
+  if (state.gatewaySkipped) return false;
+  if (await sandboxGatewayKeyIsSet(context, state)) return false;
+  return projectNeedsGatewayKey(context, state);
+}
+
+export async function pauseForGatewayCredentialsIfNeeded(
+  context: any,
+  state: ProjectState,
+  options: GatewayPromptOptions = {},
+): Promise<string> {
+  if (!await shouldPauseForGatewayCredentials(context, state)) return '';
+  await askUserForGatewayCredentials(context, state, options);
+  return GATEWAY_CREDENTIALS_PAUSE_MESSAGE;
+}
+
+async function persistGatewayState(
+  context: any,
+  conversationId: string,
+  state: ProjectState,
+) {
+  const id = conversationId.trim();
+  if (!id) return;
   try {
-    const decision = await waitForGatewayDecision(conversationId, options.signal);
-    options.send({
-      type: 'gateway_credentials',
-      data: {
-        status: 'resolved',
-        skipped: decision.status === 'skipped',
-      },
-    });
-    const values = gatewayEnvFromDecision(decision);
-    await writeSandboxGatewayEnv(context, state, values);
-    await publishFileTreeAfterEnvWrite(context, state, options.send);
-    return values;
+    await saveProjectState(context, id, state);
   } catch {
-    options.send({
-      type: 'gateway_credentials',
-      data: { status: 'resolved', skipped: true },
-    });
-    throw new Error('Gateway credential prompt cancelled.');
+    // The card and `.env` write are still useful without a durable flag.
   }
+}
+
+export async function applyUserGatewayDecision(
+  context: any,
+  state: ProjectState,
+  conversationId: string,
+  decision: { apiKey?: string; skip?: boolean },
+  send?: StreamSend,
+) {
+  if (decision.skip) {
+    state.gatewayPromptPending = false;
+    state.gatewaySkipped = true;
+    await persistGatewayState(context, conversationId, state);
+    return {};
+  }
+
+  const apiKey = (decision.apiKey || '').trim();
+  if (!apiKey) return {};
+
+  const values = {
+    AI_GATEWAY_API_KEY: apiKey,
+    AI_GATEWAY_BASE_URL: DEFAULT_AI_GATEWAY_BASE_URL,
+  };
+  await writeSandboxGatewayEnv(context, state, values);
+  state.gatewayPromptPending = false;
+  state.gatewaySkipped = false;
+  await persistGatewayState(context, conversationId, state);
+  await publishFileTreeAfterEnvWrite(context, state, send);
+  return values;
+}
+
+export function buildRequestGatewayCredentialsTool(options: {
+  context: any;
+  state: ProjectState;
+  conversationId?: string;
+  send?: StreamSend;
+}): ClaudeMcpTool {
+  const { context, state, conversationId, send } = options;
+  return defineClaudeTool(
+    REQUEST_GATEWAY_CREDENTIALS_TOOL,
+    [
+      'Before preview or deploy of an AI project, check whether .env has a non-empty AI_GATEWAY_API_KEY.',
+      'If the key is already set, not required, or the user already skipped, continue with preview or deploy.',
+      'If the key is missing, this shows the user the API key input card and you must end the turn.',
+      'Do not run edgeone makers dest or deploy after this tool says the user has been asked.',
+    ].join(' '),
+    {},
+    async () => {
+      if (state.gatewaySkipped) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: stringifyToolResult({
+              needed: true,
+              configured: false,
+              skipped: true,
+              instruction: 'The user already skipped the API key. Continue preview or deploy without writing .env.',
+            }),
+          }],
+        };
+      }
+
+      const needed = await projectNeedsGatewayKey(context, state);
+      if (!needed) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: stringifyToolResult({
+              needed: false,
+              instruction: 'This project does not need a Models API key. Continue.',
+            }),
+          }],
+        };
+      }
+
+      if (await sandboxGatewayKeyIsSet(context, state)) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: stringifyToolResult({
+              needed: true,
+              configured: true,
+              instruction: 'AI_GATEWAY_API_KEY is already set. Continue preview or deploy. Do not quote the value.',
+            }),
+          }],
+        };
+      }
+
+      await askUserForGatewayCredentials(context, state, { conversationId, send });
+      return {
+        content: [{
+          type: 'text' as const,
+          text: stringifyToolResult({
+            needed: true,
+            configured: false,
+            askedUser: true,
+            instruction: GATEWAY_CREDENTIALS_PAUSE_MESSAGE,
+          }),
+        }],
+      };
+    },
+  ) as ClaudeMcpTool;
 }
