@@ -76,6 +76,15 @@ export type DeployOfferCopy = {
   dismiss: string;
 };
 
+export type GatewayPromptCopy = {
+  title: string;
+  docs: string;
+  docsUrl: string;
+  apiKey: string;
+  continue: string;
+  skip: string;
+};
+
 function actionLabel(action: ToolAction, copy: ConversationCopy) {
   return copy.toolActions[action];
 }
@@ -363,6 +372,10 @@ export function AgentConversation({
   deployOffer,
   onDeployOffer,
   onDismissDeployOffer,
+  gatewayPrompt,
+  gatewayBusy,
+  onGatewaySubmit,
+  onGatewaySkip,
 }: {
   messages: ConversationMessage[];
   input: string;
@@ -379,7 +392,18 @@ export function AgentConversation({
   deployOffer?: DeployOfferCopy | null;
   onDeployOffer?: () => void;
   onDismissDeployOffer?: () => void;
+  gatewayPrompt?: GatewayPromptCopy | null;
+  gatewayBusy?: boolean;
+  onGatewaySubmit?: (values: { apiKey: string }) => void;
+  onGatewaySkip?: () => void;
 }) {
+  const [gatewayApiKey, setGatewayApiKey] = useState('');
+
+  useEffect(() => {
+    if (!gatewayPrompt) {
+      setGatewayApiKey('');
+    }
+  }, [gatewayPrompt]);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const followOutputRef = useRef(true);
   const signature = messages.map((message) => [
@@ -422,6 +446,59 @@ export function AgentConversation({
         </div>
       </div>
       <div className="conversation-composer-dock">
+        {gatewayPrompt && (
+          <form
+            className="gateway-prompt"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (gatewayBusy) return;
+              onGatewaySubmit?.({
+                apiKey: gatewayApiKey.trim(),
+              });
+            }}
+          >
+            <div className="gateway-prompt-copy">
+              <p className="gateway-prompt-title">{gatewayPrompt.title}</p>
+              <p className="gateway-prompt-docs">
+                <a
+                  href={gatewayPrompt.docsUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {gatewayPrompt.docs}
+                </a>
+              </p>
+            </div>
+            <label className="gateway-prompt-field">
+              <span>{gatewayPrompt.apiKey}</span>
+              <input
+                type="password"
+                autoComplete="off"
+                spellCheck={false}
+                value={gatewayApiKey}
+                disabled={gatewayBusy}
+                onChange={(event) => setGatewayApiKey(event.target.value)}
+              />
+            </label>
+            <div className="gateway-prompt-actions">
+              <button
+                type="button"
+                className="deploy-offer-dismiss"
+                disabled={gatewayBusy}
+                onClick={onGatewaySkip}
+              >
+                {gatewayPrompt.skip}
+              </button>
+              <button
+                type="submit"
+                className="deploy-offer-accept"
+                disabled={gatewayBusy || !gatewayApiKey.trim()}
+              >
+                {gatewayPrompt.continue}
+              </button>
+            </div>
+          </form>
+        )}
         {deployOffer && (
           <div className="deploy-offer" role="status">
             <span className="deploy-offer-copy">{deployOffer.prompt}</span>

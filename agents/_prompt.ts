@@ -123,7 +123,7 @@ function buildSandboxTools(appDir: string, mcpServerName: string) {
 function buildSandboxPreview(appDir: string, makersProjectName: string) {
   const quotedProjectName = JSON.stringify(makersProjectName);
   return [
-    `To publish the right-hand development preview, run edgeone makers dev --port ${MAKERS_DEV_PORT} --skip-env-sync --name ${quotedProjectName} once through commands with cwd=${appDir}. The commands tool keeps Makers dev running at its root, exposes it through the sandbox path adapter on port ${PREVIEW_SERVER_PORT}, and publishes sandbox.getHost(${PREVIEW_PUBLIC_PORT})${PREVIEW_PATH_PREFIX} to the preview panel. Do not add nohup, start another server, synthesize a public URL, or use a cloud deploy as the normal preview.`,
+    `To publish the right-hand development preview, run edgeone makers dev --port ${MAKERS_DEV_PORT} --skip-env-sync --skip-ai-gateway-sync --name ${quotedProjectName} once through commands with cwd=${appDir}. The commands tool keeps Makers dev running at its root, exposes it through the sandbox path adapter on port ${PREVIEW_SERVER_PORT}, and publishes sandbox.getHost(${PREVIEW_PUBLIC_PORT})${PREVIEW_PATH_PREFIX} to the preview panel. Do not add nohup, start another server, synthesize a public URL, or use a cloud deploy as the normal preview.`,
     // The model has no restart primitive, and it went looking for one: a turn
     // that changed dependencies under a running server tried to kill it, free
     // its port, and relaunch it, none of which the host acts on.
@@ -134,6 +134,7 @@ function buildSandboxPreview(appDir: string, makersProjectName: string) {
     'A build or an install cannot run beside the preview, so the host stops the dev server before either and says so in that command\'s output. The preview is then down until you launch it again. Do not report a preview as running across an install or a build you issued after it.',
     `Only when the user explicitly asks for a live deployment, run edgeone makers deploy --json once through commands with cwd=${appDir}. The host supplies credentials, pins the project this conversation publishes to, allows the long timeout, parses the final JSON line, and renders the result in its own deployment card.`,
     'Never pass -n, invent a project name, or retry a failed deploy under a different one: the name identifies the user\'s site, and a deploy under a name you chose publishes somewhere nobody can find again. A deployment never replaces the right-hand preview, so do not tell the user their live site opened there.',
+    'Declare AI_GATEWAY_API_KEY= and AI_GATEWAY_BASE_URL= in .env.example when the project calls a model. Never write a .env file yourself, and never write an actual API key or gateway URL value into source. The host asks the user for those values before preview or deploy and writes them to .env. Generated agents read them from context.env.',
     `The injected AI_GATEWAY_BASE_URL may arrive without a trailing /v1, for example https://ai-gateway.edgeone.link. Normalize it to end in exactly /v1 before appending the completions path, so a base that already ends in /v1 is not doubled. Never probe, enumerate, or retry alternate gateway paths.`,
   ];
 }

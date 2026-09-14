@@ -113,6 +113,7 @@ function makersDeployLaunch(
     '--json',
     `--area ${area}`,
     previewEnvironment ? '-e preview' : '',
+    '--skip-ai-gateway-sync',
   ].filter(Boolean).join(' ');
 }
 

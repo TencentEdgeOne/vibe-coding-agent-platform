@@ -349,13 +349,7 @@ const SOURCE_PATCHES = {
     },
     {
       file: '.env.example',
-      contents: [
-        '# Injected by the platform in preview and production. Set these only to',
-        '# point a local run at a gateway of your own.',
-        'AI_GATEWAY_API_KEY=',
-        'AI_GATEWAY_BASE_URL=',
-        '',
-      ].join('\n'),
+      contents: 'AI_GATEWAY_API_KEY=\nAI_GATEWAY_BASE_URL=\n',
     },
     {
       file: 'agents/chat.ts',
@@ -489,13 +483,7 @@ export async function onRequest(context: any) {
     },
     {
       file: '.env.example',
-      contents: [
-        '# Injected by the platform in preview and production. Set these only to',
-        '# point a local run at a gateway of your own.',
-        'AI_GATEWAY_API_KEY=',
-        'AI_GATEWAY_BASE_URL=',
-        '',
-      ].join('\n'),
+      contents: 'AI_GATEWAY_API_KEY=\nAI_GATEWAY_BASE_URL=\n',
     },
     {
       file: 'agents/chat.ts',

@@ -404,11 +404,12 @@ if (agentFiles.length > 0) {
       'required for an agents/ project and must declare AI_GATEWAY_API_KEY and AI_GATEWAY_BASE_URL.',
     );
   } else {
-    const envExample = readSource('.env.example');
-    for (const key of ['AI_GATEWAY_API_KEY', 'AI_GATEWAY_BASE_URL']) {
-      if (!new RegExp('^' + key + '\\s*=', 'm').test(envExample)) {
-        addError('MKR006', '.env.example', 'missing ' + key + '= declaration.');
-      }
+    const envExample = fs.readFileSync('.env.example', 'utf8');
+    if (!/^\s*(?:export\s+)?AI_GATEWAY_API_KEY\s*=/m.test(envExample)) {
+      addError('MKR005', '.env.example', 'must declare AI_GATEWAY_API_KEY.');
+    }
+    if (!/^\s*(?:export\s+)?AI_GATEWAY_BASE_URL\s*=/m.test(envExample)) {
+      addError('MKR006', '.env.example', 'must declare AI_GATEWAY_BASE_URL.');
     }
   }
 

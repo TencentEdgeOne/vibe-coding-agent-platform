@@ -49,6 +49,7 @@ async function projectFixture(files: Record<string, string> = {}) {
           await mkdir(path.dirname(target), { recursive: true });
           await writeFile(target, content);
         },
+        remove: (target: string) => rm(target, { force: true }),
         makeDir: (target: string) => mkdir(target, { recursive: true }),
       },
       // A real shell against the fixture directory: the framework is inferred
@@ -246,17 +247,21 @@ test('edgeone.json gains a framework without losing what it already declared', (
   }
 });
 
-test('.env.example gains only the keys it is missing', () => {
+test('.env.example gains empty gateway key and base URL lines', () => {
+  assert.equal(withAgentEnvKeys(unreadable), undefined);
   assert.equal(withAgentEnvKeys(absent), 'AI_GATEWAY_API_KEY=\nAI_GATEWAY_BASE_URL=\n');
   assert.equal(
-    withAgentEnvKeys(present('APP_TITLE=Demo\nAI_GATEWAY_API_KEY=\n')),
+    withAgentEnvKeys(present('APP_TITLE=Demo\n')),
     'APP_TITLE=Demo\nAI_GATEWAY_API_KEY=\nAI_GATEWAY_BASE_URL=\n',
   );
   assert.equal(
-    withAgentEnvKeys(present('AI_GATEWAY_BASE_URL=\nAI_GATEWAY_API_KEY=\n')),
+    withAgentEnvKeys(present('AI_GATEWAY_API_KEY=\nAI_GATEWAY_BASE_URL=\n')),
     undefined,
   );
-  assert.equal(withAgentEnvKeys(unreadable), undefined);
+  assert.equal(
+    withAgentEnvKeys(present('AI_GATEWAY_API_KEY=\n')),
+    'AI_GATEWAY_API_KEY=\nAI_GATEWAY_BASE_URL=\n',
+  );
 });
 
 // The two sides are edited in different files, so the only assertion that keeps
@@ -315,7 +320,10 @@ test('writing an agent file brings the declarations with it', async () => {
       JSON.parse(await fixture.read('edgeone.json')),
       { agents: { framework: 'openai-agents-sdk' } },
     );
-    assert.match(await fixture.read('.env.example'), /^AI_GATEWAY_API_KEY=$/m);
+    assert.equal(
+      await fixture.read('.env.example'),
+      'AI_GATEWAY_API_KEY=\nAI_GATEWAY_BASE_URL=\n',
+    );
 
     // A second agent file has nothing left to declare, so it stays a plain
     // write and the Files panel is not told about the same two files again.
@@ -440,7 +448,7 @@ test('concurrent agent writes converge on declarations the lint accepts', async 
     'package.json': JSON.stringify({
       dependencies: { '@anthropic-ai/claude-agent-sdk': 'latest' },
     }),
-    '.env.example': 'APP_TITLE=Demo\n',
+    '.env.example': 'APP_TITLE=Demo\nAI_GATEWAY_API_KEY=\nAI_GATEWAY_BASE_URL=\n',
     'agents/chat.ts': [
       "import { query } from '@anthropic-ai/claude-agent-sdk';",
       'export async function onRequest() { return new Response("ok"); }',
@@ -455,13 +463,7 @@ test('concurrent agent writes converge on declarations the lint accepts', async 
     ]);
 
     const env = await fixture.read('.env.example');
-    assert.match(env, /^AI_GATEWAY_API_KEY=$/m);
-    assert.match(env, /^AI_GATEWAY_BASE_URL=$/m);
-    // The project's own key survives, and neither platform key is duplicated by
-    // a run that appended what another run had already appended.
-    assert.match(env, /^APP_TITLE=Demo$/m);
-    assert.equal(env.match(/AI_GATEWAY_API_KEY=/g)?.length, 1);
-    assert.equal(env.match(/AI_GATEWAY_BASE_URL=/g)?.length, 1);
+    assert.equal(env, 'APP_TITLE=Demo\nAI_GATEWAY_API_KEY=\nAI_GATEWAY_BASE_URL=\n');
 
     const config = JSON.parse(await fixture.read('edgeone.json')) as {
       agents?: { framework?: string };

@@ -26,12 +26,14 @@ import {
   MAKERS_CLI_UNAVAILABLE_MESSAGE,
   isEdgeoneCliUnavailable,
 } from '../../shared/tool-phase.ts';
+import { resolveConversationId } from '../utils/_request.ts';
 import { runCommandCapturingExit, runSandboxCommand } from './_commands.ts';
 import { assertMakersProjectCompatible } from './_makers-compat.ts';
 import { resolveMakersProjectName } from './_makers-deploy.ts';
 import {
   buildSandboxMakersEnv,
   describeMissingMakersRuntimeToken,
+  prepareSandboxGatewayEnv,
   resolveMakersMasterToken,
   resolveSandboxMakersToken,
 } from './_makers-token.ts';
@@ -147,6 +149,8 @@ export async function startPreviewServer(
   // Scoped to this conversation, and redacted out of CLI output before the
   // model or the UI sees it.
   const sandboxToken = await resolveSandboxMakersToken(state, masterToken);
+  const { conversationId } = resolveConversationId(context);
+  await prepareSandboxGatewayEnv(context, state, { conversationId });
 
   const startResult = await runSandboxCommand(
     context,

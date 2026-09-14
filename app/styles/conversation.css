@@ -468,6 +468,74 @@
   background: var(--brand-deep);
 }
 
+.gateway-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--n-150);
+  border-radius: var(--r-lg);
+  background: var(--card);
+}
+
+.gateway-prompt-title {
+  margin: 0;
+  color: var(--n-900);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.gateway-prompt-docs {
+  margin: 4px 0 0;
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+}
+
+.gateway-prompt-docs a {
+  color: var(--link);
+  text-decoration: none;
+}
+
+.gateway-prompt-docs a:hover,
+.gateway-prompt-docs a:focus-visible {
+  text-decoration: underline;
+}
+
+.gateway-prompt-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--n-700);
+  font-size: var(--fs-sm);
+}
+
+.gateway-prompt-field input {
+  border: 1px solid var(--n-150);
+  border-radius: var(--r-md);
+  background: var(--n-0);
+  padding: 7px 10px;
+  color: var(--n-900);
+  font-size: var(--fs-md);
+}
+
+.gateway-prompt-field input:focus-visible {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: var(--focus-ring);
+}
+
+.gateway-prompt-field input:disabled {
+  opacity: 0.6;
+}
+
+.gateway-prompt-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+}
+
 .conversation-composer {
   display: grid;
   position: relative;
@@ -675,6 +743,10 @@
   }
 
   .deploy-offer {
+    flex-wrap: wrap;
+  }
+
+  .gateway-prompt-actions {
     flex-wrap: wrap;
   }
 }

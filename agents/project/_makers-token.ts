@@ -1,6 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { Makers, MakersError } from '@edgeone/makers-sdk';
 import type { ProjectState } from '../_types.ts';
+import {
+  resolveGatewayEnvForMakers,
+  type GatewayPromptOptions,
+} from './_gateway-prompt.ts';
 
 // Every preview start, wrapped CLI call and deploy mints its own token, so this
 // only has to outlive a single CLI invocation. An hour is already far more than
@@ -123,6 +127,32 @@ export function describeMissingMakersRuntimeToken(output = '') {
   ].join(' ');
 }
 
+const SANDBOX_GATEWAY_KEY = 'AI_GATEWAY_API_KEY';
+const SANDBOX_GATEWAY_URL = 'AI_GATEWAY_BASE_URL';
+
+export function resolveSandboxGatewayEnv(context: any): Record<string, string> {
+  const key = pickEnvValue(context, SANDBOX_GATEWAY_KEY);
+  const url = pickEnvValue(context, SANDBOX_GATEWAY_URL);
+  return {
+    ...(key ? { [SANDBOX_GATEWAY_KEY]: key } : {}),
+    ...(url ? { [SANDBOX_GATEWAY_URL]: url } : {}),
+  };
+}
+
+/**
+ * Ask for gateway values when needed and write them to the project's `.env`.
+ *
+ * `--skip-ai-gateway-sync` keeps the CLI from fetching a key of its own; it
+ * then loads whatever this wrote.
+ */
+export async function prepareSandboxGatewayEnv(
+  context: any,
+  state: ProjectState,
+  options: GatewayPromptOptions = {},
+) {
+  return resolveGatewayEnvForMakers(context, state, options);
+}
+
 export function buildSandboxMakersEnv(
   sandboxToken = '',
   region?: ProjectState['makersApiRegion'],
@@ -132,9 +162,8 @@ export function buildSandboxMakersEnv(
     ...(sandboxToken ? { EDGEONE_PAGES_API_TOKEN: sandboxToken } : {}),
     // The CLI's getLoginRegion() does not probe EDGEONE_PAGES_API_TOKEN: without
     // this it logs "Invalid region: undefined" and every CAPI call becomes
-    // Invalid URL, including the AI Gateway credential describe that makers
-    // dev runs for an agents/ project. The value is the site the SDK just
-    // probed for this token, not an operator switch.
+    // Invalid URL. The value is the site the SDK just probed for this token,
+    // not an operator switch.
     ...(region === 'china' || region === 'global' ? { EDGEONE_PAGES_API_REGION: region } : {}),
     // A generated project that imports @edgeone/pages-blob trades the API token
     // for storage credentials on every request, and that exchange is scoped to

@@ -7,6 +7,7 @@ import { startPreviewServer } from '../project/_preview.ts';
 import {
   buildSandboxMakersEnv,
   describeMissingMakersRuntimeToken,
+  prepareSandboxGatewayEnv,
   resolveMakersMasterToken,
   resolveSandboxMakersToken,
 } from '../project/_makers-token.ts';
@@ -170,6 +171,7 @@ export async function runDeployPipeline(
   options: { turnId?: string; userMessagePersisted?: boolean; siteDomain?: string } = {},
 ) {
   const { conversationId } = resolveConversationId(context);
+  const abortSignal = context?.request?.signal as AbortSignal | undefined;
   const request = message.trim() || DEFAULT_DEPLOY_REQUEST;
   const copy = /[\u3400-\u9fff]/.test(request) ? COPY.zh : COPY.en;
 
@@ -281,6 +283,8 @@ export async function runDeployPipeline(
   publish({ status: 'running', startedAt });
 
   let sandboxToken = '';
+  let sandboxEnv: Record<string, string> = {};
+  let gatewayKey = '';
   try {
     await assertMakersProjectCompatible(context, state);
     await ensureProjectDependencies(context, state);
@@ -288,6 +292,16 @@ export async function runDeployPipeline(
       state,
       resolveMakersMasterToken(context),
     );
+    const gateway = await prepareSandboxGatewayEnv(context, state, {
+      conversationId,
+      send,
+      signal: abortSignal,
+    });
+    sandboxEnv = buildSandboxMakersEnv(
+      sandboxToken,
+      state.makersApiRegion,
+    );
+    gatewayKey = gateway.AI_GATEWAY_API_KEY || '';
   } catch (error) {
     await fail(error instanceof Error ? error.message : String(error));
     return;
@@ -304,7 +318,7 @@ export async function runDeployPipeline(
       {
         projectName: resolveMakersProjectName(context, state),
         appDir: state.appDir,
-        env: buildSandboxMakersEnv(sandboxToken, state.makersApiRegion),
+        env: sandboxEnv,
         area: resolveMakersPublishTarget(state.siteDomain || '').area,
       },
       // `send` and not `emit`: this fires every couple of seconds and the row
@@ -324,15 +338,21 @@ export async function runDeployPipeline(
             inputSummary: DEPLOY_ACTIVITY_COMMAND,
             phaseHint: 'link',
             startedAt,
-            outputSummary: redactSecret(tail, sandboxToken),
+            outputSummary: redactSecret(
+              redactSecret(tail, sandboxToken),
+              gatewayKey,
+            ),
           },
         });
       },
     ));
   } catch (error) {
     commandError = redactSecret(
-      error instanceof Error ? error.message : String(error),
-      sandboxToken,
+      redactSecret(
+        error instanceof Error ? error.message : String(error),
+        sandboxToken,
+      ),
+      gatewayKey,
     );
   }
 

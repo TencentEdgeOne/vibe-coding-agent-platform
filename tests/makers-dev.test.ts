@@ -73,6 +73,7 @@ test('makers-dev launch is non-interactive and does not pass a token flag', () =
   const command = buildMakersDevLaunchCommand(MAKERS_DEV_PORT, 'vibe-coding-playground');
   assert.match(command, new RegExp(`edgeone makers dev --port ${MAKERS_DEV_PORT}`));
   assert.match(command, /--skip-env-sync/);
+  assert.match(command, /--skip-ai-gateway-sync/);
   assert.match(command, /--name 'vibe-coding-playground'/);
   assert.doesNotMatch(command, / -t /);
   assert.doesNotMatch(command, /makers deploy/);

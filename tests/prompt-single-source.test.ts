@@ -130,7 +130,7 @@ test('the prompt keeps the sandbox corrections the skills cannot know about', ()
   assert.match(prompt, /Run it directly with the commands tool/);
   assert.match(
     prompt,
-    new RegExp(`edgeone makers dev --port ${MAKERS_DEV_PORT} --skip-env-sync`),
+    new RegExp(`edgeone makers dev --port ${MAKERS_DEV_PORT} --skip-env-sync --skip-ai-gateway-sync`),
   );
   assert.match(prompt, new RegExp(`path adapter on port ${PREVIEW_SERVER_PORT}`));
   assert.match(
@@ -146,6 +146,9 @@ test('the prompt keeps the sandbox corrections the skills cannot know about', ()
   assert.match(prompt, /Do not inspect PATH or installation directories/);
   assert.match(prompt, /host injects a short-lived tenant credential/i);
   assert.ok(prompt.includes(makersProjectName));
+  assert.match(prompt, /Declare AI_GATEWAY_API_KEY= and AI_GATEWAY_BASE_URL=/);
+  assert.match(prompt, /Never write a \.env file yourself/);
+  assert.match(prompt, /writes them to \.env/);
   assert.match(prompt, /Normalize it to end in exactly \/v1/);
   assert.match(
     prompt,

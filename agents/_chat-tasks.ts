@@ -9,6 +9,7 @@ import {
 import type { ChatTask, ChatTaskIntent, ChatTaskStatus, StreamSend } from './_types.ts';
 import { createSSEResponse, sseEvent } from './_shared.ts';
 import { resolveConversationId } from './utils/_request.ts';
+import { cancelGatewayPrompt } from './project/_gateway-prompt.ts';
 
 type TaskEvent = Record<string, unknown>;
 
@@ -37,6 +38,7 @@ const liveTasks = new Map<string, LiveChatTask>();
 export function abortLiveChatTask(conversationId: string) {
   const trimmed = conversationId.trim();
   if (!trimmed) return;
+  cancelGatewayPrompt(trimmed);
   for (const liveTask of liveTasks.values()) {
     if (liveTask.conversationId === trimmed && !liveTask.abortController.signal.aborted) {
       liveTask.abortController.abort();

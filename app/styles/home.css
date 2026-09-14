@@ -1,10 +1,8 @@
 /* ============================================================
    Landing — the first screen. Everything here exists to say
    what this agent does with the platform, not just "type a
-   prompt": the ribbon names the four phases a real run goes
-   through, and the cards below the composer name the platform
-   pieces the generated project is built out of. The two say
-   different things, and neither repeats the other.
+   prompt": the cards below the composer name the platform
+   pieces the generated project is built out of.
    ============================================================ */
 
 /* The landing hero is the one place that may outgrow a short window, so it takes
@@ -201,23 +199,21 @@
 }
 
 /* ---- Capability panel ---------------------------------------------------
-   One cell per phase the ribbon names, in the same order and under the same
-   ordinal, saying what the platform does at each. Laid out the way the
-   product's own solution pages lay out a feature grid: square cells on white,
-   divided by hairlines.
+   One cell per capability, in order, saying what the platform does.
+   Laid out the way the product's own solution pages lay out a feature grid:
+   square cells on white, divided by hairlines.
 
-   Two columns rather than four, even though the ribbon runs four across: a
-   quarter of this width leaves the descriptions too narrow to read, and the
-   ordinals already carry the order that the single row would have carried
+   Two columns for the first pair; the third cell takes the full row because
+   three cells will not share 820px without starving the descriptions, and the
+   ordinals already carry the order that a single row would have carried
    positionally.
 
    This is the one block on the screen that cannot be acted on, so it gives up
    every mark the rest of the page spends on controls — no box of its own per
-   item, no lift, no radius. Four cells of one panel read as a spec sheet; four
-   rounded white cards with a shadow read as four buttons. */
+   item, no lift. Cells of one panel read as a spec sheet; four rounded white
+   cards with a shadow read as buttons.
 
-/* Square, not rounded: a radius would turn the grid back into a card, and this
-   is a reference table. The hairlines do all of the dividing. */
+   The outer radius matches the composer so the two panels sit as a pair. */
 .home-features {
   /* The height of a title row. The icon box sets it, being taller than the
      title's own line box, so that is the figure the ordinal has to match rather
@@ -226,8 +222,10 @@
 
   display: grid;
   margin: 24px 0 0;
+  overflow: hidden;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   border: 1px solid var(--n-150);
+  border-radius: var(--r-lg);
   background: var(--n-0);
   padding: 0;
   list-style: none;
@@ -264,13 +262,20 @@
   line-height: var(--feature-title-line);
 }
 
-/* Hairlines only between cells — the panel draws its own outer edge. */
+/* Hairlines only between cells — the panel draws its own outer edge.
+   The last cell, when it is the leftover of an odd count, owns the full row
+   and must not keep the right rule that odd cells otherwise draw. */
 .home-feature:nth-child(odd) {
   border-right: 1px solid var(--n-150);
 }
 
 .home-feature:nth-child(-n + 2) {
   border-bottom: 1px solid var(--n-150);
+}
+
+.home-feature:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+  border-right: 0;
 }
 
 /* A bare glyph rather than a filled square: the tinted chip was the last thing

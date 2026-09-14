@@ -1,5 +1,6 @@
 import {
   ARCHIVE_EXCLUDED_DIRECTORIES,
+  ARCHIVE_EXCLUDED_FILENAMES,
   DOWNLOAD_ARCHIVE_MAX_BYTES,
 } from '../_constants.ts';
 import type { LegacyProjectSnapshot, ProjectState } from '../_types.ts';
@@ -63,23 +64,29 @@ export async function createProjectArchive(
   const archiveBase = `/tmp/eo-download-${sessionSlug}`;
 
   // Exclude both "dir" and "./dir" forms since zip/tar differ on the "./".
-  const zipExcludes = ARCHIVE_EXCLUDED_DIRECTORIES
-    .flatMap((dir) => [
+  const zipExcludes = [
+    ...ARCHIVE_EXCLUDED_DIRECTORIES.flatMap((dir) => [
       `-x ${shellQuote(`${dir}/*`)} ${shellQuote(dir)}`,
       `-x ${shellQuote(`./${dir}/*`)} ${shellQuote(`./${dir}`)}`,
-    ])
-    .join(' ');
-  const tarExcludes = ARCHIVE_EXCLUDED_DIRECTORIES
-    .map((dir) => `--exclude=${shellQuote(`./${dir}`)} --exclude=${shellQuote(dir)}`)
-    .join(' ');
+    ]),
+    ...ARCHIVE_EXCLUDED_FILENAMES.flatMap((name) => [
+      `-x ${shellQuote(name)}`,
+      `-x ${shellQuote(`./${name}`)}`,
+    ]),
+  ].join(' ');
+  const tarExcludes = [
+    ...ARCHIVE_EXCLUDED_DIRECTORIES.map((dir) => `--exclude=${shellQuote(`./${dir}`)} --exclude=${shellQuote(dir)}`),
+    ...ARCHIVE_EXCLUDED_FILENAMES.map((name) => `--exclude=${shellQuote(`./${name}`)} --exclude=${shellQuote(name)}`),
+  ].join(' ');
   const zipPath = `${archiveBase}.zip`;
   const tarPath = `${archiveBase}.tar.gz`;
 
   // Mirror the excludes so the empty-check reflects what gets archived (else
   // zip exits 12 "nothing to do" when only excluded dirs exist).
-  const findIgnoreExpr = ARCHIVE_EXCLUDED_DIRECTORIES
-    .map((dir) => `! -name ${shellQuote(dir)}`)
-    .join(' ');
+  const findIgnoreExpr = [
+    ...ARCHIVE_EXCLUDED_DIRECTORIES.map((dir) => `! -name ${shellQuote(dir)}`),
+    ...ARCHIVE_EXCLUDED_FILENAMES.map((name) => `! -name ${shellQuote(name)}`),
+  ].join(' ');
 
   // Prefer zip, else tar.gz. Emits a "FORMAT<TAB>SIZE<TAB>PATH" marker line, or
   // "__EMPTY__" when nothing to pack. zip -y stores symlinks as links instead

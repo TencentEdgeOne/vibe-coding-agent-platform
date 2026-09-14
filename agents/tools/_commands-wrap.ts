@@ -3,6 +3,7 @@ import type {
   DeploymentInfo,
   PreviewKind,
   ProjectState,
+  StreamSend,
 } from '../_types.ts';
 import {
   MAKERS_DEV_PORT,
@@ -21,6 +22,7 @@ import { resolveMakersPublishTarget } from '../../shared/publish-target.ts';
 import {
   buildSandboxMakersEnv,
   describeMissingMakersRuntimeToken,
+  prepareSandboxGatewayEnv,
   resolveMakersMasterToken,
   resolveSandboxMakersToken,
 } from '../project/_makers-token.ts';
@@ -63,6 +65,9 @@ import {
 type MakersCommandLifecycle = {
   context: any;
   state: ProjectState;
+  conversationId?: string;
+  send?: StreamSend;
+  signal?: AbortSignal;
   onPreviewReady?: (preview: {
     url?: string;
     sandboxDebugUrl?: string;
@@ -228,7 +233,15 @@ async function prepareMakersCommand(
     lifecycle.state,
     masterToken,
   );
-  const env = buildSandboxMakersEnv(sandboxToken, lifecycle.state.makersApiRegion);
+  const gateway = await prepareSandboxGatewayEnv(lifecycle.context, lifecycle.state, {
+    conversationId: lifecycle.conversationId,
+    send: lifecycle.send,
+    signal: lifecycle.signal,
+  });
+  const env = buildSandboxMakersEnv(
+    sandboxToken,
+    lifecycle.state.makersApiRegion,
+  );
   // Whatever name the model typed is replaced here. It has no way to know
   // which project belongs to this conversation, and a name it invents to dodge
   // a collision would strand the site somewhere nobody can find again.
@@ -251,6 +264,7 @@ async function prepareMakersCommand(
       ),
       kind: 'dev' as const,
       sandboxToken,
+      gatewayKey: gateway.AI_GATEWAY_API_KEY || '',
     };
   }
 
@@ -267,6 +281,7 @@ async function prepareMakersCommand(
     ),
     kind: 'deploy' as const,
     sandboxToken,
+    gatewayKey: gateway.AI_GATEWAY_API_KEY || '',
   };
 }
 
@@ -389,6 +404,7 @@ export function wrapSandboxTools(
         // happens to overlap the CLI credential is never truncated.
         const makersOutput = commandOutputFromToolResult(result);
         result = redactToolResult(result, makers.sandboxToken);
+        result = redactToolResult(result, makers.gatewayKey);
         // The deploy command stops makers dev so the build does not share its
         // output directory. Restart before any of the branches below report,
         // including the failing ones: the preview is how the model inspects

@@ -30,7 +30,7 @@ export function getBlockedProjectWriteReason(path: string): string | null {
 
   const filename = segments[segments.length - 1] || '';
   if (filename === '.env') {
-    return 'runtime environment files must not be generated; use .env.example and context.env';
+    return 'runtime environment files must not be generated; read credentials from context.env';
   }
   if (BLOCKED_PROJECT_WRITE_FILENAMES.has(filename)) {
     return 'package manager lockfiles and system files must not be generated manually';

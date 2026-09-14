@@ -19,8 +19,8 @@ import { readFileFromSandbox } from './_fs.ts';
 
 export type MakersAgentFramework = (typeof SUPPORTED_MAKERS_AGENT_FRAMEWORKS)[number];
 
-/** The keys the makers-agents routes require `.env.example` to declare. */
-export const AGENT_ENV_KEYS = ['AI_GATEWAY_API_KEY', 'AI_GATEWAY_BASE_URL'] as const;
+/** Empty declarations the generated product must ship so the CLI can inject values. */
+export const AGENT_GATEWAY_ENV_KEYS = ['AI_GATEWAY_API_KEY', 'AI_GATEWAY_BASE_URL'] as const;
 
 /**
  * Which framework a declared dependency proves.
@@ -173,25 +173,22 @@ export function withAgentFramework(
 }
 
 /**
- * `.env.example` with the gateway keys declared, or nothing when it already
- * declares them.
+ * `.env.example` with the gateway key and base URL lines added, or nothing
+ * when the file is unreadable or already declares both.
  *
- * Missing keys are appended rather than replacing the file: a project may
- * declare its own keys alongside these, and the lint only asks that these two
- * are present. The test for a key is the lint's own, so this cannot write a
- * file the lint still rejects.
+ * The names are empty declarations. Actual values are collected in the
+ * conversation before preview or deploy and never written here.
  */
 export function withAgentEnvKeys(file: ProjectFileRead): string | undefined {
   if (file.status === 'unreadable') return undefined;
-  const source = file.status === 'present' ? file.content : '';
-  const missing = AGENT_ENV_KEYS.filter(
-    (key) => !new RegExp(`^${key}\\s*=`, 'm').test(source),
+  const existing = file.status === 'present' ? file.content.replace(/\r\n/g, '\n') : '';
+  const missing = AGENT_GATEWAY_ENV_KEYS.filter(
+    (key) => !new RegExp(`^\\s*(?:export\\s+)?${key}\\s*=`, 'm').test(existing),
   );
   if (missing.length === 0) return undefined;
-
-  const declarations = missing.map((key) => `${key}=`).join('\n');
-  if (!source.trim()) return `${declarations}\n`;
-  return `${source.replace(/\n*$/, '')}\n${declarations}\n`;
+  const suffix = `${missing.map((key) => `${key}=`).join('\n')}\n`;
+  if (!existing.trim()) return suffix;
+  return existing.replace(/\n*$/, '\n') + suffix;
 }
 
 /**
@@ -324,10 +321,10 @@ async function readAgentImportLines(
  * Serializes the read-compute-write below, which is not safe to interleave.
  *
  * The model may write several `agents/` files in one message, and each write
- * runs this. Two overlapping runs both read a `.env.example` that is missing a
- * key, both append it, and the second write lands on content the first had
- * already changed. Chaining is enough — the work is short, and a queued run
- * reads what the one before it wrote, which is exactly the ordering it assumes.
+ * runs this. Two overlapping runs both read a `.env.example` that still lacks
+ * a gateway key, both append the same two lines, and the second write lands on
+ * content the first had already changed. Chaining is enough — the work is
+ * short, and a queued run reads what the one before it wrote.
  */
 let declarationQueue: Promise<unknown> = Promise.resolve();
 

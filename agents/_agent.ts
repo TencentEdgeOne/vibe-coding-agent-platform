@@ -40,6 +40,7 @@ import type {
   PreviewKind,
   ProjectState,
   ScaffoldLog,
+  StreamSend,
 } from './_types.ts';
 import {
   detectFatalToolError,
@@ -209,7 +210,7 @@ export async function runCodingAgent(
   // An object rather than a twelfth positional argument: the list above is long
   // enough that a new slot would be easy to fill in the wrong order at one of
   // the two call sites in the chat pipeline.
-  runOptions: { model?: string } = {},
+  runOptions: { model?: string; send?: StreamSend } = {},
 ): Promise<CodingAgentResult> {
   // Prefer AI Gateway for model access, with backward-compatible Anthropic / DeepSeek config.
   const apiKey = pickEnvValue(context, 'AI_GATEWAY_API_KEY')
@@ -338,6 +339,9 @@ export async function runCodingAgent(
       {
         context,
         state,
+        conversationId,
+        send: runOptions.send,
+        signal: abortSignal,
         onPreviewReady: handlePreviewPublished,
         onDeploymentStatus: handleDeploymentStatus,
       },

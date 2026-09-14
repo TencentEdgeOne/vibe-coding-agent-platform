@@ -150,6 +150,23 @@ export function fetchProjectArchive(url: string, conversationId: string) {
   });
 }
 
+export function submitGatewayCredentials(options: {
+  conversationId: string;
+  skip?: boolean;
+  apiKey?: string;
+}) {
+  return fetch('/gateway-credentials', {
+    method: 'POST',
+    headers: conversationHeaders(options.conversationId),
+    body: JSON.stringify({
+      conversation_id: options.conversationId,
+      ...(options.skip ? { skip: true } : {
+        apiKey: options.apiKey || '',
+      }),
+    }),
+  }).then((response) => readJson<{ ok?: boolean; skipped?: boolean; error?: string }>(response));
+}
+
 export function fetchConversationTranscript(conversationId: string) {
   return fetch(`/transcript?conversationId=${encodeURIComponent(conversationId)}`, {
     method: 'GET',

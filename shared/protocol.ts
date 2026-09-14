@@ -182,6 +182,14 @@ export type ChatStreamEvent =
       };
     }
   | { type: 'text_segment'; data?: { uuid?: string; text?: string } }
+  | {
+      type: 'gateway_credentials';
+      data?: {
+        status?: 'needed' | 'resolved';
+        keys?: string[];
+        skipped?: boolean;
+      };
+    }
   | { type: 'error'; error?: string }
   | {
       type: 'log';

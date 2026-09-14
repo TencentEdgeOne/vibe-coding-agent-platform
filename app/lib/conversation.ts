@@ -168,6 +168,16 @@ export function getTemplateDeployUrl(domain: string) {
     : TENCENT_CLOUD_TEMPLATE_DEPLOY_URL;
 }
 
+const EDGEONE_AI_MODELS_DOCS_URL = 'https://pages.edgeone.ai/document/models';
+const TENCENT_CLOUD_MODELS_DOCS_URL = 'https://makers.edgeone.link/document/models';
+
+// Same root-domain split as contact and template-deploy: `edgeone.dev` is the
+// international site, everything else (China `edgeone.cool`, local, unknown) is
+// the China docs host.
+export function getMakersModelsDocsUrl(domain: string) {
+  return domain === 'edgeone.dev' ? EDGEONE_AI_MODELS_DOCS_URL : TENCENT_CLOUD_MODELS_DOCS_URL;
+}
+
 // Decode a base64 string into a Blob. The source archive arrives base64-encoded
 // inside a JSON envelope (the agent proxy only transports text reliably).
 export function base64ToBlob(base64: string, contentType: string): Blob {

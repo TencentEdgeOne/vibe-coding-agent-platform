@@ -43,6 +43,7 @@ import {
   createMessageId,
   extractProjectName,
   getContactUrl,
+  getMakersModelsDocsUrl,
   getOrCreateCachedConversationId,
   getStoredConversationId,
   getTemplateDeployUrl,
@@ -82,6 +83,7 @@ import {
   openResumeStream,
   startChatTask,
   stopChatTask,
+  submitGatewayCredentials,
 } from './workspace-api';
 
 // Covers a panel while its chunk arrives. Only reachable when the warm-up below
@@ -153,6 +155,7 @@ export function WorkspaceScreen() {
   const [language, setLanguage] = useState<Locale>('zh');
   const [contactUrl, setContactUrl] = useState(TENCENT_CLOUD_CONTACT_URL);
   const [templateDeployUrl, setTemplateDeployUrl] = useState(() => getTemplateDeployUrl(''));
+  const [makersModelsDocsUrl, setMakersModelsDocsUrl] = useState(() => getMakersModelsDocsUrl(''));
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -187,6 +190,8 @@ export function WorkspaceScreen() {
   const [workspaceRestoring, setWorkspaceRestoring] = useState(false);
   const [newProjectConfirmOpen, setNewProjectConfirmOpen] = useState(false);
   const [dismissedDeployTurnId, setDismissedDeployTurnId] = useState('');
+  const [gatewayNeeded, setGatewayNeeded] = useState(false);
+  const [gatewayBusy, setGatewayBusy] = useState(false);
   const fileCache = useFileContentCache();
   const [activePreviewUrl, setActivePreviewUrl] = useState('');
   const [activePreviewRevision, setActivePreviewRevision] = useState(0);
@@ -391,6 +396,7 @@ export function WorkspaceScreen() {
     const { domain } = extractProjectName();
     setContactUrl(getContactUrl(domain));
     setTemplateDeployUrl(getTemplateDeployUrl(domain));
+    setMakersModelsDocsUrl(getMakersModelsDocsUrl(domain));
   }, []);
 
   useEffect(() => {
@@ -1021,6 +1027,8 @@ export function WorkspaceScreen() {
       finalContent: string,
       finalStatus: AssistantStatus,
     ) => {
+      setGatewayNeeded(false);
+      setGatewayBusy(false);
       setMessages((current) =>
         current.map((item) =>
           item.id === assistantMessageId
@@ -1146,6 +1154,17 @@ export function WorkspaceScreen() {
         return;
       }
       if (event.type === 'ping') return;
+      if (event.type === 'gateway_credentials') {
+        if (event.data?.status === 'needed') {
+          setGatewayNeeded(true);
+          setGatewayBusy(false);
+        }
+        if (event.data?.status === 'resolved') {
+          setGatewayNeeded(false);
+          setGatewayBusy(false);
+        }
+        return;
+      }
       if (event.type === 'result' && event.data) {
         applyResponse(event.data);
         return;
@@ -1439,6 +1458,8 @@ export function WorkspaceScreen() {
     setMessages(stopped.messages);
     setLoading(false);
     setFilesRefreshing(false);
+    setGatewayNeeded(false);
+    setGatewayBusy(false);
 
     const stoppedTurn = {
       id: activeTurnIdRef.current,
@@ -1578,6 +1599,8 @@ export function WorkspaceScreen() {
     setConversationId(null);
     setMessages([]);
     setDismissedDeployTurnId('');
+    setGatewayNeeded(false);
+    setGatewayBusy(false);
     setLoading(false);
     setPreview(null);
     setDeployment(null);
@@ -1713,6 +1736,37 @@ export function WorkspaceScreen() {
           onDeployOffer={handleDeployProject}
           onDismissDeployOffer={() => {
             if (deployOfferTurnId) setDismissedDeployTurnId(deployOfferTurnId);
+          }}
+          gatewayPrompt={gatewayNeeded ? {
+            title: t.workspace.gatewayPromptTitle,
+            docs: t.workspace.gatewayPromptDocs,
+            docsUrl: makersModelsDocsUrl,
+            apiKey: t.workspace.gatewayPromptApiKey,
+            continue: t.workspace.gatewayPromptContinue,
+            skip: t.workspace.gatewayPromptSkip,
+          } : null}
+          gatewayBusy={gatewayBusy}
+          onGatewaySubmit={(values) => {
+            const cid = conversationIdRef.current || conversationId;
+            if (!cid || gatewayBusy) return;
+            setGatewayBusy(true);
+            void submitGatewayCredentials({
+              conversationId: cid,
+              apiKey: values.apiKey,
+            }).then((result) => {
+              if (!result?.ok) setGatewayBusy(false);
+            }).catch(() => setGatewayBusy(false));
+          }}
+          onGatewaySkip={() => {
+            const cid = conversationIdRef.current || conversationId;
+            if (!cid || gatewayBusy) return;
+            setGatewayBusy(true);
+            void submitGatewayCredentials({
+              conversationId: cid,
+              skip: true,
+            }).then((result) => {
+              if (!result?.ok) setGatewayBusy(false);
+            }).catch(() => setGatewayBusy(false));
           }}
         />}
 

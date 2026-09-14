@@ -16,7 +16,7 @@
       "ref": "makers-agents/references/node-frameworks/deepagents.md",
       "command": "npm install deepagents@1.13.3 @langchain/core@^1.2.9 @langchain/langgraph@^1.4.14 @langchain/langgraph-checkpoint@^1.1.5 @langchain/langgraph-sdk@^1.9.23 @langchain/openai@1.5.8 langchain@^1.5.10 langsmith@^0.9.0 zod@^4.3.6",
       "files": 5,
-      "bytes": 26100,
+      "bytes": 26141,
       "bakedAt": "2026-09-09"
     },
     {
@@ -24,7 +24,7 @@
       "ref": "makers-agents/references/node-frameworks/langgraph.md",
       "command": "npm install @langchain/langgraph@^1.4.14 @langchain/openai@1.5.8 @langchain/core@^1.2.9 zod@^4.3.6",
       "files": 5,
-      "bytes": 17522,
+      "bytes": 17563,
       "bakedAt": "2026-09-09"
     },
     {

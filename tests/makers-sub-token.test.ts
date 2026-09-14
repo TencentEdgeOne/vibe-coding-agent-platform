@@ -5,7 +5,9 @@ import {
   buildSandboxMakersEnv,
   describeMissingMakersRuntimeToken,
   ensureMakersTenantId,
+  prepareSandboxGatewayEnv,
   resolveMakersMasterToken,
+  resolveSandboxGatewayEnv,
   resolveSandboxMakersToken,
 } from '../agents/project/_makers-token.ts';
 import { projectState } from './helpers/fixtures.ts';
@@ -26,7 +28,7 @@ test('sandbox Makers tenant IDs are generated server-side and remain stable', ()
 // PAGES_BLOB_STS_ENV. Left to the sandbox CLI's compiled default, that is what
 // makes a guestbook read fine on the live site and fail in preview with
 // "credential exchange failed (code=-1): Invalid credential".
-test('the sandbox is handed the credential and the storage environment, nothing else', () => {
+test('the sandbox is handed the credential and the storage environment', () => {
   assert.deepEqual(buildSandboxMakersEnv('tenant-token'), {
     PAGES_SOURCE: 'skills',
     EDGEONE_PAGES_API_TOKEN: 'tenant-token',
@@ -42,6 +44,46 @@ test('the sandbox is handed the credential and the storage environment, nothing 
     PAGES_SOURCE: 'skills',
     PAGES_BLOB_STS_ENV: 'prod',
   });
+});
+
+test('parent runtime gateway values are not written into the generated tree', async () => {
+  const files = new Map<string, string>([
+    ['projects/demo/app/.env.example', 'APP_TITLE=Demo\nAI_GATEWAY_API_KEY=\nAI_GATEWAY_BASE_URL=\n'],
+  ]);
+  const context = {
+    env: {
+      AI_GATEWAY_API_KEY: 'parent-key',
+      AI_GATEWAY_BASE_URL: 'https://ai-gateway.edgeone.link/v1',
+    },
+    sandbox: {
+      files: {
+        read: async (target: string) => {
+          const content = files.get(target);
+          if (content == null) throw new Error('File does not exist.');
+          return content;
+        },
+        write: async (target: string, content: string) => {
+          files.set(target, content);
+        },
+        remove: async (target: string) => {
+          files.delete(target);
+        },
+      },
+    },
+  };
+
+  assert.deepEqual(resolveSandboxGatewayEnv(context), {
+    AI_GATEWAY_API_KEY: 'parent-key',
+    AI_GATEWAY_BASE_URL: 'https://ai-gateway.edgeone.link/v1',
+  });
+
+  const gateway = await prepareSandboxGatewayEnv(context, projectState());
+  assert.deepEqual(gateway, {});
+  assert.equal(
+    files.get('projects/demo/app/.env.example'),
+    'APP_TITLE=Demo\nAI_GATEWAY_API_KEY=\nAI_GATEWAY_BASE_URL=\n',
+  );
+  assert.equal(files.has('projects/demo/app/.env'), false);
 });
 
 test('the runtime credential is read from API_TOKEN', () => {
@@ -152,9 +194,14 @@ test('direct CLI calls route the runtime credential through one resolver', async
   // deploy calls are intercepted on the generic sandbox commands tool. Neither
   // may reach past the resolver for a credential of its own.
   assert.match(previewSource, /resolveSandboxMakersToken\(state, masterToken\)/);
-  assert.match(previewSource, /env: buildSandboxMakersEnv\(sandboxToken, state\.makersApiRegion\)/);
+  assert.match(previewSource, /prepareSandboxGatewayEnv\(context, state/);
+  assert.match(previewSource, /buildSandboxMakersEnv\(sandboxToken, state\.makersApiRegion\)/);
+  assert.doesNotMatch(previewSource, /buildSandboxMakersEnv\([^)]*gateway/);
   assert.match(commandSource, /resolveSandboxMakersToken\(/);
-  assert.match(commandSource, /buildSandboxMakersEnv\(sandboxToken, lifecycle\.state\.makersApiRegion\)/);
+  assert.match(commandSource, /prepareSandboxGatewayEnv\(lifecycle\.context, lifecycle\.state/);
+  assert.match(commandSource, /buildSandboxMakersEnv\(/);
+  assert.doesNotMatch(commandSource, /buildSandboxMakersEnv\([^)]*gateway/);
+  assert.doesNotMatch(tokenSource, /\.\.\.gateway/);
   for (const source of [previewSource, commandSource]) {
     assert.doesNotMatch(source, /issueSandboxMakersSubToken/);
   }

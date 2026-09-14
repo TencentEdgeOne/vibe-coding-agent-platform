@@ -162,10 +162,11 @@ export function buildWriteProjectFileTool(
         }
         await context.sandbox.files.write(`${state.appDir}/${relPath}`, file.content);
         await onResult?.({ written: relPath, content: file.content });
-        // An agents/ project needs two platform declarations that nothing here
-        // has to decide, and meeting them at the preview gate instead costs the
-        // user a failed attempt. Best effort: the lint remains the authority, so
-        // a failure here costs the old behaviour and nothing more.
+        // An agents/ project needs agents.framework and .env.example declared,
+        // and meeting that at the preview gate instead costs the user a failed
+        // attempt. Values for those keys are collected in the conversation, not
+        // written here. Best effort: the lint remains the authority, so a
+        // failure here costs the old behaviour and nothing more.
         let adapterAdded = false;
         const declared = relPath.startsWith('agents/')
           ? await ensureMakersAgentDeclarations(context, state).catch(() => [])

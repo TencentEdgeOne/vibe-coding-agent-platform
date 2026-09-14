@@ -368,7 +368,7 @@ export function previewRestoredUrl(
 }
 
 export function buildMakersDevLaunchCommand(port: number, projectName: string) {
-  return `edgeone makers dev --port ${port} --skip-env-sync --name ${shellQuote(projectName)}`;
+  return `edgeone makers dev --port ${port} --skip-env-sync --skip-ai-gateway-sync --name ${shellQuote(projectName)}`;
 }
 
 export function buildPreviewProxyScript(

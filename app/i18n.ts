@@ -4,17 +4,15 @@ export type Locale = 'zh' | 'en';
 
 export const LANGUAGE_STORAGE_KEY = 'vibe-coding-platform-language';
 
-export type HomeFeatureIcon = 'agent' | 'functions' | 'cli' | 'edge';
+export type HomeFeatureIcon = 'skills' | 'functions' | 'agent';
 
-// One phase of a run, described by what the generated project gets out of the
-// platform during it rather than by what the platform offers. The distinction is
-// the whole point of these cards: a capability list belongs on a product site,
-// but the question being asked here is what comes back from the prompt below.
+// One capability the generated project gets out of the platform, described by
+// what comes back from the prompt rather than by what the platform offers. The
+// distinction is the whole point of these cards: a capability list belongs on a
+// product site, but the question being asked here is what the run produces.
 //
-// The four are ordered, and `home-stage.tsx` numbers them in array order. A
-// phase ribbon above the title used to name them separately; it said the same
-// four things the subtitle says in prose, so these are now the only place they
-// are named.
+// The three are ordered, and `home-stage.tsx` numbers them in array order. The
+// third sits on its own row because three cells will not share 820px.
 type HomeFeature = {
   readonly icon: HomeFeatureIcon;
   readonly title: string;
@@ -57,10 +55,6 @@ export const TRANSLATIONS = {
       // specification they had never read.
       examples: [
         {
-          label: '做一个 AI 聊天助手',
-          prompt: '做一个 AI 聊天助手',
-        },
-        {
           label: '做一个持久化留言板',
           prompt: '做一个持久化留言板',
         },
@@ -75,18 +69,20 @@ export const TRANSLATIONS = {
           label: '做一个 Astro 博客站点',
           prompt: '做一个 Astro 博客站点',
         },
+        {
+          label: '做一个 AI 聊天助手',
+          prompt: '做一个 AI 聊天助手',
+        },
       ] as readonly HomeExample[],
       // Each card names a capability of the platform, then says what this
       // template does with it — because the platform having a capability and a
       // generated project using it correctly are two different claims, and only
-      // the second one is this page's to make. Written the other way round, the
-      // four cards read as an EdgeOne service list that would be equally true
-      // with no template involved at all.
+      // the second one is this page's to make.
       features: [
         {
-          icon: 'agent',
-          title: '多模型驱动生成',
-          desc: '通过 Makers Models 统一接入多家供应商，结合平台 Skills 加载最新规范，生成的代码直接符合平台要求。',
+          icon: 'skills',
+          title: '平台 Skills 集成',
+          desc: '深度集成平台 Skills 能力，适用于根据自然语言快速生成 SSR、ISR、动态接口等全栈 Web 应用及 AI Agent。',
         },
         {
           icon: 'functions',
@@ -94,14 +90,9 @@ export const TRANSLATIONS = {
           desc: '内置主流框架的平台适配，适配器、产物目录与构建命令自动就绪。部署前自动执行兼容性检查，失败时尝试自动修复。',
         },
         {
-          icon: 'cli',
-          title: '沙箱实时预览',
-          desc: '沙箱内置 EdgeOne CLI，右侧面板实时展示与线上一致的生产预览，Cloud Functions、Blob 等平台能力直接可用。',
-        },
-        {
-          icon: 'edge',
-          title: '一键边缘部署',
-          desc: '点击部署按钮即可发布到 EdgeOne 全球边缘网络，全程自动完成构建与发布，无需手动操作 CLI。',
+          icon: 'agent',
+          title: '多形态应用生成',
+          desc: '支持生成基于主流全栈框架、适配 ISR 等多种渲染模式的 Web 应用，以及具备会话管理与工具调用能力的 Agent 应用。',
         },
       ] as readonly HomeFeature[],
     },
@@ -171,6 +162,11 @@ export const TRANSLATIONS = {
       deployOfferAgain: '项目有更新，要重新部署吗？',
       deployOfferAction: '部署',
       deployOfferDismiss: '暂不',
+      gatewayPromptTitle: '集成 Models 调用大模型',
+      gatewayPromptDocs: '如何获取',
+      gatewayPromptApiKey: 'API Key',
+      gatewayPromptContinue: '继续',
+      gatewayPromptSkip: '跳过',
       preview: '预览',
       code: '代码',
       refreshPreview: '刷新预览',
@@ -231,7 +227,7 @@ export const TRANSLATIONS = {
   },
   en: {
     languageToggleAria: '切换语言为中文',
-    brandTag: 'Platform edition',
+    brandTag: 'Platform',
     deployLabel: 'Deploy project',
     templateDeployLabel: 'Deploy template',
     templateSourceLabel: 'Template source',
@@ -247,10 +243,6 @@ export const TRANSLATIONS = {
       fastBuild: 'Fast build',
       examples: [
         {
-          label: 'Build an AI chat assistant',
-          prompt: 'Build an AI chat assistant',
-        },
-        {
           label: 'Build a persistent guestbook',
           prompt: 'Build a persistent guestbook',
         },
@@ -262,12 +254,16 @@ export const TRANSLATIONS = {
           label: 'Build an Astro blog site',
           prompt: 'Build an Astro blog site',
         },
+        {
+          label: 'Build an AI chat assistant',
+          prompt: 'Build an AI chat assistant',
+        },
       ] as readonly HomeExample[],
       features: [
         {
-          icon: 'agent',
-          title: 'Multi-model generation',
-          desc: 'Access multiple providers through Makers Models with one API Key. Platform Skills load the current spec, so generated code meets it out of the box.',
+          icon: 'skills',
+          title: 'Platform Skills',
+          desc: 'Deep integration of platform Skills — generate full-stack web apps and AI Agents from natural language, covering SSR, ISR, and dynamic APIs.',
         },
         {
           icon: 'functions',
@@ -275,14 +271,9 @@ export const TRANSLATIONS = {
           desc: 'Built-in adaptation for major frameworks — adapters, output dirs and build commands auto-configured. Compatibility checks and auto-fix run before deploy.',
         },
         {
-          icon: 'cli',
-          title: 'Live sandbox preview',
-          desc: 'The sandbox ships the EdgeOne CLI with a production-grade preview panel. Cloud Functions, Blob and other platform capabilities work out of the box.',
-        },
-        {
-          icon: 'edge',
-          title: 'One-click edge deploy',
-          desc: 'Hit the deploy button to publish to the EdgeOne global edge network. Build and release are fully automated — no manual CLI needed.',
+          icon: 'agent',
+          title: 'Multi-form generation',
+          desc: 'Generate full-stack web apps on major frameworks with ISR and other rendering modes, plus Agent apps with session management and tool calling.',
         },
       ] as readonly HomeFeature[],
     },
@@ -342,6 +333,11 @@ export const TRANSLATIONS = {
       deployOfferAgain: 'The project has updates. Deploy again?',
       deployOfferAction: 'Deploy',
       deployOfferDismiss: 'Not now',
+      gatewayPromptTitle: 'Integrate Models to call large models',
+      gatewayPromptDocs: 'How to get them',
+      gatewayPromptApiKey: 'API Key',
+      gatewayPromptContinue: 'Continue',
+      gatewayPromptSkip: 'Skip',
       preview: 'Preview',
       code: 'Code',
       refreshPreview: 'Refresh preview',

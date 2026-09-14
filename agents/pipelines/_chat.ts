@@ -257,7 +257,7 @@ export async function runChatPipeline(
     handlePreviewReady,
     handleDeploymentStatus,
     abortSignal,
-    { model: options.model },
+    { model: options.model, send },
   );
 
   if (modelResult.stopped || abortSignal?.aborted) {
@@ -480,7 +480,7 @@ export async function runChatPipeline(
       abortSignal,
       // Repairing on a different model than the one that wrote the code would
       // make a failed build hard to attribute to either.
-      { model: options.model },
+      { model: options.model, send },
     );
     if (autoFixResult.stopped || abortSignal?.aborted) {
       const stoppedReply = STOPPED_TURN_REPLY[replyLocale];

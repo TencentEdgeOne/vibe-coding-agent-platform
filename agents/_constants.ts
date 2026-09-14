@@ -36,6 +36,11 @@ export const DOWNLOAD_ARCHIVE_MAX_BYTES = 60 * 1024 * 1024;
 
 // Directories excluded from the downloadable source archive: build output,
 // caches, and dependency/VCS folders that are large and regenerable.
+export const ARCHIVE_EXCLUDED_FILENAMES = [
+  // Host-injected gateway credentials. The generated product must not ship them.
+  '.env',
+];
+
 export const ARCHIVE_EXCLUDED_DIRECTORIES = [
   'node_modules',
   '.next',
