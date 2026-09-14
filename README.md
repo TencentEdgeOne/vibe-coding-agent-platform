@@ -6,25 +6,6 @@
 
 [![Deploy to EdgeOne Makers](https://cdnstatic.tencentcs.com/edgeone/pages/deploy.svg)](https://edgeone.ai/makers/new?template=vibe-coding-agent-platform&from=within&fromAgent=1&agentLang=typescript)
 
-## Architecture
-
-Makers Agents orchestrate models, Skills, session management, and sandbox tools. Generated projects can include Agents, full-stack frameworks, Cloud Functions, and storage. Live preview and one-click deploy both run the EdgeOne CLI inside the sandbox.
-
-```mermaid
-flowchart LR
-    A["Submit request<br/>Describe the page and features in chat"] --> B["Plan the task<br/>Load Makers Skills and generate code"]
-    B --> C["Generate in isolation<br/>Create the project and write files in the sandbox"]
-    C --> D["Compatibility check<br/>Validate directories, config, and APIs<br/>Run a build"]
-    D --> E{Passed?}
-    E -- No --> F["Auto-fix<br/>Agent patches the project from the errors"]
-    F --> D
-    E -- Yes --> G["Live preview<br/>Start the app with the EdgeOne CLI in the sandbox"]
-    G --> H{Looks good?}
-    H -- Keep editing --> B
-    H -- Publish --> I["One-click deploy<br/>Runtime mints a tenant token; the sandbox CLI deploys"]
-    I --> J["Go live<br/>Full-stack web app or Agent app"]
-```
-
 ## Quick start
 
 1. Create an [API Token](https://pages.edgeone.ai/document/api-token).

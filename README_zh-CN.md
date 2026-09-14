@@ -6,25 +6,6 @@
 
 [![部署到 EdgeOne Makers](https://cdnstatic.tencentcs.com/edgeone/pages/deploy.svg)](https://console.cloud.tencent.com/edgeone/makers/new?template=vibe-coding-agent-platform&from=within&fromAgent=1&agentLang=typescript)
 
-## 整体架构
-
-该架构由 Makers Agents 统一编排模型、Skills、会话管理与沙箱工具，在隔离环境中生成集成 Agent、全栈框架、云函数及存储等 Makers 原生能力的完整应用，并通过沙箱内的 EdgeOne CLI 完成实时预览和一键部署。
-
-```mermaid
-flowchart LR
-    A["需求提交<br/>用户通过对话描述页面和功能要求"] --> B["任务规划<br/>集成 Makers Skills 加载平台规范，调用大模型生成代码"]
-    B --> C["隔离生成<br/>Agent 在沙箱中创建工程并写入代码"]
-    C --> D["兼容性校验<br/>检查目录、配置与 API<br/>执行构建验证"]
-    D --> E{校验通过？}
-    E -- 否 --> F["自动修复<br/>Agent 根据错误信息修改项目"]
-    F --> D
-    E -- 是 --> G["实时预览<br/>在沙箱内调用 EdgeOne CLI 启动开发环境"]
-    G --> H{用户确认效果？}
-    H -- 继续修改 --> B
-    H -- 确认发布 --> I["一键部署<br/>运行时签发租户 Token，沙箱调用 CLI 进行部署"]
-    I --> J["应用上线<br/>全栈 Web 应用及 Agent 应用"]
-```
-
 ## 快速开始
 
 1. 创建并获取 [API Token](https://cloud.tencent.com/document/product/1552/127422)。
