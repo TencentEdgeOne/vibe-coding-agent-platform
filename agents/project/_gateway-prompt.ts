@@ -264,7 +264,7 @@ export function buildRequestGatewayCredentialsTool(options: {
               needed: true,
               configured: false,
               skipped: true,
-              instruction: 'The user already skipped the API key. Continue preview or deploy without writing .env.',
+              instruction: 'The user already skipped the API key. Continue preview or deploy without writing .env. A missing key is not a preview or deploy failure.',
             }),
           }],
         };

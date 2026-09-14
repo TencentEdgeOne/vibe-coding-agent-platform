@@ -27,6 +27,7 @@ import {
   isEdgeoneCliUnavailable,
 } from '../../shared/tool-phase.ts';
 import { resolveConversationId } from '../utils/_request.ts';
+import { sandboxGatewayKeyIsSet } from './_gateway-prompt.ts';
 import { runCommandCapturingExit, runSandboxCommand } from './_commands.ts';
 import { assertMakersProjectCompatible } from './_makers-compat.ts';
 import { resolveMakersProjectName } from './_makers-deploy.ts';
@@ -263,7 +264,12 @@ async function assertGeneratedRoutesReady(context: any, state: ProjectState) {
   if (functionRoutes.length === 0 && !agentRoutes.has('/chat')) return;
 
   await assertGeneratedApiRoutesReady(context, state, functionRoutes);
-  await assertGeneratedAgentChatReady(context, state, agentRoutes);
+  // The /chat probe is a real model call. After a skip there is no key, so
+  // the generated agent answers with an SSE error and preview would be blocked
+  // for a decision the user already made. The page still has to come up.
+  if (await sandboxGatewayKeyIsSet(context, state)) {
+    await assertGeneratedAgentChatReady(context, state, agentRoutes);
+  }
 }
 
 /** The probeable routes of both kinds, read off one combined listing. */

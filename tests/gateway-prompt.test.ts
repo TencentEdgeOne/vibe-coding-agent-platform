@@ -184,6 +184,18 @@ test('request_gateway_credentials asks once and does not wait', async () => {
     ? String(readyResult.content[0].text)
     : '';
   assert.match(readyText, /configured": true/);
+
+  const skippedState = projectState('projects/demo', { gatewaySkipped: true });
+  const skippedTool = buildRequestGatewayCredentialsTool({
+    context,
+    state: skippedState,
+  });
+  const skippedResult = await skippedTool.handler({}, {});
+  const skippedText = skippedResult.content?.[0] && 'text' in skippedResult.content[0]
+    ? String(skippedResult.content[0].text)
+    : '';
+  assert.match(skippedText, /skipped": true/);
+  assert.match(skippedText, /not a preview or deploy failure/);
   assert.deepEqual(
     await readProjectGatewayEnv(configured.context, projectState()),
     {
@@ -255,6 +267,7 @@ test('a turn waiting for the API key is completed, not a red error', async () =>
   assert.match(chat, /gatewayNeeded: true/);
   assert.match(chat, /ok: true,\s*\n\s*reply: pauseReply/);
   assert.match(prompt, /do not say the preview is ready/);
+  assert.match(prompt, /preview and deploy must still run/);
 });
 
 test('the host writes .env from a chat sentence, not only from the card', async () => {

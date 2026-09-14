@@ -71,6 +71,14 @@ test('a turn that stopped to ask a question is not a preview that failed', () =>
   assert.equal(outcome.reply, QUESTION_TURN);
 });
 
+test('skipping a Models API key still offers preview and deploy', () => {
+  assert.equal(
+    GATEWAY_CREDENTIALS_USER_REPLY.zh,
+    '项目已经写好。要调用大模型请在下方输入 Models API Key；跳过也可以先预览和部署。',
+  );
+  assert.match(GATEWAY_CREDENTIALS_USER_REPLY.en, /skip to preview and deploy first/);
+});
+
 test('waiting for an API key is not a preview that failed', () => {
   const outcome = resolveFinishedTurn({
     filesWritten: true,

@@ -139,9 +139,10 @@ export function resolveSandboxGatewayEnv(context: any): Record<string, string> {
 /**
  * Read gateway values the user already wrote into the project's `.env`.
  *
- * `--skip-ai-gateway-sync` keeps the CLI from fetching a key of its own; it
- * then loads whatever that file holds. Asking for a missing key is the
- * agent's turn, not this helper's.
+ * `--skip-ai-gateway-sync` keeps the CLI from fetching a key of its own and
+ * from binding cloud credentials; it then loads whatever that file holds.
+ * Asking for a missing key is the agent's turn, not this helper's. A skip
+ * must still leave preview and deploy able to run.
  */
 export async function prepareSandboxGatewayEnv(
   context: any,

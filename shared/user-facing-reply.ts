@@ -35,8 +35,8 @@ export const STOPPED_TURN_REPLY: Readonly<Record<ReplyLocale, string>> = {
  * not up, and that must not read as a failed build.
  */
 export const GATEWAY_CREDENTIALS_USER_REPLY: Readonly<Record<ReplyLocale, string>> = {
-  zh: '项目已经写好。预览和部署需要 Models API Key，请在下方输入，或点击跳过。',
-  en: 'The project is ready. Preview and deploy need a Models API key — enter it below, or skip.',
+  zh: '项目已经写好。要调用大模型请在下方输入 Models API Key；跳过也可以先预览和部署。',
+  en: 'The project is ready. Enter a Models API key below to call models, or skip to preview and deploy first.',
 };
 
 export function compactUserFacingReply(text: string, fallback: string) {

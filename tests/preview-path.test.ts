@@ -188,6 +188,10 @@ test('agent chat previews are smoke-tested before being published', async () => 
   // reply to assert on.
   assert.match(preview, /preview-smoke-\$\{Date\.now\(\)/);
   assert.doesNotMatch(preview, /makers-conversation-id: preview-smoke-test/);
+  // The probe is a real model call. After skip there is no key, so preview
+  // must still publish instead of treating the generated SSE error as a
+  // preview failure.
+  assert.match(preview, /if \(await sandboxGatewayKeyIsSet\(context, state\)\) \{\s*await assertGeneratedAgentChatReady/);
 });
 
 function startStubChatServer(handler: http.RequestListener) {
