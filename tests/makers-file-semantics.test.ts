@@ -42,6 +42,7 @@ test('maps Makers function and agent files to public routes', () => {
   assert.equal(file('cloud-functions/api.go')?.route, '/api/*');
   assert.equal(file('edge-functions/api/hello.js')?.route, '/api/hello');
   assert.equal(file('edge-functions/index.js')?.route, '/');
+  assert.equal(file('edge-functions/models.ts')?.route, '/models');
 });
 
 test('does not mislabel helpers, configs, or ordinary frontend files as routes', () => {

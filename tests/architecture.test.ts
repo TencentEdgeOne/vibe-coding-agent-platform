@@ -24,6 +24,17 @@ test('frontend never imports the agent runtime', async () => {
   }
 });
 
+test('edge functions never import the agent runtime', async () => {
+  for (const file of await sourceFiles('edge-functions')) {
+    const source = await readFile(file, 'utf8');
+    assert.doesNotMatch(
+      source,
+      /(?:from\s+|import\s*)['"][^'"]*agents\//,
+      `${file} crosses the edge-functions → agents boundary; move the contract to shared/`,
+    );
+  }
+});
+
 test('shared modules remain runtime agnostic', async () => {
   for (const file of await sourceFiles('shared')) {
     const source = await readFile(file, 'utf8');

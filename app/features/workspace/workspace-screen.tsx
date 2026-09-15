@@ -419,12 +419,7 @@ export function WorkspaceScreen() {
 
   useEffect(() => {
     const controller = new AbortController();
-    // The runtime turns away any agent route without a conversation, but this
-    // one answers from deployment config and ignores it. On the home screen
-    // there is no conversation yet, and caching one to get past the gate would
-    // send the next refresh into restoring something never written.
-    const routingId = getStoredConversationId() || createConversationId();
-    void fetchModelCatalog(routingId, controller.signal).then((catalog) => {
+    void fetchModelCatalog(controller.signal).then((catalog) => {
       if (controller.signal.aborted || !catalog?.ok || !Array.isArray(catalog.models)) return;
       setModels(catalog.models);
       // Only seeds the selection. A conversation being resumed overwrites this

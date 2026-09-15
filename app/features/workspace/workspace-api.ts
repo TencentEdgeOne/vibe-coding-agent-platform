@@ -58,13 +58,11 @@ export function fetchResumePreview(conversationId: string) {
  * assembled from server environment the browser cannot read, and the server
  * validates against the same list, so building one here could only drift.
  *
- * Takes a conversation ID because the runtime rejects every agent route without
- * one, not because the answer depends on the conversation — it does not.
+ * An edge function, so it does not need a conversation the way agent routes do.
  */
-export function fetchModelCatalog(conversationId: string, signal?: AbortSignal) {
+export function fetchModelCatalog(signal?: AbortSignal) {
   return fetch('/models', {
     method: 'GET',
-    headers: conversationHeaders(conversationId),
     signal,
   })
     .then((response) => readJson<{

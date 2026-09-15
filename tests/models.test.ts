@@ -6,13 +6,13 @@ import {
   DEFAULT_MODEL,
   buildModelCatalog,
   parseExtraModels,
+  resolveConfiguredModel,
+  resolveModelCatalog,
   resolveModelLabel,
   resolveSelectedModel,
 } from '../shared/models.ts';
 import {
   describeModelRun,
-  resolveConfiguredModel,
-  resolveModelCatalog,
   resolveRequestedModel,
   resolveRunningModelLabel,
 } from '../agents/_models.ts';

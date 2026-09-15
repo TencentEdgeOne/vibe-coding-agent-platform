@@ -6,7 +6,8 @@
   },
   "include": [
     "agents/**/*.ts",
-    "shared/**/*.ts"
+    "shared/**/*.ts",
+    "edge-functions/**/*.ts"
   ],
   "exclude": [
     "node_modules",

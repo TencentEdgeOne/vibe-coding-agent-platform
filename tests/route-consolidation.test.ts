@@ -2,6 +2,20 @@ import assert from 'node:assert/strict';
 import { access, readFile } from 'node:fs/promises';
 import test from 'node:test';
 
+test('the model menu is an edge function, not an agent route', async () => {
+  const route = await readFile('edge-functions/models.ts', 'utf8');
+  const client = await readFile('app/features/workspace/workspace-api.ts', 'utf8');
+  const screen = await readFile('app/features/workspace/workspace-screen.tsx', 'utf8');
+
+  assert.match(route, /onRequestGet/);
+  assert.match(route, /resolveModelCatalog/);
+  assert.match(client, /fetch\('\/models'/);
+  assert.doesNotMatch(client, /function fetchModelCatalog\(conversationId/);
+  assert.match(screen, /fetchModelCatalog\(controller\.signal\)/);
+  assert.doesNotMatch(screen, /fetchModelCatalog\(routingId/);
+  await assert.rejects(access('agents/models.ts'));
+});
+
 test('chat uses one route for direct POST streaming and GET reconnect', async () => {
   const route = await readFile('agents/chat.ts', 'utf8');
   const client = await readFile('app/features/workspace/workspace-api.ts', 'utf8');
