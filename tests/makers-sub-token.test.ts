@@ -199,7 +199,10 @@ test('direct CLI calls route the runtime credential through one resolver', async
   assert.doesNotMatch(previewSource, /buildSandboxMakersEnv\([^)]*gateway/);
   assert.match(commandSource, /resolveSandboxMakersToken\(/);
   assert.match(commandSource, /prepareSandboxGatewayEnv\(lifecycle\.context, lifecycle\.state\)/);
-  assert.match(commandSource, /syncSandboxEnvToMakersProject/);
+  assert.match(
+    commandSource,
+    /syncSandboxEnvToMakersProject\(\s*lifecycle\.context,\s*lifecycle\.state,\s*masterToken,/,
+  );
   assert.match(commandSource, /pauseForGatewayCredentialsIfNeeded/);
   assert.match(commandSource, /buildSandboxMakersEnv\(/);
   assert.doesNotMatch(commandSource, /buildSandboxMakersEnv\([^)]*gateway/);

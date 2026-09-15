@@ -684,7 +684,7 @@ test('deploy copies the sandbox .env onto the Makers project', async () => {
       },
     },
     projectState(),
-    'tenant',
+    'master',
     'vibe-coding-abc',
     undefined,
     {
@@ -720,7 +720,7 @@ test('deploy does not copy an empty or missing .env', async () => {
       },
     },
     projectState(),
-    'tenant',
+    'master',
     'vibe-coding-abc',
     undefined,
     {
@@ -747,7 +747,7 @@ test('deploy fails when the Makers project cannot take the .env', async () => {
         },
       },
       projectState(),
-      'tenant',
+      'master',
       'vibe-coding-abc',
       undefined,
       {
@@ -761,7 +761,7 @@ test('deploy fails when the Makers project cannot take the .env', async () => {
   );
 });
 
-test('deploy does not copy .env when there is no credential', async () => {
+test('deploy does not copy .env when there is no master token', async () => {
   let listed = 0;
   await syncSandboxEnvToMakersProject(
     {
@@ -786,6 +786,34 @@ test('deploy does not copy .env when there is no credential', async () => {
     },
   );
   assert.equal(listed, 0);
+});
+
+test('deploy copies .env with the runtime master token, not the sandbox tenant token', async () => {
+  const [deploy, wrap, helper] = await Promise.all([
+    readFile('agents/pipelines/_deploy.ts', 'utf8'),
+    readFile('agents/tools/_commands-wrap.ts', 'utf8'),
+    readFile('agents/project/_makers-deploy.ts', 'utf8'),
+  ]);
+
+  assert.match(helper, /masterToken: string/);
+  assert.match(
+    deploy,
+    /syncSandboxEnvToMakersProject\(\s*context,\s*state,\s*masterToken,/,
+  );
+  assert.match(
+    wrap,
+    /syncSandboxEnvToMakersProject\(\s*lifecycle\.context,\s*lifecycle\.state,\s*masterToken,/,
+  );
+  assert.doesNotMatch(
+    deploy,
+    /syncSandboxEnvToMakersProject\(\s*context,\s*state,\s*sandboxToken,/,
+  );
+  assert.doesNotMatch(
+    wrap,
+    /syncSandboxEnvToMakersProject\(\s*lifecycle\.context,\s*lifecycle\.state,\s*sandboxToken,/,
+  );
+  assert.match(deploy, /ensureMakersPublishProject\(\s*sandboxToken,/);
+  assert.match(wrap, /ensureMakersPublishProject\(\s*sandboxToken,/);
 });
 
 test('uses the sandbox-provided CLI without installing or prewarming it', async () => {

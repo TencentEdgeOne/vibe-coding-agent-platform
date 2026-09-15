@@ -86,10 +86,11 @@ function unquoteEnvValue(value: string) {
 /**
  * Local `.env` assignments that belong on the live Makers project.
  *
- * Tenant tokens can write project env (`ModifyPagesProjectEnvs`) even though
- * they cannot create or read an AI Gateway credential. Preview already loads
- * this file; deploy has to copy it, because `--skip-ai-gateway-sync` skips the
- * bind that would otherwise put a key into `context.env` on the live site.
+ * Preview already loads this file. Deploy has to copy it with the runtime
+ * master token: `--skip-ai-gateway-sync` skips the bind that would otherwise
+ * put a key into `context.env` on the live site, and tenant tokens are
+ * rejected on `DescribePagesProjectEnvs` / `ModifyPagesProjectEnvs` (error
+ * 107, "Action has not found").
  */
 export function parsePublishableDotEnv(content: string) {
   const values: Record<string, string> = {};
@@ -166,25 +167,29 @@ export async function ensureMakersPublishProject(
 /**
  * Copy the sandbox project's `.env` onto the conversation's Makers project
  * before `makers deploy`. The CLI still skips AI Gateway bind — tenant tokens
- * fail that call — but the same token can write these as ordinary env vars,
- * which is what generated agents read from `context.env` after publish.
+ * fail that call — so this writes ordinary env vars with the runtime master
+ * token, which is what generated agents read from `context.env` after publish.
+ *
+ * Listing also uses the master token: the conversation's project was created
+ * under this account, and a tenant token cannot call the env APIs that
+ * `setEnvs` depends on.
  */
 export async function syncSandboxEnvToMakersProject(
   context: any,
   state: ProjectState,
-  token: string,
+  masterToken: string,
   projectName: string,
   region?: ProjectState['makersApiRegion'],
   client?: MakersProjectEnvClient,
 ) {
-  if (!token || !projectName) return;
+  if (!masterToken || !projectName) return;
 
   const envVars = Object.entries(parsePublishableDotEnv(
     await readSandboxDotEnv(context, state),
   )).map(([key, value]) => ({ key, value }));
   if (envVars.length === 0) return;
 
-  const projects = (client ?? makersClient(token, region)).projects;
+  const projects = (client ?? makersClient(masterToken, region)).projects;
   let projectId = '';
   try {
     const listed = await projects.list({ name: projectName, pageSize: 10 });

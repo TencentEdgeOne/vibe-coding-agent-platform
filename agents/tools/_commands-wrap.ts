@@ -280,7 +280,7 @@ async function prepareMakersCommand(
   await syncSandboxEnvToMakersProject(
     lifecycle.context,
     lifecycle.state,
-    sandboxToken,
+    masterToken,
     projectName,
     lifecycle.state.makersApiRegion,
   );

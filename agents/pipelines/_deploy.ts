@@ -326,9 +326,10 @@ export async function runDeployPipeline(
   try {
     await assertMakersProjectCompatible(context, state);
     await ensureProjectDependencies(context, state);
+    const masterToken = resolveMakersMasterToken(context);
     sandboxToken = await resolveSandboxMakersToken(
       state,
-      resolveMakersMasterToken(context),
+      masterToken,
     );
     await ensureMakersPublishProject(
       sandboxToken,
@@ -339,7 +340,7 @@ export async function runDeployPipeline(
     await syncSandboxEnvToMakersProject(
       context,
       state,
-      sandboxToken,
+      masterToken,
       resolveMakersProjectName(context, state),
       state.makersApiRegion,
     );
