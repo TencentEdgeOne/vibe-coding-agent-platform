@@ -154,13 +154,3 @@ export function fetchProjectArchive(url: string, conversationId: string) {
       : {},
   });
 }
-
-export function fetchConversationTranscript(conversationId: string) {
-  return fetch(`/transcript?conversationId=${encodeURIComponent(conversationId)}`, {
-    method: 'GET',
-    headers: {
-      conversationId,
-      'makers-conversation-id': conversationId,
-    },
-  });
-}

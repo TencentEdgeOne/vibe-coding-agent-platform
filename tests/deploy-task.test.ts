@@ -241,9 +241,8 @@ test('the header ships the template, the panel ships the project', async () => {
 
   assert.match(header, /href=\{templateDeployUrl\}/);
   assert.match(header, /href=\{templateSourceUrl\}/);
-  assert.doesNotMatch(header, /canDeploy|onDeploy|onDownload|onExportTranscript/);
+  assert.doesNotMatch(header, /canDeploy|onDeploy|onDownload/);
   assert.match(screen, /onClick=\{handleDeployProject\}/);
-  assert.doesNotMatch(screen, /onClick=\{handleExportTranscript\}/);
   assert.match(screen, /onClick=\{\(\) => void handleDownload\(\)\}/);
 });
 

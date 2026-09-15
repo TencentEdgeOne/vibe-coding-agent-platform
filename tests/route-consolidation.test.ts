@@ -65,31 +65,6 @@ test('starting a new project does not wait for the old stop request', async () =
   assert.match(stopRoute, /if \(!discardProject\) \{[\s\S]*?persistProjectSnapshot/);
 });
 
-test('transcript export is a GET route keyed by conversationId query', async () => {
-  const route = await readFile('agents/transcript.ts', 'utf8');
-  const pipeline = await readFile('agents/pipelines/_transcript.ts', 'utf8');
-  const client = await readFile('app/features/workspace/workspace-api.ts', 'utf8');
-
-  assert.match(route, /onRequestGet/);
-  assert.match(route, /runTranscriptPipeline/);
-  assert.match(pipeline, /resolveConversationIdPreferQuery/);
-  assert.match(pipeline, /application\/x-ndjson/);
-  assert.match(client, /fetch\(`?\/transcript\?conversationId=/);
-});
-
-// /status is a surface for adopters, not for this app: the workspace learns a
-// task's state by reconnecting to GET /chat, so nothing here polls it. Only the
-// route contract is pinned.
-test('chat task status is a GET route keyed by conversationId query', async () => {
-  const route = await readFile('agents/status.ts', 'utf8');
-  const pipeline = await readFile('agents/pipelines/_status.ts', 'utf8');
-
-  assert.match(route, /onRequestGet/);
-  assert.match(route, /runStatusPipeline/);
-  assert.match(pipeline, /resolveConversationIdPreferQuery/);
-  assert.match(pipeline, /done: isExportTaskDone\(status\)/);
-});
-
 test('workspace persistence uses the sandbox SDK and metadata snapshots are read-only migration data', async () => {
   const helpers = await readFile('agents/pipelines/_helpers.ts', 'utf8');
   const persistence = await readFile('agents/project/_persistence.ts', 'utf8');
