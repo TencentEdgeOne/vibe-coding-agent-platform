@@ -22,7 +22,11 @@ import {
   redactSecret,
 } from '../shared/makers-deploy.ts';
 import { shellQuote } from '../shared/shell.ts';
-import { resolveMakersProjectName } from '../agents/project/_makers-deploy.ts';
+import {
+  ensureMakersPublishProject,
+  resolveConversationPublishArea,
+  resolveMakersProjectName,
+} from '../agents/project/_makers-deploy.ts';
 import { projectState } from './helpers/fixtures.ts';
 
 test('builds a non-interactive direct CLI deploy command', () => {
@@ -596,7 +600,55 @@ test('preview and deploy resolve the project through the same function', async (
   assert.equal(commandSource.match(/resolveMakersProjectName\(/g)?.length, 1);
   for (const source of [previewSource, commandSource]) {
     assert.doesNotMatch(source, /vibe-coding-playground/);
+    assert.match(source, /ensureMakersPublishProject/);
   }
+});
+
+test('a .dev conversation publishes to the overseas area', () => {
+  assert.equal(resolveConversationPublishArea(projectState('projects/demo', {
+    siteDomain: 'edgeone.dev',
+  })), 'overseas');
+  assert.equal(resolveConversationPublishArea(projectState()), 'global');
+});
+
+test('ensureMakersPublishProject creates a missing project with the publish area', async () => {
+  const created: Array<Record<string, unknown>> = [];
+  await ensureMakersPublishProject('tenant', 'vibe-coding-abc', 'overseas', undefined, {
+    projects: {
+      list: async () => ({ items: [] }),
+      create: async (input) => {
+        created.push(input);
+      },
+    },
+  });
+  assert.deepEqual(created, [{ name: 'vibe-coding-abc', area: 'overseas' }]);
+});
+
+test('ensureMakersPublishProject does not recreate an existing project', async () => {
+  let created = 0;
+  await ensureMakersPublishProject('tenant', 'demo', 'overseas', undefined, {
+    projects: {
+      list: async () => ({ items: [{ name: 'demo' }] }),
+      create: async () => {
+        created += 1;
+      },
+    },
+  });
+  assert.equal(created, 0);
+});
+
+test('ensureMakersPublishProject skips when there is no credential', async () => {
+  let listed = 0;
+  await ensureMakersPublishProject('', 'demo', 'overseas', undefined, {
+    projects: {
+      list: async () => {
+        listed += 1;
+        return { items: [] };
+      },
+      create: async () => {},
+    },
+  });
+  assert.equal(listed, 0);
 });
 
 test('uses the sandbox-provided CLI without installing or prewarming it', async () => {

@@ -1048,7 +1048,8 @@ test('sandbox preview publishes the fixed gateway path through a local adapter',
   assert.doesNotMatch(preview, /ensureEdgeoneCli|npm install -g edgeone/);
   assert.match(preview, /buildMakersDevLaunchCommand/);
   assert.match(preview, /buildMakersDevBackgroundCommand/);
-  assert.match(preview, /resolveMakersPublishTarget\(state\.siteDomain/);
+  assert.match(preview, /resolveConversationPublishArea\(state\)/);
+  assert.match(preview, /ensureMakersPublishProject/);
   assert.match(preview, /getHost\(PREVIEW_PUBLIC_PORT\)/);
   assert.match(
     preview,

@@ -17,8 +17,11 @@ import {
   publishRunningPreview,
   startPreviewServer,
 } from '../project/_preview.ts';
-import { resolveMakersProjectName } from '../project/_makers-deploy.ts';
-import { resolveMakersPublishTarget } from '../../shared/publish-target.ts';
+import {
+  ensureMakersPublishProject,
+  resolveConversationPublishArea,
+  resolveMakersProjectName,
+} from '../project/_makers-deploy.ts';
 import { pauseForGatewayCredentialsIfNeeded } from '../project/_gateway-prompt.ts';
 import {
   buildSandboxMakersEnv,
@@ -243,6 +246,13 @@ async function prepareMakersCommand(
   // which project belongs to this conversation, and a name it invents to dodge
   // a collision would strand the site somewhere nobody can find again.
   const projectName = resolveMakersProjectName(lifecycle.context, lifecycle.state);
+  const area = resolveConversationPublishArea(lifecycle.state);
+  await ensureMakersPublishProject(
+    sandboxToken,
+    projectName,
+    area,
+    lifecycle.state.makersApiRegion,
+  );
 
   if (isMakersDevCommand(command)) {
     return {
@@ -254,7 +264,7 @@ async function prepareMakersCommand(
           previewPath: PREVIEW_PATH_PREFIX,
           projectName,
           assetPrefixEnvName: PREVIEW_ASSET_PREFIX_ENV,
-          area: resolveMakersPublishTarget(lifecycle.state.siteDomain || '').area,
+          area,
         }),
         lifecycle.state.appDir,
         env,
@@ -271,7 +281,7 @@ async function prepareMakersCommand(
       args,
       buildMakersDeployCommand(projectName, command, {
         stopDevPort: MAKERS_DEV_PORT,
-        area: resolveMakersPublishTarget(lifecycle.state.siteDomain || '').area,
+        area,
       }),
       lifecycle.state.appDir,
       env,

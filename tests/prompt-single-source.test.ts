@@ -132,6 +132,7 @@ test('the prompt keeps the sandbox corrections the skills cannot know about', ()
     prompt,
     new RegExp(`edgeone makers dev --port ${MAKERS_DEV_PORT} --skip-env-sync --skip-ai-gateway-sync`),
   );
+  assert.match(prompt, /--area global/);
   assert.match(prompt, new RegExp(`path adapter on port ${PREVIEW_SERVER_PORT}`));
   assert.match(
     prompt,
@@ -242,6 +243,18 @@ test('recent conversation history is included when present', () => {
 // that prefix new on every turn, so the provider re-reads all of it instead of
 // reusing it, and the request would arrive twice with no way to say which copy
 // is authoritative.
+test('an international site tells the model to preview onto the overseas area', () => {
+  const prompt = buildPrompt(
+    projectState('projects/demo', { siteDomain: 'edgeone.dev' }),
+    true,
+    'edgeone-sandbox',
+    makersProjectName,
+    'Kimi K2.6',
+  );
+  assert.match(prompt, /--area overseas/);
+  assert.doesNotMatch(prompt, /--area global/);
+});
+
 test('the system prompt is the same on every turn of a conversation', () => {
   const request = '做一个带留言板的网站';
   const prompt = renderPrompt();

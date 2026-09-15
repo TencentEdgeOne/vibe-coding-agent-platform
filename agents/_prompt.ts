@@ -6,6 +6,7 @@ import {
   PREVIEW_SERVER_PORT,
 } from './_constants.ts';
 import type { ConversationMessage, ProjectState } from './_types.ts';
+import { resolveConversationPublishArea } from './project/_makers-deploy.ts';
 
 // The system prompt is split into named sections so each rule has an obvious
 // owner. The dividing line is deliberate: platform knowledge (handler
@@ -120,10 +121,11 @@ function buildSandboxTools(appDir: string, mcpServerName: string) {
   ];
 }
 
-function buildSandboxPreview(appDir: string, makersProjectName: string) {
+function buildSandboxPreview(appDir: string, makersProjectName: string, area: string) {
   const quotedProjectName = JSON.stringify(makersProjectName);
+  const publishArea = area === 'overseas' ? 'overseas' : 'global';
   return [
-    `To publish the right-hand development preview, run edgeone makers dev --port ${MAKERS_DEV_PORT} --skip-env-sync --skip-ai-gateway-sync --name ${quotedProjectName} once through commands with cwd=${appDir}. The commands tool keeps Makers dev running at its root, exposes it through the sandbox path adapter on port ${PREVIEW_SERVER_PORT}, and publishes sandbox.getHost(${PREVIEW_PUBLIC_PORT})${PREVIEW_PATH_PREFIX} to the preview panel. Do not add nohup, start another server, synthesize a public URL, or use a cloud deploy as the normal preview.`,
+    `To publish the right-hand development preview, run edgeone makers dev --port ${MAKERS_DEV_PORT} --skip-env-sync --skip-ai-gateway-sync --name ${quotedProjectName} --area ${publishArea} once through commands with cwd=${appDir}. The commands tool keeps Makers dev running at its root, exposes it through the sandbox path adapter on port ${PREVIEW_SERVER_PORT}, and publishes sandbox.getHost(${PREVIEW_PUBLIC_PORT})${PREVIEW_PATH_PREFIX} to the preview panel. Do not add nohup, start another server, synthesize a public URL, or use a cloud deploy as the normal preview.`,
     // The model has no restart primitive, and it went looking for one: a turn
     // that changed dependencies under a running server tried to kill it, free
     // its port, and relaunch it, none of which the host acts on.
@@ -354,7 +356,11 @@ export function buildPrompt(
     section('What is not a source, and when to stop looking', buildSearchDiscipline(webSearchAvailable)),
     SANDBOX_PREAMBLE,
     section('Sandbox: tools and boundaries', buildSandboxTools(state.appDir, mcpServerName)),
-    section('Sandbox: preview and deployment', buildSandboxPreview(state.appDir, makersProjectName)),
+    section('Sandbox: preview and deployment', buildSandboxPreview(
+      state.appDir,
+      makersProjectName,
+      resolveConversationPublishArea(state),
+    )),
     section('Sandbox: preview URLs and navigation', buildSandboxRouting()),
     section('Sandbox: browser calls and visitor context', buildSandboxDataPlane()),
     section('Tool contracts', buildToolContracts(state.appDir)),

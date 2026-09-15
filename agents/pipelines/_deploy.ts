@@ -2,7 +2,11 @@ import { MAKERS_DEV_PORT } from '../_constants.ts';
 import { saveProjectState } from '../_memory.ts';
 import { getFileTree, runSandboxCommand } from '../_project.ts';
 import { assertMakersProjectCompatible } from '../project/_makers-compat.ts';
-import { resolveMakersProjectName } from '../project/_makers-deploy.ts';
+import {
+  ensureMakersPublishProject,
+  resolveConversationPublishArea,
+  resolveMakersProjectName,
+} from '../project/_makers-deploy.ts';
 import { startPreviewServer } from '../project/_preview.ts';
 import {
   applyUserGatewayDecision,
@@ -33,7 +37,6 @@ import {
   readMakersDeployOutcome,
   redactSecret,
 } from '../../shared/makers-deploy.ts';
-import { resolveMakersPublishTarget } from '../../shared/publish-target.ts';
 import { resolveConversationId } from '../utils/_request.ts';
 import {
   createProjectCheckpointController,
@@ -326,6 +329,12 @@ export async function runDeployPipeline(
       state,
       resolveMakersMasterToken(context),
     );
+    await ensureMakersPublishProject(
+      sandboxToken,
+      resolveMakersProjectName(context, state),
+      resolveConversationPublishArea(state),
+      state.makersApiRegion,
+    );
     const gateway = await prepareSandboxGatewayEnv(context, state);
     sandboxEnv = buildSandboxMakersEnv(
       sandboxToken,
@@ -349,7 +358,7 @@ export async function runDeployPipeline(
         projectName: resolveMakersProjectName(context, state),
         appDir: state.appDir,
         env: sandboxEnv,
-        area: resolveMakersPublishTarget(state.siteDomain || '').area,
+        area: resolveConversationPublishArea(state),
       },
       // `send` and not `emit`: this fires every couple of seconds and the row
       // it patches is already recorded. recordProgress merges a repeated

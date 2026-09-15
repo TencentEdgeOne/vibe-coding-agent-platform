@@ -20,7 +20,6 @@ import {
 } from '../../shared/makers-dev.ts';
 import { makersFileSemantic } from '../../shared/makers-file-semantics.ts';
 import { redactSecret } from '../../shared/makers-deploy.ts';
-import { resolveMakersPublishTarget } from '../../shared/publish-target.ts';
 import { shellQuote } from '../../shared/shell.ts';
 import {
   MAKERS_CLI_UNAVAILABLE_ERROR_CODE,
@@ -31,7 +30,11 @@ import { resolveConversationId } from '../utils/_request.ts';
 import { sandboxGatewayKeyIsSet } from './_gateway-prompt.ts';
 import { runCommandCapturingExit, runSandboxCommand } from './_commands.ts';
 import { assertMakersProjectCompatible } from './_makers-compat.ts';
-import { resolveMakersProjectName } from './_makers-deploy.ts';
+import {
+  ensureMakersPublishProject,
+  resolveConversationPublishArea,
+  resolveMakersProjectName,
+} from './_makers-deploy.ts';
 import {
   buildSandboxMakersEnv,
   describeMissingMakersRuntimeToken,
@@ -124,7 +127,7 @@ export async function startPreviewServer(
   await assertMakersProjectCompatible(context, state);
   const masterToken = resolveMakersMasterToken(context);
   const projectName = resolveMakersProjectName(context, state);
-  const area = resolveMakersPublishTarget(state.siteDomain || '').area;
+  const area = resolveConversationPublishArea(state);
   const launchCommand = buildMakersDevLaunchCommand(MAKERS_DEV_PORT, projectName, { area });
   let forceRestart = false;
 
@@ -152,6 +155,12 @@ export async function startPreviewServer(
   // Scoped to this conversation, and redacted out of CLI output before the
   // model or the UI sees it.
   const sandboxToken = await resolveSandboxMakersToken(state, masterToken);
+  await ensureMakersPublishProject(
+    sandboxToken,
+    projectName,
+    area,
+    state.makersApiRegion,
+  );
   await prepareSandboxGatewayEnv(context, state);
 
   const startResult = await runSandboxCommand(
