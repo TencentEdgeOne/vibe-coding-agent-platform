@@ -1,5 +1,6 @@
 {
   "agents": {
-    "framework": "deepagents"
+    "framework": "deepagents",
+    "externalNodeModules": ["langchain", "langsmith"]
   }
 }
