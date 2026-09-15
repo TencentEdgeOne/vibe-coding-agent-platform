@@ -32,6 +32,7 @@ test('the deploy pipeline publishes without the model in the loop', async () => 
   assert.match(pipeline, /buildMakersDeployLaunchCommand\(target\.projectName,/);
   assert.match(pipeline, /resolveConversationPublishArea\(state\)/);
   assert.match(pipeline, /ensureMakersPublishProject/);
+  assert.match(pipeline, /syncSandboxEnvToMakersProject/);
   assert.match(pipeline, /readMakersDeployOutcome\(stdout, '', sandboxToken\)/);
   // Same short-lived tenant credential as every other sandbox CLI call.
   assert.match(pipeline, /resolveSandboxMakersToken\(/);

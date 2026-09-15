@@ -21,6 +21,7 @@ import {
   ensureMakersPublishProject,
   resolveConversationPublishArea,
   resolveMakersProjectName,
+  syncSandboxEnvToMakersProject,
 } from '../project/_makers-deploy.ts';
 import { pauseForGatewayCredentialsIfNeeded } from '../project/_gateway-prompt.ts';
 import {
@@ -275,6 +276,14 @@ async function prepareMakersCommand(
       gatewayKey: gateway.AI_GATEWAY_API_KEY || '',
     };
   }
+
+  await syncSandboxEnvToMakersProject(
+    lifecycle.context,
+    lifecycle.state,
+    sandboxToken,
+    projectName,
+    lifecycle.state.makersApiRegion,
+  );
 
   return {
     args: withCommandOptions(

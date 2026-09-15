@@ -24,8 +24,10 @@ import {
 import { shellQuote } from '../shared/shell.ts';
 import {
   ensureMakersPublishProject,
+  parsePublishableDotEnv,
   resolveConversationPublishArea,
   resolveMakersProjectName,
+  syncSandboxEnvToMakersProject,
 } from '../agents/project/_makers-deploy.ts';
 import { projectState } from './helpers/fixtures.ts';
 
@@ -648,6 +650,141 @@ test('ensureMakersPublishProject skips when there is no credential', async () =>
       create: async () => {},
     },
   });
+  assert.equal(listed, 0);
+});
+
+test('a local .env keeps publishable assignments and drops host-only keys', () => {
+  assert.deepEqual(parsePublishableDotEnv([
+    '# comment',
+    'AI_GATEWAY_API_KEY=sk-user',
+    'AI_GATEWAY_BASE_URL="https://ai-gateway.edgeone.link"',
+    'APP_TITLE=Demo',
+    'EMPTY=',
+    'export DATABASE_URL=postgres://db',
+    'API_TOKEN=master',
+    'EDGEONE_PAGES_API_TOKEN=tenant',
+    'EDGEONE_PREVIEW_ASSET_PREFIX=/preview',
+    '1BAD=no',
+  ].join('\n')), {
+    AI_GATEWAY_API_KEY: 'sk-user',
+    AI_GATEWAY_BASE_URL: 'https://ai-gateway.edgeone.link',
+    APP_TITLE: 'Demo',
+    DATABASE_URL: 'postgres://db',
+  });
+});
+
+test('deploy copies the sandbox .env onto the Makers project', async () => {
+  const written: Array<Record<string, unknown>> = [];
+  await syncSandboxEnvToMakersProject(
+    {
+      sandbox: {
+        files: {
+          read: async () => 'AI_GATEWAY_API_KEY=sk-user\nAPP_TITLE=Demo\n',
+        },
+      },
+    },
+    projectState(),
+    'tenant',
+    'vibe-coding-abc',
+    undefined,
+    {
+      projects: {
+        list: async () => ({
+          items: [{ name: 'vibe-coding-abc', projectId: 'proj-1' }],
+        }),
+        setEnvs: async (input) => {
+          written.push(input);
+        },
+      },
+    },
+  );
+  assert.deepEqual(written, [{
+    projectId: 'proj-1',
+    envVars: [
+      { key: 'AI_GATEWAY_API_KEY', value: 'sk-user' },
+      { key: 'APP_TITLE', value: 'Demo' },
+    ],
+  }]);
+});
+
+test('deploy does not copy an empty or missing .env', async () => {
+  let listed = 0;
+  await syncSandboxEnvToMakersProject(
+    {
+      sandbox: {
+        files: {
+          read: async () => {
+            throw new Error('File does not exist.');
+          },
+        },
+      },
+    },
+    projectState(),
+    'tenant',
+    'vibe-coding-abc',
+    undefined,
+    {
+      projects: {
+        list: async () => {
+          listed += 1;
+          return { items: [] };
+        },
+        setEnvs: async () => {},
+      },
+    },
+  );
+  assert.equal(listed, 0);
+});
+
+test('deploy fails when the Makers project cannot take the .env', async () => {
+  await assert.rejects(
+    () => syncSandboxEnvToMakersProject(
+      {
+        sandbox: {
+          files: {
+            read: async () => 'AI_GATEWAY_API_KEY=sk-user\n',
+          },
+        },
+      },
+      projectState(),
+      'tenant',
+      'vibe-coding-abc',
+      undefined,
+      {
+        projects: {
+          list: async () => ({ items: [] }),
+          setEnvs: async () => {},
+        },
+      },
+    ),
+    /The Makers project was not found/,
+  );
+});
+
+test('deploy does not copy .env when there is no credential', async () => {
+  let listed = 0;
+  await syncSandboxEnvToMakersProject(
+    {
+      sandbox: {
+        files: {
+          read: async () => 'AI_GATEWAY_API_KEY=sk-user\n',
+        },
+      },
+    },
+    projectState(),
+    '',
+    'vibe-coding-abc',
+    undefined,
+    {
+      projects: {
+        list: async () => {
+          listed += 1;
+          return { items: [] };
+        },
+        setEnvs: async () => {},
+      },
+    },
+  );
   assert.equal(listed, 0);
 });
 

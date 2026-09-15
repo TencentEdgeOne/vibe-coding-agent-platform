@@ -6,6 +6,7 @@ import {
   ensureMakersPublishProject,
   resolveConversationPublishArea,
   resolveMakersProjectName,
+  syncSandboxEnvToMakersProject,
 } from '../project/_makers-deploy.ts';
 import { startPreviewServer } from '../project/_preview.ts';
 import {
@@ -333,6 +334,13 @@ export async function runDeployPipeline(
       sandboxToken,
       resolveMakersProjectName(context, state),
       resolveConversationPublishArea(state),
+      state.makersApiRegion,
+    );
+    await syncSandboxEnvToMakersProject(
+      context,
+      state,
+      sandboxToken,
+      resolveMakersProjectName(context, state),
       state.makersApiRegion,
     );
     const gateway = await prepareSandboxGatewayEnv(context, state);
