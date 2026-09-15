@@ -61,6 +61,31 @@ export type StoppedTurnSnapshot = {
   userContent: string;
 };
 
+/**
+ * Text already on the running assistant turn. Streaming keeps it in activities
+ * until the result lands, so `content` is often still empty when the user
+ * answers the API key card mid-sentence.
+ */
+export function lastRunningAssistantText(
+  messages: ChatMessage[],
+  fallback: string,
+): string {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role !== 'assistant' || message.status !== 'running') continue;
+    if (message.content.trim()) return message.content;
+    const activities = message.activities ?? [];
+    for (let activityIndex = activities.length - 1; activityIndex >= 0; activityIndex -= 1) {
+      const activity = activities[activityIndex];
+      if (activity.kind === 'text' && activity.content.trim()) {
+        return activity.content;
+      }
+    }
+    return fallback;
+  }
+  return fallback;
+}
+
 // Stopping a turn has to land in two places: the screen and the turn persisted
 // through /stop. Deriving that state twice let the two drift — one pass mapped
 // the trailing message, the other reverse-searched for a running assistant —

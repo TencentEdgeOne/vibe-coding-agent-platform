@@ -282,6 +282,24 @@ test('the conversation card asks for API Key and submits a masked chat turn', as
   assert.match(screen, /if \(data\.gatewayNeeded\) \{\s*setGatewayNeeded\(true\);/);
 });
 
+test('the API key card is usable while the assistant is still streaming the ask', async () => {
+  const [conversation, screen] = await Promise.all([
+    readFile('app/components/agent-conversation.tsx', 'utf8'),
+    readFile('app/features/workspace/workspace-screen.tsx', 'utf8'),
+  ]);
+
+  // Loading is the live turn, not the card. Tying them together greyed the
+  // input out for the last few seconds of streamed copy.
+  assert.doesNotMatch(screen, /gatewayBusy=\{loading \|\| gatewayBusy\}/);
+  assert.match(screen, /gatewayBusy=\{gatewayBusy\}/);
+  assert.match(screen, /keepAssistantText: true/);
+  assert.match(screen, /preserveGatewayPrompt: true/);
+  assert.match(conversation, /autoFocus/);
+  assert.match(conversation, /gatewayVisible/);
+  assert.match(conversation, /node\.focus\(\)/);
+  assert.match(conversation, /disabled=\{gatewayBusy\}/);
+});
+
 test('a turn waiting for the API key is completed, not a red error', async () => {
   const [chat, helpers, prompt] = await Promise.all([
     readFile('agents/pipelines/_chat.ts', 'utf8'),

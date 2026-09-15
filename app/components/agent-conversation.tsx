@@ -398,12 +398,20 @@ export function AgentConversation({
   onGatewaySkip?: () => void;
 }) {
   const [gatewayApiKey, setGatewayApiKey] = useState('');
+  const gatewayInputRef = useRef<HTMLInputElement | null>(null);
+  const gatewayVisible = Boolean(gatewayPrompt);
 
   useEffect(() => {
-    if (!gatewayPrompt) {
+    if (!gatewayVisible) {
       setGatewayApiKey('');
+      return;
     }
-  }, [gatewayPrompt]);
+    // Focus as soon as the card mounts — including while the assistant is still
+    // finishing the ask — so the user can type without waiting for the stream.
+    const node = gatewayInputRef.current;
+    if (!node || node.disabled) return;
+    node.focus();
+  }, [gatewayVisible]);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const followOutputRef = useRef(true);
   const signature = messages.map((message) => [
@@ -472,8 +480,10 @@ export function AgentConversation({
             <label className="gateway-prompt-field">
               <span>{gatewayPrompt.apiKey}</span>
               <input
+                ref={gatewayInputRef}
                 type="password"
                 autoComplete="off"
+                autoFocus
                 spellCheck={false}
                 value={gatewayApiKey}
                 disabled={gatewayBusy}

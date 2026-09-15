@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { markLastTurnStopped } from '../app/lib/conversation.ts';
+import { markLastTurnStopped, lastRunningAssistantText } from '../app/lib/conversation.ts';
 import { STOPPED_TURN_REPLY, replyLocaleFor } from '../shared/user-facing-reply.ts';
 import type { ChatMessage } from '../app/types/workspace.ts';
 
@@ -104,4 +104,27 @@ test('the stopped reply is one definition, in the language of the request', () =
 
   assert.match(STOPPED_TURN_REPLY.zh, /已停止/);
   assert.match(STOPPED_TURN_REPLY.en, /^Generation stopped\./);
+});
+
+test('a mid-stream API key answer keeps the ask instead of the stopped copy', () => {
+  const fallback = 'Enter a Models API key below.';
+  assert.equal(lastRunningAssistantText([], fallback), fallback);
+  assert.equal(lastRunningAssistantText(runningTurn(), fallback), 'Writing the page…');
+
+  const streamed: ChatMessage[] = [
+    { id: 'user-1', role: 'user', content: 'build a chat app' },
+    {
+      id: 'assistant-1',
+      role: 'assistant',
+      content: '',
+      status: 'running',
+      activities: [
+        { kind: 'text', content: '项目已经写好。要调用大模型请在下方输入 Models API Key' },
+      ],
+    },
+  ];
+  assert.equal(
+    lastRunningAssistantText(streamed, fallback),
+    '项目已经写好。要调用大模型请在下方输入 Models API Key',
+  );
 });
