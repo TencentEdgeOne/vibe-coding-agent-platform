@@ -30,12 +30,6 @@ function FeatureIcon({ icon }: { icon: HomeFeatureIcon }) {
   return <Server aria-hidden="true" size={15} />;
 }
 
-// What makes the two cells read as one ordered run rather than two unordered
-// claims. The ordinals live only here, in array order.
-function phaseNumber(index: number) {
-  return String(index + 1).padStart(2, '0');
-}
-
 export function HomeStage({
   copy,
   locale,
@@ -113,14 +107,10 @@ export function HomeStage({
           </div>
         </form>
 
-        {/* One cell per capability, in order, each carrying its own ordinal.
-            Read-only — nothing here is a control. */}
-        <ol className="home-features">
-          {copy.home.features.map((feature, index) => (
+        {/* One cell per capability. Read-only — nothing here is a control. */}
+        <ul className="home-features">
+          {copy.home.features.map((feature) => (
             <li key={feature.title} className="home-feature">
-              <span className="home-feature-index" aria-hidden="true">
-                {phaseNumber(index)}
-              </span>
               <span className="home-feature-copy">
                 <strong>
                   <span className="home-feature-icon">
@@ -132,7 +122,7 @@ export function HomeStage({
               </span>
             </li>
           ))}
-        </ol>
+        </ul>
       </div>
     </section>
   );

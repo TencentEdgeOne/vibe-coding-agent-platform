@@ -199,12 +199,11 @@
 }
 
 /* ---- Capability panel ---------------------------------------------------
-   One cell per capability, in order, saying what the platform does.
+   One cell per capability, saying what the platform does.
    Laid out the way the product's own solution pages lay out a feature grid:
    square cells on white, divided by hairlines.
 
-   Two columns side by side. The ordinals already carry the order that a
-   single row would have carried positionally.
+   Two columns side by side.
 
    This is the one block on the screen that cannot be acted on, so it gives up
    every mark the rest of the page spends on controls — no box of its own per
@@ -214,8 +213,7 @@
    The outer radius matches the composer so the two panels sit as a pair. */
 .home-features {
   /* The height of a title row. The icon box sets it, being taller than the
-     title's own line box, so that is the figure the ordinal has to match rather
-     than the text's. Both cells read it from here so neither can drift. */
+     title's own line box. Both cells read it from here so neither can drift. */
   --feature-title-line: 18px;
 
   display: grid;
@@ -234,30 +232,7 @@
   display: flex;
   min-width: 0;
   align-items: flex-start;
-  gap: 12px;
   padding: 16px 18px;
-}
-
-/* What makes a cell read as the phase it belongs to rather than as one of four
-   unordered claims. Leads the row because the sequence is the first thing to
-   pick up; the title's own icon then says which capability serves that phase.
-
-   Set a step above the ribbon's old 10px, where it read as a footnote on the
-   title rather than as the thing numbering it, but kept under the title's own
-   size: level with the title the two compete, and the number is a marker on the
-   phase, not half of its name. Tracking scales the other way — 0.1em was
-   opening up 10px digits and would pull this pair apart.
-
-   Carries the title's line box rather than its own, because `align-items`
-   aligns boxes: two sizes with proportional line heights make two boxes, and
-   flex-start would leave the digits riding above the text they number. */
-.home-feature-index {
-  color: var(--brand);
-  font-size: var(--fs-sm);
-  font-variant-numeric: tabular-nums;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  line-height: var(--feature-title-line);
 }
 
 /* Hairlines only between cells — the panel draws its own outer edge. */
@@ -289,8 +264,7 @@
   gap: 5px;
 }
 
-/* The icon sits on the title line rather than leading the cell, because the
-   ordinal now holds that position. Inline-flex keeps the two on one line and
+/* The icon sits on the title line. Inline-flex keeps the two on one line and
    lets the glyph centre against the cap height instead of the line box. */
 .home-feature-copy strong {
   display: flex;
