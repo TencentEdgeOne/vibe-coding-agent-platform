@@ -4,7 +4,7 @@
 
 ## 快速开始
 
-1. 创建并获取 [API Token](https://write.woa.com/document/177158578199498752)。
+1. 创建并获取 [API Token](https://makers.edgeone.link/document/api-token)。
 
 2. 使用下面的示例模板直接开始部署。
 
@@ -18,7 +18,7 @@
 
 ### Makers Skills 集成
 
-- 模板在 `.claude/skills/` 内置 [Makers Skills](https://write.woa.com/document/205349902137049088)，为 Agent 提供框架约定、平台 API、目录规范和部署要求。
+- 模板在 `.claude/skills/` 内置 [Makers Skills](https://makers.edgeone.link/document/skills)，为 Agent 提供框架约定、平台 API、目录规范和部署要求。
 
 - Agent 根据任务使用对应 Skill，生成项目先通过 Makers 兼容性检查，框架适配器是否就位、平台声明文件是否完整、目录结构是否合规；失败时自动尝试一轮修复。
 
@@ -81,7 +81,7 @@ const result = await context.sandbox.restore({path: projectPath});
 
 ### 启动本地开发调试
 
-1. 进入项目根目录，安装 [EdgeOne CLI](https://write.woa.com/document/162228053883678720)：
+1. 进入项目根目录，安装 [EdgeOne CLI](https://makers.edgeone.link/document/edgeone-cli)：
 
    ```bash
    npm install -g edgeone
