@@ -68,7 +68,7 @@ import type {
   FileTree,
   LinkInfo,
   ResumeData,
-  ResumeStreamEvent,
+  SessionStreamEvent,
 } from '@/app/types/workspace';
 import { HomeStage } from './components/home-stage';
 import { PreviewControls } from './components/preview-controls';
@@ -77,12 +77,11 @@ import { SiteHeader } from './components/site-header';
 import { WorkspaceErrorBar } from './components/workspace-error-bar';
 import { consumeEventStream } from './sse';
 import {
-  fetchChatTaskStream,
   fetchModelCatalog,
   fetchProjectArchive,
-  fetchResumePreview,
-  openResumeStream,
-  startChatTask,
+  fetchPreviewRefresh,
+  openSessionStream,
+  startSessionTurn,
   stopChatTask,
 } from './workspace-api';
 
@@ -170,7 +169,7 @@ export function WorkspaceScreen() {
   // matching SSR — a first-time visitor then stays on home and never flashes the
   // "restoring…" screen. A returning visitor is switched to `false` inside the
   // client-only effect below (after hydration), which shows the restore screen
-  // while /resume runs.
+  // while GET /session runs.
   const [resumeChecked, setResumeChecked] = useState(true);
   const [preview, setPreview] = useState<LinkInfo | null>(null);
   const [deployment, setDeployment] = useState<DeploymentInfo | null>(null);
@@ -234,15 +233,19 @@ export function WorkspaceScreen() {
   // Invalidates callbacks from an aborted workspace after "Stop and start new"
   // has already painted the fresh home screen.
   const workspaceEpochRef = useRef(0);
-  // Resume-on-load reconnects to an in-flight run after history paints. The
-  // effect closes over this ref so it always calls the latest stream attacher.
-  const attachChatStreamRef = useRef<(options: {
+  // Resume-on-load attaches an in-flight run after history paints. The
+  // effect closes over this ref so it always uses the latest session factory.
+  const startLiveChatSessionRef = useRef<(options: {
     requestConversationId: string;
     assistantMessageId: string;
-    streamUrl?: string;
-    response?: Response;
-    abortController?: AbortController;
-  }) => Promise<void>>(async () => {});
+    abortController: AbortController;
+  }) => {
+    handleStreamEvent: (event: ChatStreamEvent) => void;
+    finish: () => void;
+  }>(() => ({
+    handleStreamEvent: () => {},
+    finish: () => {},
+  }));
   // Visibility / toolbar preview refresh — kept on a ref so the listener effect
   // can stay mount-only while still calling the latest implementation.
   const refreshPreviewLinkRef = useRef<(options?: {
@@ -252,7 +255,7 @@ export function WorkspaceScreen() {
 
   const t = TRANSLATIONS[language];
   const canSend = input.trim().length > 0 && !loading;
-  // Do not leave a streaming /chat socket attached to makers-dev after this
+  // Do not leave a streaming /session socket attached to makers-dev after this
   // workspace unmounts (navigation, HMR, or closing the app shell).
   useEffect(() => () => {
     chatAbortControllerRef.current?.abort();
@@ -384,7 +387,7 @@ export function WorkspaceScreen() {
 
   // Every new file listing is the authoritative view of what is on disk, so use it
   // to stamp or drop cached file contents. Covers all three sources of a tree
-  // (streamed file_tree, the final result, and /resume). Deliberately keyed on the
+  // (streamed file_tree, the final result, and GET /session). Deliberately keyed on the
   // tree alone: reconciling on a cache write would stamp freshly streamed content
   // with the previous listing's mtime.
   const reconcileFileCache = fileCache.reconcile;
@@ -409,7 +412,7 @@ export function WorkspaceScreen() {
   // Warm the conversation chunk once the landing page is already interactive.
   // Hydration no longer waits on it, but the first submit would, and that click
   // is the one moment the user is watching. Deliberately delayed rather than
-  // fired on mount: /models and /resume decide what the first paint can do, so
+  // fired on mount: /models and GET /session decide what the first paint can do, so
   // they get the connection first.
   useEffect(() => {
     if (hasWorkspace) return;
@@ -443,11 +446,11 @@ export function WorkspaceScreen() {
     setResumeChecked(false);
     setConversationId(existing);
 
-    const applyHistory = (data: ResumeData) => {
+    const applyHistory = (data: ResumeData): { restored: boolean; liveTaskId: string | null } => {
       const history = Array.isArray(data.messages) ? data.messages : [];
       const activeTask = data.activeTask;
       if (!data.hasProject && history.length === 0 && !activeTask && !data.deployment) {
-        return false;
+        return { restored: false, liveTaskId: null };
       }
       if (data.conversation_id) {
         setConversationId(data.conversation_id);
@@ -568,7 +571,11 @@ export function WorkspaceScreen() {
           setResultPanelOpen(true);
         }
       }
-      return true;
+      const liveTaskId = activeTask?.id
+        && nextMessages.some((item) => item.id === activeTask.id && item.status === 'running')
+        ? activeTask.id
+        : null;
+      return { restored: true, liveTaskId };
     };
 
     const applyWorkspace = (data: ResumeData) => {
@@ -623,20 +630,25 @@ export function WorkspaceScreen() {
     const resumeController = new AbortController();
     resumeAbortControllerRef.current = resumeController;
     (async () => {
-      let handedOffToActiveStream = false;
+      const live = {
+        session: null as {
+          handleStreamEvent: (event: ChatStreamEvent) => void;
+          finish: () => void;
+        } | null,
+      };
       try {
-        const response = await openResumeStream(existing, resumeController.signal);
+        const response = await openSessionStream(existing, resumeController.signal);
         const contentType = response.headers.get('content-type') || '';
         if (!response.ok || !response.body || !contentType.includes('text/event-stream')) {
           return;
         }
 
-        await consumeEventStream<ResumeStreamEvent>(response, (event) => {
+        await consumeEventStream<SessionStreamEvent>(response, (event) => {
           if (cancelled || workspaceEpoch !== workspaceEpochRef.current || event.type === 'ping') return;
 
           if (event.type === 'resume_history' && event.data?.ok) {
             const historyData = event.data;
-            const restored = applyHistory(historyData);
+            const { restored, liveTaskId } = applyHistory(historyData);
             if (!restored) {
               // A cached ID alone does not mean a conversation exists. Remove
               // stale/empty IDs so later refreshes stay on the home screen.
@@ -645,20 +657,17 @@ export function WorkspaceScreen() {
               setConversationId(null);
             }
             // History arrives first, so the UI paints while workspace restore
-            // continues over this same HTTP connection.
+            // and a live task continue over this same HTTP connection.
             setResumeChecked(true);
 
-            const activeTask = historyData.activeTask;
-            const conversationForRun = historyData.conversation_id || existing;
-            if (activeTask?.id) {
-              handedOffToActiveStream = true;
-              setFilesRefreshing(true);
-              void attachChatStreamRef.current({
+            if (liveTaskId) {
+              const conversationForRun = historyData.conversation_id || existing;
+              live.session = startLiveChatSessionRef.current({
                 requestConversationId: conversationForRun,
-                assistantMessageId: activeTask.id,
-                streamUrl: activeTask.streamUrl
-                  || `/chat?runId=${encodeURIComponent(activeTask.id)}`,
+                assistantMessageId: liveTaskId,
+                abortController: resumeController,
               });
+              chatAbortControllerRef.current = resumeController;
             }
             return;
           }
@@ -677,7 +686,10 @@ export function WorkspaceScreen() {
               truncated: Boolean(event.data.truncated),
               mtime: event.data.mtime,
             });
+            return;
           }
+
+          live.session?.handleStreamEvent(event as ChatStreamEvent);
         });
       } catch (error) {
         if (!(error instanceof Error && error.name === 'AbortError')) {
@@ -692,7 +704,8 @@ export function WorkspaceScreen() {
           setResumeChecked(true);
           if (workspaceEpoch === workspaceEpochRef.current) {
             setWorkspaceRestoring(false);
-            if (!handedOffToActiveStream) setFilesRefreshing(false);
+            live.session?.finish();
+            if (!live.session) setFilesRefreshing(false);
           }
         }
       }
@@ -770,7 +783,7 @@ export function WorkspaceScreen() {
         setActivePreviewLoaded(false);
         // Drop the live frame immediately so an expired envdAccessToken cannot
         // paint AUTHENTICATION_FAILED under (or ahead of) the loading overlay
-        // while /resume?stage=preview is in flight.
+        // while POST /preview is in flight.
         if (willRemount && previousActiveUrl) {
           activePreviewUrlRef.current = '';
           setActivePreviewUrl('');
@@ -782,7 +795,7 @@ export function WorkspaceScreen() {
       try {
         // Backend stage=preview remints the token on the existing host, and
         // escalates to full workspace restore when the sandbox has gone cold.
-        const data = await fetchResumePreview(id);
+        const data = await fetchPreviewRefresh(id);
         if (data?.ok && data.preview?.url) {
           applyFreshPreviewUrl(data.preview.url, data.preview.sandboxDebugUrl, {
             // A restarted dev server invalidates whatever the frame is showing,
@@ -935,20 +948,16 @@ export function WorkspaceScreen() {
     return () => window.removeEventListener('message', onMessage);
   }, []);
 
-  async function attachChatStream(options: {
+  function startLiveChatSession(options: {
     requestConversationId: string;
     assistantMessageId: string;
-    streamUrl?: string;
-    response?: Response;
-    abortController?: AbortController;
+    abortController: AbortController;
   }) {
     const {
-      requestConversationId,
       assistantMessageId,
-      streamUrl,
     } = options;
     const workspaceEpoch = workspaceEpochRef.current;
-    const requestAbortController = options.abortController || new AbortController();
+    const requestAbortController = options.abortController;
     const activatedPreviewRevisions = new Map<string, number>();
     let sawProjectActivity = false;
     // Expand the right panel and open a file only after the first real file arrives.
@@ -1168,6 +1177,7 @@ export function WorkspaceScreen() {
       }
       if (event.type === 'result' && event.data) {
         applyResponse(event.data);
+        setLoading(false);
         return;
       }
       if (event.type === 'agent' && event.data) {
@@ -1256,6 +1266,7 @@ export function WorkspaceScreen() {
       }
       if (event.type === 'error') {
         finalizeAssistant(event.error || t.response.processingFailed, 'error');
+        setLoading(false);
         return;
       }
       if (event.type === 'log' && event.message) {
@@ -1263,37 +1274,7 @@ export function WorkspaceScreen() {
       }
     };
 
-    try {
-      chatAbortControllerRef.current = requestAbortController;
-      stoppingRef.current = false;
-
-      const response = options.response || await fetchChatTaskStream(
-        streamUrl || `/chat?runId=${encodeURIComponent(assistantMessageId)}`,
-        requestConversationId,
-        requestAbortController.signal,
-      );
-
-      const contentType = response.headers.get('content-type') || '';
-      if (!response.body || !contentType.includes('text/event-stream')) {
-        applyResponse((await response.json().catch(() => ({
-          ok: false,
-          error: `${response.status}`,
-        }))) as ChatResponse);
-        return;
-      }
-
-      await consumeEventStream<ChatStreamEvent>(response, handleStreamEvent);
-    } catch (error) {
-      if (
-        workspaceEpoch !== workspaceEpochRef.current
-        || (error instanceof Error && error.name === 'AbortError')
-        || stoppingRef.current
-      ) {
-        return;
-      }
-      const msg = `${t.response.requestFailedPrefix}${error instanceof Error ? error.message : t.response.unknownError}`;
-      finalizeAssistant(msg, 'error');
-    } finally {
+    const finish = () => {
       const ownsActiveWorkspace = workspaceEpoch === workspaceEpochRef.current
         && chatAbortControllerRef.current === requestAbortController;
       // An old aborted stream may unwind after the user has already submitted the
@@ -1323,11 +1304,44 @@ export function WorkspaceScreen() {
         }
         stoppingRef.current = false;
       }
-    }
+    };
+
+    return { handleStreamEvent, finish, applyResponse, finalizeAssistant };
   }
 
+  startLiveChatSessionRef.current = startLiveChatSession;
 
-  attachChatStreamRef.current = attachChatStream;
+  async function attachChatStream(options: {
+    requestConversationId: string;
+    assistantMessageId: string;
+    response: Response;
+    abortController: AbortController;
+  }) {
+    const session = startLiveChatSession(options);
+    try {
+      chatAbortControllerRef.current = options.abortController;
+      stoppingRef.current = false;
+
+      const contentType = options.response.headers.get('content-type') || '';
+      if (!options.response.body || !contentType.includes('text/event-stream')) {
+        session.applyResponse((await options.response.json().catch(() => ({
+          ok: false,
+          error: `${options.response.status}`,
+        }))) as ChatResponse);
+        return;
+      }
+
+      await consumeEventStream<ChatStreamEvent>(options.response, session.handleStreamEvent);
+    } catch (error) {
+      if ((error instanceof Error && error.name === 'AbortError') || stoppingRef.current) {
+        return;
+      }
+      const msg = `${t.response.requestFailedPrefix}${error instanceof Error ? error.message : t.response.unknownError}`;
+      session.finalizeAssistant(msg, 'error');
+    } finally {
+      session.finish();
+    }
+  }
 
   async function sendMessage(message: string, options: {
     intent?: 'deploy';
@@ -1412,9 +1426,27 @@ export function WorkspaceScreen() {
       const requestAbortController = new AbortController();
       chatAbortControllerRef.current = requestAbortController;
       stoppingRef.current = false;
-      // POST /chat both creates the durable task and returns its SSE stream.
-      // Reconnects still use GET /chat?runId=..., but the normal path is one request.
-      const response = await startChatTask({
+      // Creating a conversation always hits GET /session first. A brand-new id
+      // is empty and the stream closes immediately; then POST /session sends the text.
+      if (isStartingFromHome) {
+        try {
+          const resumeResponse = await openSessionStream(
+            requestConversationId,
+            requestAbortController.signal,
+          );
+          const resumeType = resumeResponse.headers.get('content-type') || '';
+          if (
+            resumeResponse.ok
+            && resumeResponse.body
+            && resumeType.includes('text/event-stream')
+          ) {
+            await consumeEventStream(resumeResponse, () => {});
+          }
+        } catch (error) {
+          if (error instanceof Error && error.name === 'AbortError') throw error;
+        }
+      }
+      const response = await startSessionTurn({
         conversationId: requestConversationId,
         message: displayMessage,
         turnId: assistantMessageId,
@@ -1523,7 +1555,7 @@ export function WorkspaceScreen() {
     setDownload((current) => (current ? { ...current, error: undefined } : current));
     try {
       // /download must hit the same sandbox the project lives in; sticky routing
-      // keys off the conversation id header, so send it like /file and /chat do
+      // keys off the conversation id header, so send it like /file and /session do
       // (a plain <a download> could not set this header).
       const cid = conversationId || getOrCreateCachedConversationId();
       const resp = await fetchProjectArchive(download.url, cid);
@@ -1605,7 +1637,7 @@ export function WorkspaceScreen() {
 
   // Return to an uncommitted home state. A conversation ID is created and cached
   // only when the user sends the first message, so refreshing an untouched home
-  // screen does not trigger an empty /resume request.
+  // screen does not trigger an empty GET /session request.
   function startNewProject() {
     workspaceEpochRef.current += 1;
     chatAbortControllerRef.current = null;

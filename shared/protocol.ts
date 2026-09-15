@@ -88,7 +88,6 @@ type ActiveChatTask = {
   resetProject?: boolean;
   createdAt?: number;
   startedAt?: number;
-  streamUrl?: string;
 };
 
 export type ResumeData = {
@@ -218,3 +217,5 @@ export type ResumeStreamEvent =
     }
   | { type: 'error'; error?: string }
   | { type: 'ping'; ts?: number };
+
+export type SessionStreamEvent = ChatStreamEvent | ResumeStreamEvent;

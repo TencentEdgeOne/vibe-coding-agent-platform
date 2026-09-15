@@ -4,5 +4,5 @@ export { runFileReadPipeline } from './pipelines/_file-read.ts';
 export { runProjectDownloadPipeline } from './pipelines/_download.ts';
 export {
   createProjectResumeStreamResponse,
-  runProjectResumePipeline,
+  runProjectResumePreviewPipeline,
 } from './pipelines/_resume.ts';

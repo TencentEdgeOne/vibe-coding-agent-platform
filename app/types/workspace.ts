@@ -10,6 +10,7 @@ export type {
   LinkInfo,
   ResumeData,
   ResumeStreamEvent,
+  SessionStreamEvent,
 } from '../../shared/protocol';
 
 export type AssistantStatus = 'running' | 'done' | 'error' | 'stopped';

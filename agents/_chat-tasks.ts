@@ -1,4 +1,5 @@
-import { runChatPipeline, runDeployPipeline } from './_pipelines.ts';
+import { runChatPipeline } from './pipelines/_chat.ts';
+import { runDeployPipeline } from './pipelines/_deploy.ts';
 import {
   appendTurn,
   getChatTask,
@@ -161,7 +162,7 @@ function publish(liveTask: LiveChatTask, event: TaskEvent) {
   }
 }
 
-function isTaskActive(task: ChatTask | null) {
+export function isChatTaskActive(task: ChatTask | null | undefined): task is ChatTask {
   return task?.status === 'queued' || task?.status === 'running';
 }
 
@@ -195,7 +196,7 @@ async function createChatTask(
   if (existing && existing.id === taskId && existing.message === message) {
     return { ok: true as const, conversationId, task: existing };
   }
-  if (existing && isTaskActive(existing)) {
+  if (existing && isChatTaskActive(existing)) {
     return {
       ok: false as const,
       status: 409,
@@ -315,7 +316,7 @@ async function executeLiveTask(context: any, liveTask: LiveChatTask) {
 
   const key = taskKey(liveTask.conversationId, liveTask.task.id);
   setTimeout(() => {
-    if (liveTask.listeners.size === 0 && !isTaskActive(liveTask.task) && liveTasks.get(key) === liveTask) {
+    if (liveTask.listeners.size === 0 && !isChatTaskActive(liveTask.task) && liveTasks.get(key) === liveTask) {
       liveTasks.delete(key);
     }
   }, 5 * 60 * 1_000);
@@ -330,7 +331,7 @@ function ensureChatTaskStarted(
   const liveTask = getOrCreateLiveTask(conversationId, task);
   if (extras?.gatewayApiKey) liveTask.gatewayApiKey = extras.gatewayApiKey;
   if (extras?.gatewaySkip) liveTask.gatewaySkip = true;
-  if (!liveTask.runPromise && isTaskActive(liveTask.task)) {
+  if (!liveTask.runPromise && isChatTaskActive(liveTask.task)) {
     liveTask.runPromise = executeLiveTask(context, liveTask).catch((error) => {
       console.error('[chat-task] execution failed', error);
     });
@@ -355,17 +356,66 @@ class AsyncEventQueue<T> {
   }
 }
 
-function parseTaskId(context: any) {
-  const query = context?.request?.query;
-  const fromQuery = query?.runId ?? query?.turnId ?? query?.taskId;
-  if (typeof fromQuery === 'string' && fromQuery.trim()) return fromQuery.trim();
+const ABORTED = Symbol('aborted');
 
-  const rawUrl = typeof context?.request?.url === 'string' ? context.request.url : '';
+/** Replay buffered events and subscribe to the in-process task. Used by POST /session and GET /session. */
+export async function* iterateLiveChatTaskEvents(
+  context: any,
+  conversationId: string,
+  task: ChatTask,
+  extras?: { gatewayApiKey?: string; gatewaySkip?: boolean },
+  signal?: AbortSignal,
+): AsyncGenerator<string> {
+  const liveTask = ensureChatTaskStarted(context, conversationId, task, extras);
+
+  yield sseEvent({
+    type: 'task_started',
+    data: {
+      runId: task.id,
+      conversation_id: conversationId,
+      status: task.status,
+    },
+  });
+  const queue = new AsyncEventQueue<SequencedEvent>();
+  const afterSequence = liveTask.nextSequence;
+  const listener: TaskListener = (record) => {
+    if (record.sequence > afterSequence) queue.push(record);
+  };
+  liveTask.listeners.add(listener);
+
   try {
-    const url = new URL(rawUrl, 'http://localhost');
-    return url.searchParams.get('runId') || url.searchParams.get('turnId') || url.searchParams.get('taskId') || '';
-  } catch {
-    return '';
+    for (const record of liveTask.events) {
+      if (record.sequence <= afterSequence) {
+        yield sseEvent(record.event);
+      }
+    }
+
+    if (!isChatTaskActive(liveTask.task)) {
+      // The task may have completed after `afterSequence` was captured but
+      // before replay finished. Drain that race window before closing.
+      for (const record of liveTask.events) {
+        if (record.sequence > afterSequence) yield sseEvent(record.event);
+      }
+      return;
+    }
+
+    const abortPromise = signal
+      ? new Promise<typeof ABORTED>((resolve) => {
+        if (signal.aborted) resolve(ABORTED);
+        else signal.addEventListener('abort', () => resolve(ABORTED), { once: true });
+      })
+      : null;
+
+    while (!signal?.aborted) {
+      const record = await (abortPromise
+        ? Promise.race([queue.next(), abortPromise])
+        : queue.next());
+      if (record === ABORTED) return;
+      yield sseEvent(record.event);
+      if (isTerminalEvent(record.event)) return;
+    }
+  } finally {
+    liveTask.listeners.delete(listener);
   }
 }
 
@@ -375,58 +425,8 @@ function createLiveTaskStreamResponse(
   task: ChatTask,
   extras?: { gatewayApiKey?: string; gatewaySkip?: boolean },
 ) {
-  const liveTask = ensureChatTaskStarted(context, conversationId, task, extras);
-
   return createSSEResponse(async function* (signal) {
-    yield sseEvent({
-      type: 'task_started',
-      data: {
-        runId: task.id,
-        conversation_id: conversationId,
-        status: task.status,
-      },
-    });
-    const queue = new AsyncEventQueue<SequencedEvent>();
-    const afterSequence = liveTask.nextSequence;
-    const listener: TaskListener = (record) => {
-      if (record.sequence > afterSequence) queue.push(record);
-    };
-    liveTask.listeners.add(listener);
-
-    try {
-      for (const record of liveTask.events) {
-        if (record.sequence <= afterSequence) {
-          yield sseEvent(record.event);
-        }
-      }
-
-      if (!isTaskActive(liveTask.task)) {
-        // The task may have completed after `afterSequence` was captured but
-        // before replay finished. Drain that race window before closing.
-        for (const record of liveTask.events) {
-          if (record.sequence > afterSequence) yield sseEvent(record.event);
-        }
-        return;
-      }
-
-      const abortPromise = signal
-        ? new Promise<typeof ABORTED>((resolve) => {
-          if (signal.aborted) resolve(ABORTED);
-          else signal.addEventListener('abort', () => resolve(ABORTED), { once: true });
-        })
-        : null;
-
-      while (!signal?.aborted) {
-        const record = await (abortPromise
-          ? Promise.race([queue.next(), abortPromise])
-          : queue.next());
-        if (record === ABORTED) return;
-        yield sseEvent(record.event);
-        if (isTerminalEvent(record.event)) return;
-      }
-    } finally {
-      liveTask.listeners.delete(listener);
-    }
+    yield* iterateLiveChatTaskEvents(context, conversationId, task, extras, signal);
   }, context?.request?.signal);
 }
 
@@ -452,27 +452,3 @@ export async function createChatTaskAndStreamResponse(
     ...(options.gatewaySkip ? { gatewaySkip: true } : {}),
   });
 }
-
-/** Reconnect to a running or completed task without creating a second run. */
-export async function createChatTaskStreamResponse(context: any) {
-  const conversationId = getConversationId(context);
-  const runId = parseTaskId(context);
-  if (!conversationId || !runId) {
-    return new Response(JSON.stringify({ ok: false, error: 'conversationId and runId are required.' }), {
-      status: 400,
-      headers: { 'content-type': 'application/json; charset=utf-8' },
-    });
-  }
-
-  const task = await getChatTask(context, conversationId);
-  if (!task || task.id !== runId) {
-    return new Response(JSON.stringify({ ok: false, error: 'Chat task not found.' }), {
-      status: 404,
-      headers: { 'content-type': 'application/json; charset=utf-8' },
-    });
-  }
-
-  return createLiveTaskStreamResponse(context, conversationId, task);
-}
-
-const ABORTED = Symbol('aborted');

@@ -16,41 +16,30 @@ async function readJson<T>(response: Response): Promise<T | null> {
   return response.json().catch(() => null) as Promise<T | null>;
 }
 
-function fetchResumeStage(
-  conversationId: string,
-  stage: 'preview',
-  signal?: AbortSignal,
-) {
-  return fetch(`/resume?stage=${stage}`, {
-    method: 'POST',
-    headers: conversationHeaders(conversationId),
-    body: JSON.stringify({ stage }),
-    signal,
-  }).then((response) => readJson<ResumeData>(response));
-}
-
-export function openResumeStream(conversationId: string, signal?: AbortSignal) {
-  return fetch('/resume', {
+export function openSessionStream(conversationId: string, signal?: AbortSignal) {
+  return fetch('/session', {
     method: 'GET',
     headers: conversationHeaders(conversationId),
     signal,
   });
 }
 
-// Cold resume can reinstall the EdgeOne CLI (420s ceiling) and project
+// Cold session restore can reinstall the EdgeOne CLI (420s ceiling) and project
 // dependencies before makers-dev starts.
-const RESUME_CLIENT_TIMEOUT_MS = 620_000;
+const PREVIEW_CLIENT_TIMEOUT_MS = 620_000;
 
-function fetchTimedResumeStage(conversationId: string, stage: 'preview') {
+export function fetchPreviewRefresh(conversationId: string) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), RESUME_CLIENT_TIMEOUT_MS);
-  return fetchResumeStage(conversationId, stage, controller.signal)
+  const timer = setTimeout(() => controller.abort(), PREVIEW_CLIENT_TIMEOUT_MS);
+  return fetch('/preview', {
+    method: 'POST',
+    headers: conversationHeaders(conversationId),
+    body: JSON.stringify({}),
+    signal: controller.signal,
+  })
+    .then((response) => readJson<ResumeData>(response))
     .catch(() => null)
     .finally(() => clearTimeout(timer));
-}
-
-export function fetchResumePreview(conversationId: string) {
-  return fetchTimedResumeStage(conversationId, 'preview');
 }
 
 /**
@@ -73,7 +62,7 @@ export function fetchModelCatalog(signal?: AbortSignal) {
     .catch(() => null);
 }
 
-export function startChatTask(options: {
+export function startSessionTurn(options: {
   conversationId: string;
   message: string;
   turnId: string;
@@ -88,7 +77,7 @@ export function startChatTask(options: {
   gatewaySkip?: boolean;
   signal?: AbortSignal;
 }) {
-  return fetch('/chat', {
+  return fetch('/session', {
     method: 'POST',
     headers: conversationHeaders(options.conversationId),
     body: JSON.stringify({
@@ -102,14 +91,6 @@ export function startChatTask(options: {
       ...(options.gatewaySkip ? { gatewaySkip: true } : {}),
     }),
     signal: options.signal,
-  });
-}
-
-export function fetchChatTaskStream(streamUrl: string, conversationId: string, signal: AbortSignal) {
-  return fetch(streamUrl, {
-    method: 'GET',
-    headers: conversationHeaders(conversationId),
-    signal,
   });
 }
 

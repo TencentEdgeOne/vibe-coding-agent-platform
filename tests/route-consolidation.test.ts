@@ -16,20 +16,33 @@ test('the model menu is an edge function, not an agent route', async () => {
   await assert.rejects(access('agents/models.ts'));
 });
 
-test('chat uses one route for direct POST streaming and GET reconnect', async () => {
-  const route = await readFile('agents/chat.ts', 'utf8');
+test('session is GET restore plus POST turn; preview remint is its own route', async () => {
+  const session = await readFile('agents/session.ts', 'utf8');
+  const preview = await readFile('agents/preview.ts', 'utf8');
+  const tasks = await readFile('agents/_chat-tasks.ts', 'utf8');
   const client = await readFile('app/features/workspace/workspace-api.ts', 'utf8');
 
-  assert.match(route, /onRequestPost/);
-  assert.match(route, /createChatTaskAndStreamResponse/);
-  assert.match(route, /onRequestGet/);
-  assert.match(route, /createChatTaskStreamResponse/);
-  assert.match(client, /return fetch\('\/chat'/);
-  await assert.rejects(access('agents/chat/index.ts'));
+  assert.match(session, /onRequestGet/);
+  assert.match(session, /createProjectResumeStreamResponse/);
+  assert.match(session, /onRequestPost/);
+  assert.match(session, /createChatTaskAndStreamResponse/);
+  assert.match(tasks, /export async function\* iterateLiveChatTaskEvents/);
+  assert.match(client, /fetch\('\/session',[\s\S]*?method: 'GET'/);
+  assert.match(client, /fetch\('\/session',[\s\S]*?method: 'POST'/);
+  assert.doesNotMatch(client, /fetch\('\/chat'/);
+  assert.doesNotMatch(client, /fetch\('\/resume'/);
+  assert.doesNotMatch(client, /\/chat\?runId/);
+  assert.match(preview, /onRequestPost/);
+  assert.match(preview, /runProjectResumePreviewPipeline/);
+  assert.doesNotMatch(preview, /onRequestGet/);
+  assert.match(client, /fetch\('\/preview',[\s\S]*?method: 'POST'/);
+  await assert.rejects(access('agents/chat.ts'));
+  await assert.rejects(access('agents/resume.ts'));
+  await assert.rejects(access('agents/session/index.ts'));
 });
 
-test('initial resume is one progressive SSE request', async () => {
-  const route = await readFile('agents/resume.ts', 'utf8');
+test('initial session restore is one progressive SSE request that can attach a live task', async () => {
+  const route = await readFile('agents/session.ts', 'utf8');
   const pipeline = await readFile('agents/pipelines/_resume.ts', 'utf8');
   const client = await readFile('app/features/workspace/workspace-api.ts', 'utf8');
 
@@ -37,7 +50,9 @@ test('initial resume is one progressive SSE request', async () => {
   assert.match(route, /createProjectResumeStreamResponse/);
   assert.match(pipeline, /type: 'resume_history'/);
   assert.match(pipeline, /type: 'resume_workspace'/);
-  assert.match(client, /fetch\('\/resume',[\s\S]*?method: 'GET'/);
+  assert.match(pipeline, /iterateLiveChatTaskEvents/);
+  assert.doesNotMatch(pipeline, /streamUrl: `\/chat\?runId=/);
+  assert.match(client, /fetch\('\/session',[\s\S]*?method: 'GET'/);
 });
 
 test('file panel performs no automatic or hover prefetch', async () => {

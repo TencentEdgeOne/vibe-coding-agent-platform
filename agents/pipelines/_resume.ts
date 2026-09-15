@@ -7,6 +7,7 @@ import {
   getProjectState,
   saveProjectState,
 } from '../_memory.ts';
+import { isChatTaskActive, iterateLiveChatTaskEvents } from '../_chat-tasks.ts';
 import {
   assertPreviewServerReady,
   getFileTree,
@@ -17,11 +18,11 @@ import {
   separateLegacyMakersDeployment,
   startPreviewServer,
 } from '../_project.ts';
-import type { FileTreeItem, PersistedActivity, PersistedActivityTurn, ProjectState } from '../_types.ts';
+import type { ChatTask, FileTreeItem, PersistedActivity, PersistedActivityTurn, ProjectState } from '../_types.ts';
 import { createSSEResponse, sseEvent } from '../_shared.ts';
 import { isMakersDeployUrl } from '../../shared/makers-deploy.ts';
 import { isMakersDeployCommand, isMakersDevCommand } from '../../shared/tool-phase.ts';
-import { getRequestQueryParam, resolveConversationId } from '../utils/_request.ts';
+import { resolveConversationId } from '../utils/_request.ts';
 import { ensureProjectDependencies, withTimeout } from './_helpers.ts';
 import { loadResumeFileContents } from './_resume-files.ts';
 
@@ -70,8 +71,6 @@ function projectStateImpliesPreview(state: ProjectState, activityHistory: Persis
     || activityHistoryImpliesPreview(activityHistory);
 }
 
-type ResumeStage = 'history' | 'workspace' | 'preview';
-
 // Hard ceiling for the whole workspace stage so a stuck sandbox call cannot
 // leave the browser spinner pending indefinitely after stop/refresh.
 // A recycled sandbox may need dependencies plus a cold Makers dev startup.
@@ -88,26 +87,6 @@ function jsonResponse(obj: Record<string, unknown>, status = 200) {
       'cache-control': 'no-store',
     },
   });
-}
-
-async function readResumeStage(context: any): Promise<ResumeStage> {
-  const fromQuery = getRequestQueryParam(context, 'stage').value;
-  if (fromQuery === 'workspace' || fromQuery === 'history' || fromQuery === 'preview') {
-    return fromQuery;
-  }
-  try {
-    const body = await context?.request?.json?.();
-    if (
-      body
-      && typeof body === 'object'
-      && (body.stage === 'workspace' || body.stage === 'history' || body.stage === 'preview')
-    ) {
-      return body.stage;
-    }
-  } catch {
-    // Body may be empty — default to the fast history stage.
-  }
-  return 'history';
 }
 
 // Fast path: store reads only. No sandbox restore / npm install / preview.
@@ -130,8 +109,7 @@ async function loadProjectResumeHistory(context: any, conversationId: string) {
     || Boolean(state.created)
     || activityHistoryImpliesProject(activityHistory);
   const hasPreview = projectStateImpliesPreview(state, activityHistory);
-  const activeTask = chatTask
-    && (chatTask.status === 'queued' || chatTask.status === 'running')
+  const activeTask = isChatTaskActive(chatTask)
     ? {
         id: chatTask.id,
         message: chatTask.message,
@@ -139,7 +117,6 @@ async function loadProjectResumeHistory(context: any, conversationId: string) {
         resetProject: chatTask.resetProject === true,
         createdAt: chatTask.createdAt,
         startedAt: chatTask.startedAt,
-        streamUrl: `/chat?runId=${encodeURIComponent(chatTask.id)}`,
       }
     : null;
 
@@ -252,9 +229,7 @@ async function runWorkspaceRestoreBody(context: any, conversationId: string) {
   ]);
   const state = separateLegacyMakersDeployment(storedState);
   const hadPreview = projectStateImpliesPreview(state, activityHistory);
-  const generationActive = Boolean(
-    chatTask && (chatTask.status === 'queued' || chatTask.status === 'running'),
-  );
+  const generationActive = isChatTaskActive(chatTask);
 
   let hasFiles = false;
   let restoreError: string | undefined;
@@ -448,7 +423,7 @@ export async function runProjectResumePreviewPipeline(context: any): Promise<Res
 
   try {
     // Allow workspace-restore escalation inside the light path, so budget matches
-    // the slow resume ceiling (and the client abort in fetchResumePreview).
+    // the slow resume ceiling (and the client abort in fetchPreviewRefresh).
     const payload = await withTimeout(
       runPreviewRefreshBody(context, conversationId),
       WORKSPACE_RESUME_BUDGET_MS,
@@ -467,10 +442,115 @@ export async function runProjectResumePreviewPipeline(context: any): Promise<Res
   }
 }
 
+const STREAM_FINISHED = Symbol('finished');
+const STREAM_ABORTED = Symbol('aborted');
+
+class AsyncValueQueue<T> {
+  private values: T[] = [];
+  private waiters: Array<(value: T) => void> = [];
+
+  push(value: T) {
+    const waiter = this.waiters.shift();
+    if (waiter) waiter(value);
+    else this.values.push(value);
+  }
+
+  next() {
+    const value = this.values.shift();
+    if (value !== undefined) return Promise.resolve(value);
+    return new Promise<T>((resolve) => this.waiters.push(resolve));
+  }
+}
+
+async function* mergeSseGenerators(
+  generators: Array<AsyncGenerator<string>>,
+  signal?: AbortSignal,
+): AsyncGenerator<string> {
+  if (generators.length === 1) {
+    yield* generators[0];
+    return;
+  }
+
+  const queue = new AsyncValueQueue<string | typeof STREAM_FINISHED | typeof STREAM_ABORTED>();
+  let remaining = generators.length;
+  const abortPromise = signal
+    ? new Promise<typeof STREAM_ABORTED>((resolve) => {
+      if (signal.aborted) resolve(STREAM_ABORTED);
+      else signal.addEventListener('abort', () => resolve(STREAM_ABORTED), { once: true });
+    })
+    : null;
+
+  const pump = async (gen: AsyncGenerator<string>) => {
+    try {
+      for await (const chunk of gen) {
+        if (signal?.aborted) return;
+        queue.push(chunk);
+      }
+    } finally {
+      remaining -= 1;
+      if (remaining === 0) queue.push(STREAM_FINISHED);
+    }
+  };
+
+  for (const gen of generators) void pump(gen);
+
+  while (!signal?.aborted) {
+    const item = await (abortPromise
+      ? Promise.race([queue.next(), abortPromise])
+      : queue.next());
+    if (item === STREAM_FINISHED || item === STREAM_ABORTED) return;
+    yield item;
+  }
+}
+
+async function* iterateWorkspaceResumeEvents(
+  context: any,
+  conversationId: string,
+  signal?: AbortSignal,
+): AsyncGenerator<string> {
+  try {
+    const workspace = await withTimeout(
+      runWorkspaceRestoreBody(context, conversationId),
+      WORKSPACE_RESUME_BUDGET_MS,
+      'workspace resume',
+    );
+    if (signal?.aborted) return;
+    yield sseEvent({ type: 'resume_workspace', data: workspace });
+
+    // Warm the browser's source cache over this same resume connection. The
+    // workspace event is sent first so the UI remains progressive; each file
+    // then becomes immediately browseable without a /file route call.
+    const fileItems = workspace.files?.items || [];
+    if (!signal?.aborted && fileItems.length > 0) {
+      const contents = await loadResumeFileContents(context, conversationId, fileItems);
+      for (const file of contents) {
+        if (signal?.aborted) return;
+        yield sseEvent({ type: 'resume_file_content', data: file });
+      }
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Workspace resume failed.';
+    console.warn('[resume:stream]', message);
+    if (!signal?.aborted) {
+      yield sseEvent({
+        type: 'resume_workspace',
+        data: {
+          ok: true,
+          stage: 'workspace',
+          conversation_id: conversationId,
+          hasProject: false,
+          preview: { error: message },
+          files: { root: '', items: [] },
+        },
+      });
+    }
+  }
+}
+
 /**
- * One progressive resume request replaces the former history → workspace chain.
- * History is emitted immediately; sandbox restore and preview restart follow on
- * the same SSE connection only when a durable project exists.
+ * Session entry: history first, then workspace restore and/or a live task on
+ * the same SSE connection. Creating or opening a conversation always hits
+ * GET /session; POST /session is only for a new user message.
  */
 export async function createProjectResumeStreamResponse(context: any): Promise<Response> {
   const { conversationId } = resolveConversationId(context, { allowQuery: true });
@@ -482,59 +562,18 @@ export async function createProjectResumeStreamResponse(context: any): Promise<R
     const history = await loadProjectResumeHistory(context, conversationId);
     yield sseEvent({ type: 'resume_history', data: history });
 
-    if (signal?.aborted || !history.needsWorkspace) return;
+    if (signal?.aborted) return;
 
-    try {
-      const workspace = await withTimeout(
-        runWorkspaceRestoreBody(context, conversationId),
-        WORKSPACE_RESUME_BUDGET_MS,
-        'workspace resume',
-      );
-      if (!signal?.aborted) {
-        yield sseEvent({ type: 'resume_workspace', data: workspace });
-      }
-
-      // Warm the browser's source cache over this same resume connection. The
-      // workspace event is sent first so the UI remains progressive; each file
-      // then becomes immediately browseable without a /file route call.
-      const fileItems = workspace.files?.items || [];
-      if (!signal?.aborted && fileItems.length > 0) {
-        const contents = await loadResumeFileContents(context, conversationId, fileItems);
-        for (const file of contents) {
-          if (signal?.aborted) return;
-          yield sseEvent({ type: 'resume_file_content', data: file });
-        }
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Workspace resume failed.';
-      console.warn('[resume:stream]', message);
-      if (!signal?.aborted) {
-        yield sseEvent({
-          type: 'resume_workspace',
-          data: {
-            ok: true,
-            stage: 'workspace',
-            conversation_id: conversationId,
-            hasProject: false,
-            preview: { error: message },
-            files: { root: '', items: [] },
-          },
-        });
-      }
+    const storedTask = await getChatTask(context, conversationId);
+    const liveTask: ChatTask | null = isChatTaskActive(storedTask) ? storedTask : null;
+    const generators: Array<AsyncGenerator<string>> = [];
+    if (history.needsWorkspace) {
+      generators.push(iterateWorkspaceResumeEvents(context, conversationId, signal));
     }
+    if (liveTask) {
+      generators.push(iterateLiveChatTaskEvents(context, conversationId, liveTask, undefined, signal));
+    }
+    if (generators.length === 0) return;
+    yield* mergeSseGenerators(generators, signal);
   }, context?.request?.signal);
-}
-
-// Compatibility router for explicit preview refresh and older clients.
-// `stage=workspace` → slow restore; `stage=preview` → re-mint preview URL;
-// anything else (including `{}`) → fast history path.
-export async function runProjectResumePipeline(context: any): Promise<Response> {
-  const stage = await readResumeStage(context);
-  if (stage === 'workspace') {
-    return runProjectResumeWorkspacePipeline(context);
-  }
-  if (stage === 'preview') {
-    return runProjectResumePreviewPipeline(context);
-  }
-  return runProjectResumeHistoryPipeline(context);
 }

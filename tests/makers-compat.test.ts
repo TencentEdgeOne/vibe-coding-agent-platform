@@ -120,7 +120,7 @@ test('cold resume restores project dependencies without managing the sandbox CLI
   assert.doesNotMatch(resume, /prewarmEdgeoneCli|npm install -g edgeone/);
   assert.match(resume, /WORKSPACE_RESUME_BUDGET_MS = 600_000/);
   assert.match(resume, /PREVIEW_RESTART_BUDGET_MS = 540_000/);
-  assert.match(client, /RESUME_CLIENT_TIMEOUT_MS = 620_000/);
+  assert.match(client, /PREVIEW_CLIENT_TIMEOUT_MS = 620_000/);
 });
 
 test('official storage reference covers pages-blob', async () => {

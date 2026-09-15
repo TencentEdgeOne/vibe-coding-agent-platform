@@ -33,7 +33,7 @@ export async function getHistory(
           : JSON.stringify(item.content ?? ''),
       }));
 
-    // /chat persists the submitted user message before the detached task starts.
+    // POST /session persists the submitted user message before the detached task starts.
     // Remove that one record from the prompt history; the pipeline passes
     // it separately as the current user turn.
     const currentMessage = options.excludeLatestUserMessage;

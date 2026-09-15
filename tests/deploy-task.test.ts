@@ -9,7 +9,7 @@ import { presentToolActivity } from '../app/lib/tool-activity.ts';
 test('publishing occupies the chat task slot instead of a route of its own', async () => {
   const [tasks, route, resume, client] = await Promise.all([
     readFile('agents/_chat-tasks.ts', 'utf8'),
-    readFile('agents/chat.ts', 'utf8'),
+    readFile('agents/session.ts', 'utf8'),
     readFile('agents/pipelines/_resume.ts', 'utf8'),
     readFile('app/features/workspace/workspace-api.ts', 'utf8'),
   ]);
@@ -19,7 +19,8 @@ test('publishing occupies the chat task slot instead of a route of its own', asy
   assert.match(route, /siteDomain: String\(body\?\.siteDomain/);
   assert.match(client, /\.\.\.\(options\.intent \? \{ intent: options\.intent \} : \{\}\)/);
   assert.match(client, /siteDomain: options\.siteDomain/);
-  assert.match(resume, /streamUrl: `\/chat\?runId=/);
+  assert.doesNotMatch(resume, /streamUrl: `\/chat\?runId=/);
+  assert.match(resume, /iterateLiveChatTaskEvents/);
 });
 
 // The project, the credential and the target project are all decided before
@@ -252,7 +253,7 @@ test('the header ships the template, the panel ships the project', async () => {
 // session that never published anything.
 test('resumed history decides the deployment card, including when there is none', async () => {
   const screen = await readFile('app/features/workspace/workspace-screen.tsx', 'utf8');
-  const start = screen.indexOf('const applyHistory = (data: ResumeData) => {');
+  const start = screen.indexOf('const applyHistory = (data: ResumeData)');
   const body = screen.slice(start, screen.indexOf('const applyWorkspace = (data: ResumeData) => {', start));
 
   assert.ok(start >= 0 && body.length > 0);
@@ -288,6 +289,8 @@ test('publishing leaves the composer and the files panel alone', async () => {
 
   assert.ok(start >= 0 && body.length > 0);
   assert.match(body, /const isStartingFromHome = !isDeploy && !isGatewayCard && !hasWorkspace/);
+  assert.match(body, /if \(isStartingFromHome\) \{[\s\S]*?openSessionStream/);
+  assert.match(body, /startSessionTurn\(/);
   assert.match(body, /if \(!isDeploy\) \{\s*setFilesRefreshing\(true\);/);
   assert.match(body, /if \(!isGatewayCard\) setInput\(''\)/);
 });
