@@ -282,21 +282,17 @@ test('the conversation card asks for API Key and submits a masked chat turn', as
   assert.match(screen, /if \(data\.gatewayNeeded\) \{\s*setGatewayNeeded\(true\);/);
 });
 
-test('the API key card is usable while the assistant is still streaming the ask', async () => {
+test('the API key card waits until the assistant turn has finished', async () => {
   const [conversation, screen] = await Promise.all([
     readFile('app/components/agent-conversation.tsx', 'utf8'),
     readFile('app/features/workspace/workspace-screen.tsx', 'utf8'),
   ]);
 
-  // Loading is the live turn, not the card. Tying them together greyed the
-  // input out for the last few seconds of streamed copy.
-  assert.doesNotMatch(screen, /gatewayBusy=\{loading \|\| gatewayBusy\}/);
-  assert.match(screen, /gatewayBusy=\{gatewayBusy\}/);
-  assert.match(screen, /keepAssistantText: true/);
-  assert.match(screen, /preserveGatewayPrompt: true/);
+  // The tool asks mid-stream, but showing the card then greys it out for the
+  // last few seconds of copy. Hold it until loading is false so it appears
+  // ready to type into.
+  assert.match(screen, /gatewayPrompt=\{gatewayNeeded && !loading \? \{/);
   assert.match(conversation, /autoFocus/);
-  assert.match(conversation, /gatewayVisible/);
-  assert.match(conversation, /node\.focus\(\)/);
   assert.match(conversation, /disabled=\{gatewayBusy\}/);
 });
 

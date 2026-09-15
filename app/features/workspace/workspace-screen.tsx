@@ -47,7 +47,6 @@ import {
   getOrCreateCachedConversationId,
   getStoredConversationId,
   getTemplateDeployUrl,
-  lastRunningAssistantText,
   markLastTurnStopped,
   sanitizeThinkingContent,
 } from '@/app/lib/conversation';
@@ -56,10 +55,7 @@ import { extractApiKeyFromUserText, maskApiKey } from '../../../shared/gateway-s
 import { isMakersDeployUrl } from '../../../shared/makers-deploy';
 import { previewDisplayPathFromPath } from '../../../shared/preview-display-path';
 import { previewDeepLink } from '../../../shared/preview-link';
-import {
-  GATEWAY_CREDENTIALS_USER_REPLY,
-  STOPPED_TURN_REPLY,
-} from '../../../shared/user-facing-reply';
+import { STOPPED_TURN_REPLY } from '../../../shared/user-facing-reply';
 import type { ModelOption } from '../../../shared/models';
 import type {
   AssistantActivity,
@@ -234,9 +230,6 @@ export function WorkspaceScreen() {
   const resumeAbortControllerRef = useRef<AbortController | null>(null);
   const activeTurnIdRef = useRef('');
   const stoppingRef = useRef(false);
-  // Card submit can land while the ask is still streaming; a render-stale
-  // `gatewayBusy` would let a second click start a second turn.
-  const gatewaySubmitLockRef = useRef(false);
   // Invalidates callbacks from an aborted workspace after "Stop and start new"
   // has already painted the fresh home screen.
   const workspaceEpochRef = useRef(0);
@@ -1040,8 +1033,8 @@ export function WorkspaceScreen() {
       finalContent: string,
       finalStatus: AssistantStatus,
     ) => {
-      // Do not hide the card here. The user can type the key while this turn
-      // is still streaming, and wiping it on finalize made the input vanish.
+      // The API key card outlives this turn: the user fills it after the
+      // assistant stops. Clearing it here made the input flash and vanish.
       setGatewayBusy(false);
       setMessages((current) =>
         current.map((item) =>
@@ -1158,14 +1151,6 @@ export function WorkspaceScreen() {
 
     const handleStreamEvent = (event: ChatStreamEvent) => {
       if (workspaceEpoch !== workspaceEpochRef.current) {
-        return;
-      }
-      // The user may answer the API key card before this stream ends. Drop
-      // leftover tokens so they cannot disable the card or rewrite the ask.
-      if (
-        requestAbortController.signal.aborted
-        || chatAbortControllerRef.current !== requestAbortController
-      ) {
         return;
       }
       if (event.type === 'task_started') {
@@ -1364,30 +1349,8 @@ export function WorkspaceScreen() {
     gatewaySkip?: boolean;
   } = {}) {
     const trimmed = message.trim();
-    if (!trimmed) {
+    if (!trimmed || loading) {
       return;
-    }
-
-    // Publishing and the API key card act on the project that is already here:
-    // they never start a workspace and never clear what the user is typing.
-    // A key typed in the composer is not the card: it can still start a project.
-    const isDeploy = options.intent === 'deploy';
-    const isGatewayCard = Boolean(options.apiKey || options.gatewaySkip);
-    if (loadingRef.current && !isGatewayCard) {
-      return;
-    }
-    if (isGatewayCard) {
-      if (gatewaySubmitLockRef.current) return;
-      gatewaySubmitLockRef.current = true;
-      setGatewayBusy(true);
-      if (loadingRef.current) {
-        // The card is shown as soon as the tool asks; do not wait for the last
-        // streamed sentence. Stop this turn so the key/skip can go out now.
-        await stopCurrentTask({
-          preserveGatewayPrompt: true,
-          keepAssistantText: true,
-        });
-      }
     }
 
     const extractedKey = options.apiKey
@@ -1395,6 +1358,12 @@ export function WorkspaceScreen() {
       : extractApiKeyFromUserText(trimmed);
     const inboundApiKey = options.apiKey || extractedKey?.apiKey;
     const displayMessage = extractedKey?.maskedText || trimmed;
+
+    // Publishing and the API key card act on the project that is already here:
+    // they never start a workspace and never clear what the user is typing.
+    // A key typed in the composer is not the card: it can still start a project.
+    const isDeploy = options.intent === 'deploy';
+    const isGatewayCard = Boolean(options.apiKey || options.gatewaySkip);
     const isGatewayContinue = Boolean(inboundApiKey || options.gatewaySkip);
     const isStartingFromHome = !isDeploy && !isGatewayCard && !hasWorkspace;
     const requestConversationId = isStartingFromHome
@@ -1496,9 +1465,6 @@ export function WorkspaceScreen() {
         abortController: requestAbortController,
       });
     } catch (error) {
-      if (isGatewayCard) {
-        setGatewayBusy(false);
-      }
       if ((error instanceof Error && error.name === 'AbortError') || stoppingRef.current) {
         setLoading(false);
         setFilesRefreshing(false);
@@ -1524,10 +1490,6 @@ export function WorkspaceScreen() {
       chatAbortControllerRef.current = null;
       activeTurnIdRef.current = '';
       stoppingRef.current = false;
-    } finally {
-      if (isGatewayCard) {
-        gatewaySubmitLockRef.current = false;
-      }
     }
   }
 
@@ -1536,32 +1498,20 @@ export function WorkspaceScreen() {
     await sendMessage(input);
   }
 
-  function stopCurrentTask(options: {
-    discardProject?: boolean;
-    preserveGatewayPrompt?: boolean;
-    keepAssistantText?: boolean;
-  } = {}) {
+  function stopCurrentTask(options: { discardProject?: boolean } = {}) {
     const cid = conversationIdRef.current || conversationId;
     if (!loadingRef.current || !cid || stoppingRef.current) return null;
     stoppingRef.current = true;
-    const stoppedText = options.keepAssistantText
-      ? lastRunningAssistantText(
-        messagesRef.current,
-        GATEWAY_CREDENTIALS_USER_REPLY[language],
-      )
-      : STOPPED_TURN_REPLY[language];
+    const stoppedText = STOPPED_TURN_REPLY[language];
     // The screen and the /stop payload are the same fact, so they come from one
     // pass over one snapshot. Deriving them separately let them disagree about
     // which turn was interrupted and which of its tools were still running.
     const stopped = markLastTurnStopped(messagesRef.current, stoppedText);
     setMessages(stopped.messages);
     setLoading(false);
-    loadingRef.current = false;
     setFilesRefreshing(false);
-    if (!options.preserveGatewayPrompt) {
-      setGatewayNeeded(false);
-      setGatewayBusy(false);
-    }
+    setGatewayNeeded(false);
+    setGatewayBusy(false);
 
     const stoppedTurn = {
       id: activeTurnIdRef.current,
@@ -1572,14 +1522,9 @@ export function WorkspaceScreen() {
       activities: stopped.activities,
     };
 
-    const controller = chatAbortControllerRef.current;
-    // Detach before abort settles so leftover SSE cannot clear the next turn's
-    // loading state or rewrite the ask the user is answering.
-    chatAbortControllerRef.current = null;
-    controller?.abort();
-    return stopChatTask(cid, stoppedTurn, {
-      ...(options.discardProject ? { discardProject: true } : {}),
-    }).catch(() => null);
+    const stopRequest = stopChatTask(cid, stoppedTurn, options).catch(() => null);
+    chatAbortControllerRef.current?.abort();
+    return stopRequest;
   }
 
   async function handleStop() {
@@ -1701,7 +1646,6 @@ export function WorkspaceScreen() {
     activeTurnIdRef.current = '';
     stoppingRef.current = false;
     loadingRef.current = false;
-    gatewaySubmitLockRef.current = false;
     conversationIdRef.current = null;
     clearCachedConversationId();
     setConversationId(null);
@@ -1845,7 +1789,7 @@ export function WorkspaceScreen() {
           onDismissDeployOffer={() => {
             if (deployOfferTurnId) setDismissedDeployTurnId(deployOfferTurnId);
           }}
-          gatewayPrompt={gatewayNeeded ? {
+          gatewayPrompt={gatewayNeeded && !loading ? {
             title: t.workspace.gatewayPromptTitle,
             docs: t.workspace.gatewayPromptDocs,
             docsUrl: makersModelsDocsUrl,
@@ -1856,11 +1800,11 @@ export function WorkspaceScreen() {
           gatewayBusy={gatewayBusy}
           onGatewaySubmit={(values) => {
             const apiKey = values.apiKey.trim();
-            if (!apiKey || gatewayBusy || gatewaySubmitLockRef.current) return;
+            if (!apiKey || loading || gatewayBusy) return;
             void sendMessage(`${t.workspace.gatewayPromptApiKey}: ${maskApiKey(apiKey)}`, { apiKey });
           }}
           onGatewaySkip={() => {
-            if (gatewayBusy || gatewaySubmitLockRef.current) return;
+            if (loading || gatewayBusy) return;
             void sendMessage(t.workspace.gatewayPromptSkip, { gatewaySkip: true });
           }}
         />}

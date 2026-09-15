@@ -406,8 +406,8 @@ export function AgentConversation({
       setGatewayApiKey('');
       return;
     }
-    // Focus as soon as the card mounts — including while the assistant is still
-    // finishing the ask — so the user can type without waiting for the stream.
+    // The card mounts only after the assistant turn has finished, so focus
+    // can land immediately instead of waiting on a disabled input.
     const node = gatewayInputRef.current;
     if (!node || node.disabled) return;
     node.focus();
