@@ -254,6 +254,7 @@ async function prepareMakersCommand(
           previewPath: PREVIEW_PATH_PREFIX,
           projectName,
           assetPrefixEnvName: PREVIEW_ASSET_PREFIX_ENV,
+          area: resolveMakersPublishTarget(lifecycle.state.siteDomain || '').area,
         }),
         lifecycle.state.appDir,
         env,

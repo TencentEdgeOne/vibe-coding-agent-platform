@@ -20,6 +20,7 @@ import {
 } from '../../shared/makers-dev.ts';
 import { makersFileSemantic } from '../../shared/makers-file-semantics.ts';
 import { redactSecret } from '../../shared/makers-deploy.ts';
+import { resolveMakersPublishTarget } from '../../shared/publish-target.ts';
 import { shellQuote } from '../../shared/shell.ts';
 import {
   MAKERS_CLI_UNAVAILABLE_ERROR_CODE,
@@ -123,7 +124,8 @@ export async function startPreviewServer(
   await assertMakersProjectCompatible(context, state);
   const masterToken = resolveMakersMasterToken(context);
   const projectName = resolveMakersProjectName(context, state);
-  const launchCommand = buildMakersDevLaunchCommand(MAKERS_DEV_PORT, projectName);
+  const area = resolveMakersPublishTarget(state.siteDomain || '').area;
+  const launchCommand = buildMakersDevLaunchCommand(MAKERS_DEV_PORT, projectName, { area });
   let forceRestart = false;
 
   // makers-dev watches project files. On resume, keep a healthy process rather
@@ -161,6 +163,7 @@ export async function startPreviewServer(
       projectName,
       assetPrefixEnvName: PREVIEW_ASSET_PREFIX_ENV,
       forceRestart,
+      area,
     }),
     {
       cwd: state.appDir,

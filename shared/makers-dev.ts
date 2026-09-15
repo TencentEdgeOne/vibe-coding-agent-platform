@@ -367,8 +367,20 @@ export function previewRestoredUrl(
   return target.toString();
 }
 
-export function buildMakersDevLaunchCommand(port: number, projectName: string) {
-  return `edgeone makers dev --port ${port} --skip-env-sync --skip-ai-gateway-sync --name ${shellQuote(projectName)}`;
+export function buildMakersDevLaunchCommand(
+  port: number,
+  projectName: string,
+  options: { area?: string } = {},
+) {
+  const area = options.area === 'overseas' ? 'overseas' : 'global';
+  return [
+    'edgeone makers dev',
+    `--port ${port}`,
+    '--skip-env-sync',
+    '--skip-ai-gateway-sync',
+    `--name ${shellQuote(projectName)}`,
+    `--area ${area}`,
+  ].join(' ');
 }
 
 export function buildPreviewProxyScript(
@@ -860,6 +872,8 @@ export type MakersDevBackgroundOptions = {
   /** Name only; the launcher owns the value, which is always the live prefix. */
   assetPrefixEnvName: string;
   forceRestart?: boolean;
+  /** Same acceleration area deploy uses; preview is what creates the project. */
+  area?: string;
 };
 
 export function buildMakersDevBackgroundCommand({
@@ -869,11 +883,12 @@ export function buildMakersDevBackgroundCommand({
   projectName,
   assetPrefixEnvName,
   forceRestart = false,
+  area,
 }: MakersDevBackgroundOptions) {
   const prefix = normalizePreviewPrefix(previewPath);
   const readyUrl = `http://127.0.0.1:${previewPort}${prefix}/`;
   const proxyHealthUrl = `http://127.0.0.1:${previewPort}/__edgeone_preview_proxy_health`;
-  const launch = buildMakersDevLaunchCommand(makersPort, projectName);
+  const launch = buildMakersDevLaunchCommand(makersPort, projectName, { area });
   const proxyScript = buildPreviewProxyScript(previewPort, makersPort, prefix);
   const proxyRevision = previewProxyRevision(previewPort, makersPort, prefix);
   const writeProxyScript = `require('node:fs').writeFileSync(${

@@ -249,6 +249,7 @@ test('direct makers dev is normalized, published, and reported through the lifec
     String(received.command),
     new RegExp(`nohup edgeone makers dev --port ${MAKERS_DEV_PORT}`),
   );
+  assert.match(String(received.command), /--area global/);
   assert.match(
     String(received.command),
     new RegExp(`http://127\\.0\\.0\\.1:${PREVIEW_SERVER_PORT}/preview/`),
@@ -429,6 +430,51 @@ test('direct makers deploy reports durable deployment state without replacing pr
   assert.equal(state.deployment?.deploymentId, 'dp-1');
   assert.equal(state.deployment?.consoleUrl, consoleUrl);
   assert.match((result.content.at(-1) as { text: string }).text, /"status":"published"/);
+});
+
+test('a .dev host wraps preview onto the overseas area', async () => {
+  let received: Record<string, unknown> = {};
+  const commandsTool = {
+    name: 'commands',
+    description: 'run',
+    inputSchema: {},
+    handler: async (args: Record<string, unknown>) => {
+      received = args;
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            stdout: 'MAKERS_DEV_READY=started\nMAKERS_DEV_EXIT:0\n',
+            stderr: '',
+            exitCode: 0,
+          }),
+        }],
+      };
+    },
+  } as unknown as ClaudeMcpTool;
+  const state = projectState('projects/demo', { siteDomain: 'edgeone.dev' });
+  const [wrapped] = wrapSandboxTools([commandsTool], {
+    context: {
+      env: {},
+      sandbox: {
+        envdAccessToken: 'sandbox-access',
+        getHost: () => 'preview.sandbox.example',
+        browser: {},
+        files: {
+          exists: async () => false,
+          write: async () => {},
+        },
+        commands: {
+          run: async () => ({ stdout: 'EXIT:0\n', stderr: '', exitCode: 0 }),
+        },
+      },
+    },
+    state,
+  });
+
+  await wrapped.handler({ command: 'edgeone makers dev' }, {});
+  assert.match(String(received.command), /--area overseas/);
+  assert.doesNotMatch(String(received.command), /--area global/);
 });
 
 test('a .dev host wraps deploy onto the overseas area', async () => {

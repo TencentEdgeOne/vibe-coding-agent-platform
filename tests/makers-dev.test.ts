@@ -75,8 +75,29 @@ test('makers-dev launch is non-interactive and does not pass a token flag', () =
   assert.match(command, /--skip-env-sync/);
   assert.match(command, /--skip-ai-gateway-sync/);
   assert.match(command, /--name 'vibe-coding-playground'/);
+  assert.match(command, /--area global/);
   assert.doesNotMatch(command, / -t /);
   assert.doesNotMatch(command, /makers deploy/);
+});
+
+// Preview is what creates the Makers project. Without --area here, a later
+// deploy --area overseas reuses that global project and the flag is ignored.
+test('makers-dev launch pins the same publish area deploy uses', () => {
+  const overseas = buildMakersDevLaunchCommand(MAKERS_DEV_PORT, 'demo', {
+    area: 'overseas',
+  });
+  assert.match(overseas, /--area overseas/);
+  assert.doesNotMatch(overseas, /--area global/);
+
+  const background = buildMakersDevBackgroundCommand({
+    makersPort: MAKERS_DEV_PORT,
+    previewPort: PREVIEW_SERVER_PORT,
+    previewPath: PREVIEW_PATH_PREFIX,
+    projectName: 'demo',
+    assetPrefixEnvName: PREVIEW_ASSET_PREFIX_ENV,
+    area: 'overseas',
+  });
+  assert.match(background, /edgeone makers dev .* --area overseas/);
 });
 
 test('preview topology keeps CLI, path adapter, and public gateway separate', () => {
@@ -1027,6 +1048,7 @@ test('sandbox preview publishes the fixed gateway path through a local adapter',
   assert.doesNotMatch(preview, /ensureEdgeoneCli|npm install -g edgeone/);
   assert.match(preview, /buildMakersDevLaunchCommand/);
   assert.match(preview, /buildMakersDevBackgroundCommand/);
+  assert.match(preview, /resolveMakersPublishTarget\(state\.siteDomain/);
   assert.match(preview, /getHost\(PREVIEW_PUBLIC_PORT\)/);
   assert.match(
     preview,
