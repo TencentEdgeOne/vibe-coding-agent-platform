@@ -9,12 +9,14 @@ import {
   resolveGatewayUserTurn,
 } from '../shared/gateway-secret.ts';
 import {
+  AI_GATEWAY_ORIGIN,
   DEFAULT_AI_GATEWAY_BASE_URL,
   GATEWAY_CREDENTIALS_PAUSE_MESSAGE,
   applyUserGatewayDecision,
   buildRequestGatewayCredentialsTool,
   declaredGatewayKeys,
   envAssignmentValue,
+  gatewayBaseUrlForAgentFramework,
   pauseForGatewayCredentialsIfNeeded,
   projectDeclaresGatewayKeys,
   readProjectGatewayEnv,
@@ -122,6 +124,30 @@ test('a provided key is written to .env and a skip is not', async () => {
   assert.equal(
     files.get('projects/demo/app/.env.example'),
     'AI_GATEWAY_API_KEY=\nAI_GATEWAY_BASE_URL=\n',
+  );
+});
+
+test('a claude-agent-sdk project gets the origin without /v1', async () => {
+  const { files, context } = sandboxFiles([
+    ['projects/demo/app/.env.example', 'AI_GATEWAY_API_KEY=\nAI_GATEWAY_BASE_URL=\n'],
+    ['projects/demo/app/edgeone.json', '{"agents":{"framework":"claude-agent-sdk"}}'],
+  ]);
+  const state = projectState();
+
+  assert.equal(gatewayBaseUrlForAgentFramework('claude-agent-sdk'), AI_GATEWAY_ORIGIN);
+  assert.equal(gatewayBaseUrlForAgentFramework('deepagents'), DEFAULT_AI_GATEWAY_BASE_URL);
+  assert.equal(gatewayBaseUrlForAgentFramework(undefined), DEFAULT_AI_GATEWAY_BASE_URL);
+
+  assert.deepEqual(
+    await applyUserGatewayDecision(context, state, 'conv-claude', { apiKey: 'sk-user' }),
+    {
+      AI_GATEWAY_API_KEY: 'sk-user',
+      AI_GATEWAY_BASE_URL: AI_GATEWAY_ORIGIN,
+    },
+  );
+  assert.equal(
+    files.get('projects/demo/app/.env'),
+    `AI_GATEWAY_API_KEY=sk-user\nAI_GATEWAY_BASE_URL=${AI_GATEWAY_ORIGIN}\n`,
   );
 });
 
@@ -237,7 +263,8 @@ test('the conversation card asks for API Key and submits a masked chat turn', as
   assert.match(card, /href=\{gatewayPrompt\.docsUrl\}/);
   assert.match(card, /gatewayPrompt\.apiKey/);
   assert.doesNotMatch(card, /gatewayPrompt\.baseUrl/);
-  assert.equal(DEFAULT_AI_GATEWAY_BASE_URL, 'https://ai-gateway.edgeone.link');
+  assert.equal(DEFAULT_AI_GATEWAY_BASE_URL, 'https://ai-gateway.edgeone.link/v1');
+  assert.equal(AI_GATEWAY_ORIGIN, 'https://ai-gateway.edgeone.link');
   assert.match(screen, /maskApiKey\(apiKey\)/);
   assert.match(screen, /extractApiKeyFromUserText\(trimmed\)/);
   assert.match(screen, /inboundApiKey \? \{ apiKey: inboundApiKey \}/);

@@ -152,7 +152,8 @@ test('the prompt keeps the sandbox corrections the skills cannot know about', ()
   assert.match(prompt, /request_gateway_credentials/);
   assert.match(prompt, /masked API Key/);
   assert.doesNotMatch(prompt, /The host asks the user/);
-  assert.match(prompt, /Normalize it to end in exactly \/v1/);
+  assert.match(prompt, /already shaped for OpenAI-compatible clients/);
+  assert.match(prompt, /never concatenate \/v1\/chat\/completions/);
   assert.match(
     prompt,
     new RegExp(`public development preview starts under ${PREVIEW_PATH_PREFIX}`),
@@ -403,6 +404,7 @@ test('the official scaffolder replaces the search for an official template', () 
   assert.match(prompt, /Do not try a second scaffolder, a different package name, or a flag variation/);
   // And what it produced is kept, not rewritten file by file.
   assert.match(prompt, /keep what it produced and use these calls to adapt it/);
+  assert.match(prompt, /do not also write agents\/chat\/index\.ts/);
 });
 
 // For a framework with a baked template the scaffolder already ran, at build

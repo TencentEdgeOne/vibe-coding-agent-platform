@@ -123,6 +123,20 @@ test('a passing compatibility check is silent', async () => {
   assert.equal(failure, undefined, failure?.message);
 });
 
+test('Makers lint rejects two entry files for the same agent route', async () => {
+  const result = await runLintFixture({
+    'edgeone.json': '{"agents":{"framework":"deepagents"}}',
+    '.env.example': 'AI_GATEWAY_API_KEY=\nAI_GATEWAY_BASE_URL=\n',
+    'agents/chat.ts': 'export async function onRequest() { return new Response("ok"); }\n',
+    'agents/chat/index.ts': 'export async function onRequest() { return new Response("ok"); }\n',
+  });
+  const output = `${result.stderr}\n${result.stdout}`;
+
+  assert.equal(result.exitCode, 2);
+  assert.match(output, /MKR021.*agents\/chat\.ts, agents\/chat\/index\.ts/);
+  assert.match(output, /both map to POST \/chat/);
+});
+
 test('Makers lint loads validation patterns from the vendored skills', async () => {
   const rules = await loadMakersValidationRules();
   assert.ok(rules.length >= 13);

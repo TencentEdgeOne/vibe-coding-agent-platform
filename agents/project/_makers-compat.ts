@@ -416,6 +416,28 @@ if (agentFiles.length > 0) {
   if (agentEntries.length === 0) {
     addError('MKR007', 'agents/', 'no route entry found; add agents/<name>.ts or agents/<name>/index.ts.');
   }
+  const entriesByRoute = new Map();
+  for (const file of agentEntries) {
+    const direct = file.match(/^agents\/([^/]+)\.(?:js|jsx|mjs|cjs|ts|tsx|py)$/);
+    const nested = file.match(/^agents\/([^/]+)\/index\.(?:js|jsx|mjs|cjs|ts|tsx|py)$/);
+    const name = (direct && !direct[1].startsWith('_') && direct[1])
+      || (nested && !nested[1].startsWith('_') && nested[1])
+      || '';
+    if (!name) continue;
+    const group = entriesByRoute.get(name) || [];
+    group.push(file);
+    entriesByRoute.set(name, group);
+  }
+  for (const [name, group] of entriesByRoute) {
+    if (group.length < 2) continue;
+    group.sort();
+    addError(
+      'MKR021',
+      group.join(', '),
+      'agents/' + name + '.ts and agents/' + name + '/index.ts both map to POST /' + name
+        + '; keep one entry file.',
+    );
+  }
   for (const file of agentEntries) {
     if (!hasValidAgentEntry(readSource(file), file)) {
       addError(

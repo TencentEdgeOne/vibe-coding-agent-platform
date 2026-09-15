@@ -127,6 +127,11 @@ test('every baked agent route reads the messages array and nothing else', async 
   for (const id of agents) {
     const route = await readFile(path.join('templates', id, 'agents', 'chat.ts'), 'utf8');
     assert.match(route, /body\?\.messages/, `templates/${id} does not read body.messages`);
+    assert.match(
+      route,
+      /normalizeOpenAiGatewayBaseUrl/,
+      `templates/${id} must normalize AI_GATEWAY_BASE_URL to end in /v1`,
+    );
     assert.doesNotMatch(
       route.replace(/^\s*\/\/.*$/gm, ''),
       /\bbody[^\n]*\.message\b(?!s)/,
@@ -634,4 +639,6 @@ test('a workspace left empty names the trees it could have been filled from', ()
   assert.equal(applied.templateApplied, 'deepagents');
   assert.equal(applied.templatesAvailable, undefined);
   assert.equal(applied.templatesHint, undefined);
+  assert.match(String(applied.scaffolderHint), /agents\/chat\.ts/);
+  assert.match(String(applied.scaffolderHint), /do not create agents\/chat\/index\.ts/);
 });

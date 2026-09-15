@@ -4,6 +4,18 @@ import { ToolNode } from '@langchain/langgraph/prebuilt';
 
 const MODEL_NAME = '@makers/deepseek-v4-flash';
 
+/**
+ * The injected gateway base may arrive without a version suffix
+ * (`https://ai-gateway.edgeone.link`). The OpenAI client appends
+ * `/chat/completions` to whatever base it is given, so a base missing `/v1`
+ * resolves to the wrong path and every call comes back 404. Normalize to end
+ * in exactly one `/v1`.
+ */
+function normalizeOpenAiGatewayBaseUrl(raw: string) {
+  const trimmed = raw.trim().replace(/\/+$/, '');
+  return /\/v1$/.test(trimmed) ? trimmed : `${trimmed}/v1`;
+}
+
 // Module-level, so a warm invocation reuses the client instead of rebuilding it
 // and its connection pool on every turn. The graph is deliberately not cached
 // beside it: it compiles against the checkpointer and store this request
@@ -14,7 +26,7 @@ function getModel(env: Record<string, string>) {
   model ??= new ChatOpenAI({
     model: MODEL_NAME,
     apiKey: env.AI_GATEWAY_API_KEY,
-    configuration: { baseURL: env.AI_GATEWAY_BASE_URL },
+    configuration: { baseURL: normalizeOpenAiGatewayBaseUrl(env.AI_GATEWAY_BASE_URL || '') },
     temperature: 0,
     timeout: 300_000,
   });

@@ -14,7 +14,19 @@ import { stringifyToolResult } from '../utils/_text.ts';
 import { getFileTree } from './_fs.ts';
 import { AGENT_GATEWAY_ENV_KEYS } from './_makers-declarations.ts';
 
-export const DEFAULT_AI_GATEWAY_BASE_URL = 'https://ai-gateway.edgeone.link';
+/** Origin the Claude Agent SDK wants. OpenAI-compatible clients need `/v1` on top. */
+export const AI_GATEWAY_ORIGIN = 'https://ai-gateway.edgeone.link';
+
+/** Default written into a generated project's `.env` (DeepAgents / LangGraph / OpenAI). */
+export const DEFAULT_AI_GATEWAY_BASE_URL = `${AI_GATEWAY_ORIGIN}/v1`;
+
+/**
+ * Claude's client treats the base as an origin and appends its own path.
+ * OpenAI-compatible clients append `/chat/completions`, so they need `/v1`.
+ */
+export function gatewayBaseUrlForAgentFramework(framework?: string | null) {
+  return framework === 'claude-agent-sdk' ? AI_GATEWAY_ORIGIN : DEFAULT_AI_GATEWAY_BASE_URL;
+}
 
 export const REQUEST_GATEWAY_CREDENTIALS_TOOL = 'request_gateway_credentials';
 
@@ -90,6 +102,17 @@ export async function sandboxGatewayKeyIsSet(
   return Boolean(content) && Boolean(envAssignmentValue(content, 'AI_GATEWAY_API_KEY'));
 }
 
+async function readProjectAgentFramework(context: any, state: ProjectState) {
+  const content = await readProjectFile(context, state, 'edgeone.json');
+  if (!content) return '';
+  try {
+    const framework = JSON.parse(content)?.agents?.framework;
+    return typeof framework === 'string' ? framework : '';
+  } catch {
+    return '';
+  }
+}
+
 export async function readProjectGatewayEnv(
   context: any,
   state: ProjectState,
@@ -101,7 +124,7 @@ export async function readProjectGatewayEnv(
   return {
     AI_GATEWAY_API_KEY: apiKey,
     AI_GATEWAY_BASE_URL: envAssignmentValue(content, 'AI_GATEWAY_BASE_URL')
-      || DEFAULT_AI_GATEWAY_BASE_URL,
+      || gatewayBaseUrlForAgentFramework(await readProjectAgentFramework(context, state)),
   };
 }
 
@@ -229,7 +252,9 @@ export async function applyUserGatewayDecision(
 
   const values = {
     AI_GATEWAY_API_KEY: apiKey,
-    AI_GATEWAY_BASE_URL: DEFAULT_AI_GATEWAY_BASE_URL,
+    AI_GATEWAY_BASE_URL: gatewayBaseUrlForAgentFramework(
+      await readProjectAgentFramework(context, state),
+    ),
   };
   await writeSandboxGatewayEnv(context, state, values);
   state.gatewayPromptPending = false;

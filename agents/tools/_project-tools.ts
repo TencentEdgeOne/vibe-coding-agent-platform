@@ -53,7 +53,12 @@ export function describeScaffold(
       ? {
         templateApplied: template.id,
         templateFiles: template.files,
-        scaffolderHint: `The ${template.id} scaffolder has already been run for you and its ${template.files} files are in ${state.appDir}. Do not run a scaffold command. Adapt what is there — the platform declarations and the entry route — rather than rewriting files it already got right. The preview asset-prefix option is already in the framework config; do not set it again.`,
+        scaffolderHint: [
+          `The ${template.id} scaffolder has already been run for you and its ${template.files} files are in ${state.appDir}. Do not run a scaffold command. Adapt what is there — the platform declarations and the entry route — rather than rewriting files it already got right. The preview asset-prefix option is already in the framework config; do not set it again.`,
+          ...(template.id === 'deepagents' || template.id === 'langgraph'
+            ? ['The chat endpoint is agents/chat.ts. Edit that file; do not create agents/chat/index.ts — both mount POST /chat.']
+            : []),
+        ].join(' '),
         ...(template.adapted
           ? {
             adapterHint: 'This framework\'s platform adapter was added to package.json before the install started, so the dependency is already on its way. Wiring it into the framework config is still yours to do; makers-frameworks says where it goes.',
