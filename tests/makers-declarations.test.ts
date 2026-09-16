@@ -10,11 +10,15 @@ import {
   loadMakersValidationRules,
 } from '../agents/project/_makers-compat.ts';
 import {
+  bakedAgentTemplateId,
+  ensureDeclaredPackagePeers,
   ensureMakersAgentDeclarations,
   inferMakersAgentFramework,
   withAgentEnvKeys,
   withAgentFramework,
+  withBakedPackageDependencies,
   withFrameworkAdapter,
+  withRequiredPackagePeers,
   type ProjectFileRead,
 } from '../agents/project/_makers-declarations.ts';
 import { loadMakersFrameworkProfiles } from '../agents/project/_makers-compat.ts';
@@ -428,6 +432,76 @@ test('a conditional adapter is left to the lint, which can see the rendering mod
 test('a framework the builder supports directly gets no adapter', () => {
   assert.equal(adapterFor({ dependencies: { next: '^15.0.0' } }), undefined);
   assert.equal(adapterFor({ dependencies: { nuxt: '^3.0.0' } }), undefined);
+});
+
+test('a slim deepagents package.json is refilled from required peers', () => {
+  const slim = present(JSON.stringify({
+    dependencies: { deepagents: '1.13.3', '@langchain/openai': '1.5.8' },
+  }));
+  const repaired = withRequiredPackagePeers(slim, {
+    deepagents: {
+      peerDependencies: {
+        langchain: '^1.5.10',
+        langsmith: '>=0.7.1 <0.10.0',
+        '@langchain/core': '^1.2.9',
+      },
+      peerDependenciesMeta: { langsmith: { optional: false } },
+    },
+  });
+  const dependencies = JSON.parse(repaired || '{}').dependencies as Record<string, string>;
+  assert.equal(dependencies.langsmith, '>=0.7.1 <0.10.0');
+  assert.equal(dependencies.langchain, '^1.5.10');
+  assert.equal(dependencies.deepagents, '1.13.3');
+});
+
+test('an optional peer is left off and an already-declared peer is not rewritten', () => {
+  assert.equal(
+    withRequiredPackagePeers(
+      present(JSON.stringify({
+        dependencies: { deepagents: '1.13.3', langchain: '^1.5.10' },
+      })),
+      {
+        deepagents: {
+          peerDependencies: { langchain: '^1.9.0', langsmith: '>=0.7.1 <0.10.0' },
+          peerDependenciesMeta: { langsmith: { optional: true } },
+        },
+      },
+    ),
+    undefined,
+  );
+});
+
+test('a deepagents manifest refills from the baked tree, not the langgraph one', () => {
+  assert.equal(bakedAgentTemplateId({ deepagents: '1.13.3', '@langchain/langgraph': '^1.4.14' }), 'deepagents');
+  assert.equal(bakedAgentTemplateId({ '@langchain/langgraph': '^1.4.14' }), 'langgraph');
+  assert.equal(bakedAgentTemplateId({ next: '^15.0.0' }), undefined);
+
+  const repaired = withBakedPackageDependencies(
+    present(JSON.stringify({ dependencies: { deepagents: '1.13.3' } })),
+    { deepagents: '1.13.3', langsmith: '^0.9.0', zod: '^4.5.4' },
+  );
+  assert.deepEqual(JSON.parse(repaired || '').dependencies, {
+    deepagents: '1.13.3',
+    langsmith: '^0.9.0',
+    zod: '^4.5.4',
+  });
+});
+
+test('ensureDeclaredPackagePeers restores langsmith before a deploy would ship', async () => {
+  const fixture = await projectFixture({
+    'package.json': JSON.stringify({
+      dependencies: { deepagents: '1.13.3', '@langchain/openai': '1.5.8' },
+    }),
+  });
+  try {
+    const written = await ensureDeclaredPackagePeers(fixture.context, fixture.state);
+    assert.equal(written?.path, 'package.json');
+    const dependencies = JSON.parse(await fixture.read('package.json')).dependencies;
+    assert.equal(typeof dependencies.langsmith, 'string');
+    assert.ok(dependencies.langsmith, 'the baked deepagents tree must put langsmith back');
+  } finally {
+    await fixture.cleanup();
+  }
 });
 
 test('a manifest that is absent or unparseable is never rewritten', () => {

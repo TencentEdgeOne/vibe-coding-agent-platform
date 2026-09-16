@@ -87,6 +87,7 @@ test('direct sandbox CLI replaces custom tools while retaining relevant compatib
   assert.match(commandTools, /buildMakersDeployCommand/);
   assert.match(commandTools, /publishRunningPreview/);
   assert.match(commandTools, /assertMakersProjectCompatible/);
+  assert.match(commandTools, /ensureDeclaredPackagePeers/);
   assert.match(compatibility, /agents\.framework is required/);
   assert.match(compatibility, /must declare AI_GATEWAY_API_KEY/);
   assert.match(compatibility, /gpt-4o-mini is not a valid Makers default/);

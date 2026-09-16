@@ -461,6 +461,12 @@ test('excavating a package for a project layout is closed off, with a budget', (
 // just succeeded, then spent forty seconds querying eleven releases and their
 // peer ranges before building with the versions it already had — which passed.
 // The evidence was one command away and it went shopping instead.
+test('the prompt forbids stripping undeclared deepagents peers', () => {
+  const prompt = renderPrompt();
+  assert.match(prompt, /Do not delete packages from an agent package\.json because the source does not import them/);
+  assert.match(prompt, /deployed \/chat route hang until the gateway times out/);
+});
+
 test('a preferred-Node warning sends the run to the build, not to the registry', () => {
   const prompt = renderPrompt();
   assert.match(prompt, /A warning about the Node version a package prefers is not a failure/);

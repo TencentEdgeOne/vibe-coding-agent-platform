@@ -164,6 +164,7 @@ test('sandbox preview strips the public prefix before forwarding to makers-dev',
   assert.match(preview, /makers-dev/);
   assert.match(preview, /buildMakersDevLaunchCommand/);
   assert.match(preview, /assertMakersProjectCompatible/);
+  assert.match(preview, /ensureDeclaredPackagePeers/);
   assert.match(preview, /getHost\(PREVIEW_PUBLIC_PORT\)/);
   assert.match(makersDev, /edgeone makers dev/);
   assert.match(makersDev, /skip-env-sync/);
