@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { TRANSLATIONS } from '../app/i18n.ts';
 import { presentToolActivity } from '../app/lib/tool-activity.ts';
-import type { ClaudeMcpTool } from '../agents/_types.ts';
-import { wrapWebSearchTool } from '../agents/tools/_web-search-wrap.ts';
+import type { ClaudeMcpTool } from '../agents/_lib/types.ts';
+import { wrapWebSearchTool } from '../agents/_lib/tools/web-search-wrap.ts';
 import {
   WEB_SEARCH_API_KEY_ENV,
   isWebSearchConfigured,

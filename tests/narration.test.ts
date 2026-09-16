@@ -3,7 +3,7 @@ import test from 'node:test';
 import {
   resolveNarrationEmit,
   type NarrationEmitState,
-} from '../agents/utils/_narration.ts';
+} from '../agents/_lib/utils/narration.ts';
 
 function emptyState(): NarrationEmitState {
   return { currentTextBlock: '', emittedNarration: '' };

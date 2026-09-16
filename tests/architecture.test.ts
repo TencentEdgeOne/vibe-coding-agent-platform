@@ -46,13 +46,31 @@ test('shared modules remain runtime agnostic', async () => {
   }
 });
 
-test('agent implementation files are private to Makers file routing', async () => {
-  for (const directory of ['pipelines', 'project', 'tools', 'utils']) {
-    for (const file of await sourceFiles(path.join('agents', directory))) {
-      assert.ok(
-        path.basename(file).startsWith('_'),
-        `${file} must start with _ or Makers will scan it as an endpoint`,
-      );
+const AGENT_ROUTE_FILES = new Set([
+  'agents/session.ts',
+  'agents/preview.ts',
+  'agents/stop.ts',
+  'agents/file.ts',
+  'agents/download.ts',
+]);
+
+test('agent routes stay at agents/ and implementation lives in agents/_lib/', async () => {
+  const topLevel = await readdir('agents', { withFileTypes: true });
+  for (const entry of topLevel) {
+    if (entry.name === '_lib') {
+      assert.ok(entry.isDirectory(), 'agents/_lib must be the private implementation directory');
+      continue;
     }
+    assert.ok(
+      entry.isFile() && AGENT_ROUTE_FILES.has(path.join('agents', entry.name)),
+      `${entry.name} is not a known agent route; move internals under agents/_lib/`,
+    );
+  }
+
+  for (const file of await sourceFiles(path.join('agents', '_lib'))) {
+    assert.ok(
+      !path.basename(file).startsWith('_'),
+      `${file} is already private via agents/_lib/; drop the underscore prefix`,
+    );
   }
 });

@@ -3,7 +3,7 @@ import test from 'node:test';
 import {
   PRODUCTION_BUILD_DEFERRED,
   runVerification,
-} from '../agents/project/_scaffold.ts';
+} from '../agents/_lib/project/scaffold.ts';
 import { projectState } from './helpers/fixtures.ts';
 
 const state = projectState();

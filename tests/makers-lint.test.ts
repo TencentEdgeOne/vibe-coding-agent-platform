@@ -11,7 +11,7 @@ import {
   loadMakersFrameworkProfiles,
   loadMakersValidationRules,
   runMakersCompatibilityCheck,
-} from '../agents/project/_makers-compat.ts';
+} from '../agents/_lib/project/makers-compat.ts';
 import { projectState } from './helpers/fixtures.ts';
 
 const execFileAsync = promisify(execFile);

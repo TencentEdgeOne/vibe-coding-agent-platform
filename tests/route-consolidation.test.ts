@@ -19,7 +19,7 @@ test('the model menu is an edge function, not an agent route', async () => {
 test('session is GET restore plus POST turn; preview remint is its own route', async () => {
   const session = await readFile('agents/session.ts', 'utf8');
   const preview = await readFile('agents/preview.ts', 'utf8');
-  const tasks = await readFile('agents/_chat-tasks.ts', 'utf8');
+  const tasks = await readFile('agents/_lib/chat-tasks.ts', 'utf8');
   const client = await readFile('app/features/workspace/workspace-api.ts', 'utf8');
 
   assert.match(session, /onRequestGet/);
@@ -43,7 +43,7 @@ test('session is GET restore plus POST turn; preview remint is its own route', a
 
 test('initial session restore is one progressive SSE request that can attach a live task', async () => {
   const route = await readFile('agents/session.ts', 'utf8');
-  const pipeline = await readFile('agents/pipelines/_resume.ts', 'utf8');
+  const pipeline = await readFile('agents/_lib/pipelines/resume.ts', 'utf8');
   const client = await readFile('app/features/workspace/workspace-api.ts', 'utf8');
 
   assert.match(route, /onRequestGet/);
@@ -95,9 +95,9 @@ test('starting a new project does not wait for the old stop request', async () =
 });
 
 test('workspace persistence uses the sandbox SDK and metadata snapshots are read-only migration data', async () => {
-  const helpers = await readFile('agents/pipelines/_helpers.ts', 'utf8');
-  const persistence = await readFile('agents/project/_persistence.ts', 'utf8');
-  const memory = await readFile('agents/_memory.ts', 'utf8');
+  const helpers = await readFile('agents/_lib/pipelines/helpers.ts', 'utf8');
+  const persistence = await readFile('agents/_lib/project/persistence.ts', 'utf8');
+  const memory = await readFile('agents/_lib/memory.ts', 'utf8');
 
   assert.match(helpers, /context\.sandbox\.persist\(\{ path: state\.appDir \}\)/);
   assert.match(persistence, /context\.sandbox\.restore\(\{ path: state\.appDir \}\)/);

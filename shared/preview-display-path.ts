@@ -1,5 +1,5 @@
 // Mirror of the sandbox preview base path. Kept here so the address chip can
-// hide the gateway prefix without the frontend importing agents/_constants.
+// hide the gateway prefix without the frontend importing agents/_lib/constants.
 export const PREVIEW_PATH_PREFIX = '/preview/';
 
 // Render a mirrored preview route (pathname[+search][+hash]) as the address-bar

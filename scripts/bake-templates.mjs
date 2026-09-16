@@ -125,7 +125,7 @@ const RUNS_UNATTENDED = /^(?:npm|npx|pnpm|yarn|bun)\s/;
  * Renaming is the same move npm makes for the same reason — a published
  * create-* package cannot contain a .gitignore either — and the runtime
  * restores the name on the way into the sandbox. Keep the two in step: the
- * matching read is in agents/project/_templates.ts, and a test asserts the
+ * matching read is in agents/_lib/project/templates.ts, and a test asserts the
  * round trip rather than trusting this comment.
  */
 const GITIGNORE_STORED_AS = '_gitignore';

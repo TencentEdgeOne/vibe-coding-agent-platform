@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
-import { MAKERS_SKILL_NAMES } from '../agents/_constants.ts';
+import { MAKERS_SKILL_NAMES } from '../agents/_lib/constants.ts';
 import {
   MAKERS_REFERENCE_SKILL_NAMES,
   resolveMakersSkillDirectory,
-} from '../agents/tools/_makers-skills.ts';
+} from '../agents/_lib/tools/makers-skills.ts';
 
 const skillsRoot = '.claude/skills';
 
@@ -51,7 +51,7 @@ test('official Makers router and progressive references are vendored unchanged i
 // What the prompt actually says is asserted behaviourally in
 // prompt-single-source.test.ts; this covers the SDK session wiring around it.
 test('the SDK session is wired to the vendored skills and the extracted prompt', async () => {
-  const source = await readFile('agents/_agent.ts', 'utf8');
+  const source = await readFile('agents/_lib/agent.ts', 'utf8');
   assert.match(source, /skills: \[\.\.\.MAKERS_SKILL_NAMES\]/);
   assert.match(source, /tools: \['Skill'\]/);
   assert.match(source, /buildPrompt\([\s\S]*?makersProjectName,[\s\S]*?\)/);
@@ -68,19 +68,19 @@ test('the SDK session is wired to the vendored skills and the extracted prompt',
 });
 
 test('package.json without scripts.build is not a thrown verification failure', async () => {
-  const source = await readFile('agents/project/_scaffold.ts', 'utf8');
+  const source = await readFile('agents/_lib/project/scaffold.ts', 'utf8');
   assert.doesNotMatch(source, /process\.exit\(p\.scripts && p\.scripts\.build \? 0 : 2\)/);
   assert.match(source, /buildFlag === 'yes'/);
 });
 
 test('direct sandbox CLI replaces custom tools while retaining relevant compatibility checks', async () => {
   const [agent, projectTools, commandTools, compatibility] = await Promise.all([
-    readFile('agents/_agent.ts', 'utf8'),
-    readFile('agents/tools/_project-tools.ts', 'utf8'),
-    readFile('agents/tools/_commands-wrap.ts', 'utf8'),
-    readFile('agents/project/_makers-compat.ts', 'utf8'),
+    readFile('agents/_lib/agent.ts', 'utf8'),
+    readFile('agents/_lib/tools/project-tools.ts', 'utf8'),
+    readFile('agents/_lib/tools/commands-wrap.ts', 'utf8'),
+    readFile('agents/_lib/project/makers-compat.ts', 'utf8'),
   ]);
-  const paths = await readFile('agents/utils/_paths.ts', 'utf8');
+  const paths = await readFile('agents/_lib/utils/paths.ts', 'utf8');
   assert.doesNotMatch(agent, /buildPublishPreviewTool|buildDeployToMakersTool/);
   assert.doesNotMatch(projectTools, /publish_preview|deploy_to_makers|get_preview_link/);
   assert.match(commandTools, /buildMakersDevBackgroundCommand/);
@@ -97,8 +97,8 @@ test('direct sandbox CLI replaces custom tools while retaining relevant compatib
 });
 
 test('specific Makers skill loader reads official references without changing them', async () => {
-  const source = await readFile('agents/tools/_makers-skills.ts', 'utf8');
-  const agent = await readFile('agents/_agent.ts', 'utf8');
+  const source = await readFile('agents/_lib/tools/makers-skills.ts', 'utf8');
+  const agent = await readFile('agents/_lib/agent.ts', 'utf8');
   assert.match(source, /'load_makers_skill'/);
   assert.match(agent, /buildLoadMakersSkillTool/);
   assert.match(agent, /__load_makers_skill/);
@@ -115,7 +115,7 @@ test('specific Makers skill loader reads official references without changing th
 });
 
 test('cold resume restores project dependencies without managing the sandbox CLI', async () => {
-  const resume = await readFile('agents/pipelines/_resume.ts', 'utf8');
+  const resume = await readFile('agents/_lib/pipelines/resume.ts', 'utf8');
   const client = await readFile('app/features/workspace/workspace-api.ts', 'utf8');
   assert.match(resume, /const depsReady = await ensureProjectDependencies\(context, state\)/);
   assert.doesNotMatch(resume, /prewarmEdgeoneCli|npm install -g edgeone/);

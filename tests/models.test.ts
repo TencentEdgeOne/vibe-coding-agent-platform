@@ -15,7 +15,7 @@ import {
   describeModelRun,
   resolveRequestedModel,
   resolveRunningModelLabel,
-} from '../agents/_models.ts';
+} from '../agents/_lib/models.ts';
 
 // The picker renders labels, never ids. The ids are scoped with the platform
 // tier, so a label falling back to its id would print the one word no

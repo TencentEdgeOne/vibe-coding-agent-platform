@@ -8,9 +8,9 @@ import { presentToolActivity } from '../app/lib/tool-activity.ts';
 // mid-publish reconnects through the stream the frontend already knows.
 test('publishing occupies the chat task slot instead of a route of its own', async () => {
   const [tasks, route, resume, client] = await Promise.all([
-    readFile('agents/_chat-tasks.ts', 'utf8'),
+    readFile('agents/_lib/chat-tasks.ts', 'utf8'),
     readFile('agents/session.ts', 'utf8'),
-    readFile('agents/pipelines/_resume.ts', 'utf8'),
+    readFile('agents/_lib/pipelines/resume.ts', 'utf8'),
     readFile('app/features/workspace/workspace-api.ts', 'utf8'),
   ]);
 
@@ -26,9 +26,9 @@ test('publishing occupies the chat task slot instead of a route of its own', asy
 // The project, the credential and the target project are all decided before
 // the button is even enabled, so there is nothing here for a model to choose.
 test('the deploy pipeline publishes without the model in the loop', async () => {
-  const pipeline = await readFile('agents/pipelines/_deploy.ts', 'utf8');
+  const pipeline = await readFile('agents/_lib/pipelines/deploy.ts', 'utf8');
 
-  assert.doesNotMatch(pipeline, /runCodingAgent|from '\.\.\/_agent'/);
+  assert.doesNotMatch(pipeline, /runCodingAgent|from '\.\.\/(?:_agent|agent)'/);
   assert.match(pipeline, /projectName: resolveMakersProjectName\(context, state\),/);
   assert.match(pipeline, /buildMakersDeployLaunchCommand\(target\.projectName,/);
   assert.match(pipeline, /resolveConversationPublishArea\(state\)/);
@@ -61,8 +61,8 @@ test('publishing stops the preview dev server before the build starts', async ()
   const [deploy, dev, pipeline, wrapper] = await Promise.all([
     readFile('shared/makers-deploy.ts', 'utf8'),
     readFile('shared/makers-dev.ts', 'utf8'),
-    readFile('agents/pipelines/_deploy.ts', 'utf8'),
-    readFile('agents/tools/_commands-wrap.ts', 'utf8'),
+    readFile('agents/_lib/pipelines/deploy.ts', 'utf8'),
+    readFile('agents/_lib/tools/commands-wrap.ts', 'utf8'),
   ]);
 
   // Stopping is part of the command, so it cannot be skipped by a caller.
@@ -92,9 +92,9 @@ test('publishing stops the preview dev server before the build starts', async ()
 // it back, and neither reports a publish as failed because it did not come back.
 test('publishing restarts the preview without paying for the smoke gates again', async () => {
   const [preview, pipeline, wrapper] = await Promise.all([
-    readFile('agents/project/_preview.ts', 'utf8'),
-    readFile('agents/pipelines/_deploy.ts', 'utf8'),
-    readFile('agents/tools/_commands-wrap.ts', 'utf8'),
+    readFile('agents/_lib/project/preview.ts', 'utf8'),
+    readFile('agents/_lib/pipelines/deploy.ts', 'utf8'),
+    readFile('agents/_lib/tools/commands-wrap.ts', 'utf8'),
   ]);
 
   // The gates cost a real model call, and the project did not change.
@@ -156,7 +156,7 @@ test('a publish closes the routes out of the preview without covering it', async
 // if the pipeline forwards it. Discarding it here is what left a failed deploy
 // showing one sentence that named no cause.
 test('a failed publish shows the CLI output on the card and one line in the chat', async () => {
-  const pipeline = await readFile('agents/pipelines/_deploy.ts', 'utf8');
+  const pipeline = await readFile('agents/_lib/pipelines/deploy.ts', 'utf8');
 
   assert.match(pipeline, /await fail\(error, outcome\.status === 'error' \? outcome\.detail \?\? '' : ''\)/);
   // The CLI's own diagnosis is what gets reported. A watch that ran out only

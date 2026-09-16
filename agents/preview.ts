@@ -1,4 +1,4 @@
-import { runProjectResumePreviewPipeline } from './_pipelines.ts';
+import { runProjectResumePreviewPipeline } from './_lib/pipelines/index.ts';
 
 /** Re-mint the public preview URL without restoring the full workspace. */
 export async function onRequestPost(context: any) {

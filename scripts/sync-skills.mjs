@@ -48,7 +48,7 @@ const destination = path.join(repoRoot, '.claude', 'skills');
  *
  * Deliberately not `feature/operating-contract`, the other line upstream keeps.
  * It tells an agent to sign in, install the CLI and persist credentials — three
- * things `agents/_prompt.ts` forbids and the tool layer refuses outright, so
+ * things `agents/_lib/prompt.ts` forbids and the tool layer refuses outright, so
  * vendoring it would put two contradicting instructions in the same context and
  * spend turns on the wrong one. The corrections worth having from that line were
  * carried over to this branch on their own.

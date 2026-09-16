@@ -22,7 +22,7 @@ import {
   readProjectGatewayEnv,
   sandboxGatewayKeyIsSet,
   shouldPauseForGatewayCredentials,
-} from '../agents/project/_gateway-prompt.ts';
+} from '../agents/_lib/project/gateway-prompt.ts';
 import { projectState } from './helpers/fixtures.ts';
 
 function sandboxFiles(initial: Array<[string, string]>) {
@@ -298,9 +298,9 @@ test('the API key card waits until the assistant turn has finished', async () =>
 
 test('a turn waiting for the API key is completed, not a red error', async () => {
   const [chat, helpers, prompt] = await Promise.all([
-    readFile('agents/pipelines/_chat.ts', 'utf8'),
-    readFile('agents/pipelines/_helpers.ts', 'utf8'),
-    readFile('agents/_prompt.ts', 'utf8'),
+    readFile('agents/_lib/pipelines/chat.ts', 'utf8'),
+    readFile('agents/_lib/pipelines/helpers.ts', 'utf8'),
+    readFile('agents/_lib/prompt.ts', 'utf8'),
   ]);
   assert.match(helpers, /GATEWAY_CREDENTIALS_USER_REPLY/);
   assert.match(chat, /if \(state\.gatewayPromptPending\)/);
@@ -313,9 +313,9 @@ test('a turn waiting for the API key is completed, not a red error', async () =>
 
 test('the host writes .env from a chat sentence, not only from the card', async () => {
   const [chat, tasks, prompt] = await Promise.all([
-    readFile('agents/pipelines/_chat.ts', 'utf8'),
-    readFile('agents/_chat-tasks.ts', 'utf8'),
-    readFile('agents/_prompt.ts', 'utf8'),
+    readFile('agents/_lib/pipelines/chat.ts', 'utf8'),
+    readFile('agents/_lib/chat-tasks.ts', 'utf8'),
+    readFile('agents/_lib/prompt.ts', 'utf8'),
   ]);
   assert.match(chat, /resolveGatewayUserTurn\(message, options\.apiKey\)/);
   assert.match(tasks, /resolveGatewayUserTurn\(message, options\.apiKey\)/);

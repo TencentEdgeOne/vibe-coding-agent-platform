@@ -48,6 +48,9 @@ test('maps Makers function and agent files to public routes', () => {
 test('does not mislabel helpers, configs, or ordinary frontend files as routes', () => {
   assert.equal(file('agents/_shared.ts'), null);
   assert.equal(file('agents/chat/_tools.ts'), null);
+  assert.equal(file('agents/_lib/agent.ts'), null);
+  assert.equal(file('agents/_lib/pipelines/index.ts'), null);
+  assert.equal(file('agents/_lib/project/index.ts'), null);
   assert.equal(file('cloud-functions/requirements.txt'), null);
   assert.equal(file('edge-functions/api/README.md'), null);
   assert.equal(file('src/App.tsx'), null);

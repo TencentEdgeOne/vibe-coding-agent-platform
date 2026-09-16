@@ -9,7 +9,7 @@ import {
   resolveMakersMasterToken,
   resolveSandboxGatewayEnv,
   resolveSandboxMakersToken,
-} from '../agents/project/_makers-token.ts';
+} from '../agents/_lib/project/makers-token.ts';
 import { projectState } from './helpers/fixtures.ts';
 
 test('sandbox Makers tenant IDs are generated server-side and remain stable', () => {
@@ -99,7 +99,7 @@ test('the runtime credential is read from API_TOKEN', () => {
 // valid" with nothing pointing at the split. Both ends default to production,
 // so the way to keep them together is to leave nothing to configure.
 test('no environment switch is left for a deployment to get wrong', async () => {
-  const tokenSource = await readFile('agents/project/_makers-token.ts', 'utf8');
+  const tokenSource = await readFile('agents/_lib/project/makers-token.ts', 'utf8');
 
   for (const name of [
     'MAKERS_API_ENV',
@@ -122,7 +122,7 @@ test('no environment switch is left for a deployment to get wrong', async () => 
 // scrubber, which blanks whatever follows a "token:" label and leaves the
 // operator staring at "[REDACTED] region detection failed."
 test('token issue failures survive the activity scrubber', async () => {
-  const tokenSource = await readFile('agents/project/_makers-token.ts', 'utf8');
+  const tokenSource = await readFile('agents/_lib/project/makers-token.ts', 'utf8');
   const messages = tokenSource.match(/Failed to issue a temporary Makers[^`]*/g) || [];
 
   assert.equal(messages.length, 2);
@@ -145,7 +145,7 @@ test('a sandbox CLI login failure names the runtime key, not a browser login', (
 // The master credential is the one thing the sandbox must never hold: it is
 // account-wide and long-lived, while a CLI process is neither.
 test('the master credential is exchanged, never handed to the sandbox', async () => {
-  const tokenSource = await readFile('agents/project/_makers-token.ts', 'utf8');
+  const tokenSource = await readFile('agents/_lib/project/makers-token.ts', 'utf8');
   const resolver = tokenSource.match(
     /export async function resolveSandboxMakersToken[\s\S]*?\n}/,
   )?.[0] || '';
@@ -170,8 +170,8 @@ test('the master credential is exchanged, never handed to the sandbox', async ()
 
 test('the tenant token is redacted out of CLI output', async () => {
   const [previewSource, commandSource] = await Promise.all([
-    readFile('agents/project/_preview.ts', 'utf8'),
-    readFile('agents/tools/_commands-wrap.ts', 'utf8'),
+    readFile('agents/_lib/project/preview.ts', 'utf8'),
+    readFile('agents/_lib/tools/commands-wrap.ts', 'utf8'),
   ]);
 
   assert.match(previewSource, /redactSecret\(\s*failure,\s*sandboxToken,?\s*\)/);
@@ -181,9 +181,9 @@ test('the tenant token is redacted out of CLI output', async () => {
 
 test('direct CLI calls route the runtime credential through one resolver', async () => {
   const [tokenSource, previewSource, commandSource, packageSource] = await Promise.all([
-    readFile('agents/project/_makers-token.ts', 'utf8'),
-    readFile('agents/project/_preview.ts', 'utf8'),
-    readFile('agents/tools/_commands-wrap.ts', 'utf8'),
+    readFile('agents/_lib/project/makers-token.ts', 'utf8'),
+    readFile('agents/_lib/project/preview.ts', 'utf8'),
+    readFile('agents/_lib/tools/commands-wrap.ts', 'utf8'),
     readFile('package.json', 'utf8'),
   ]);
 

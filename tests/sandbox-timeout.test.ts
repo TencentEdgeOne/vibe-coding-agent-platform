@@ -19,7 +19,7 @@ test('explicit timeoutMs is preserved', () => {
 });
 
 test('runSandboxCommand forwards resolved timeoutMs to the sandbox API', async () => {
-  const source = await readFile('agents/project/_commands.ts', 'utf8');
+  const source = await readFile('agents/_lib/project/commands.ts', 'utf8');
   assert.match(source, /resolveSandboxCommandOptions\(options\)/);
   assert.match(source, /context\.sandbox\.commands\.run\(command, resolved\)/);
 });

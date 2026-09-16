@@ -8,7 +8,7 @@ import test from 'node:test';
 import {
   buildMakersCompatibilityScript,
   loadMakersValidationRules,
-} from '../agents/project/_makers-compat.ts';
+} from '../agents/_lib/project/makers-compat.ts';
 import {
   bakedAgentTemplateId,
   ensureDeclaredPackagePeers,
@@ -20,9 +20,9 @@ import {
   withFrameworkAdapter,
   withRequiredPackagePeers,
   type ProjectFileRead,
-} from '../agents/project/_makers-declarations.ts';
-import { loadMakersFrameworkProfiles } from '../agents/project/_makers-compat.ts';
-import { buildWriteProjectFileTool } from '../agents/tools/_project-tools.ts';
+} from '../agents/_lib/project/makers-declarations.ts';
+import { loadMakersFrameworkProfiles } from '../agents/_lib/project/makers-compat.ts';
+import { buildWriteProjectFileTool } from '../agents/_lib/tools/project-tools.ts';
 import { projectState } from './helpers/fixtures.ts';
 
 const execFileAsync = promisify(execFile);

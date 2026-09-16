@@ -2,15 +2,15 @@ import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
-import { buildPrompt, buildTurnPrompt } from '../agents/_prompt.ts';
+import { buildPrompt, buildTurnPrompt } from '../agents/_lib/prompt.ts';
 import {
   MAKERS_DEV_PORT,
   PREVIEW_ASSET_PREFIX_ENV,
   PREVIEW_PATH_PREFIX,
   PREVIEW_PUBLIC_PORT,
   PREVIEW_SERVER_PORT,
-} from '../agents/_constants.ts';
-import { MAKERS_REFERENCE_SKILL_NAMES } from '../agents/tools/_makers-skills.ts';
+} from '../agents/_lib/constants.ts';
+import { MAKERS_REFERENCE_SKILL_NAMES } from '../agents/_lib/tools/makers-skills.ts';
 import { projectState } from './helpers/fixtures.ts';
 
 // Platform contracts that the vendored skills own. Restating any of these in

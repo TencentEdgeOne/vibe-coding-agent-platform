@@ -9,7 +9,7 @@ import test from 'node:test';
 import {
   ensureProjectScaffold,
   repairNestedAppDirLayout,
-} from '../agents/project/_scaffold.ts';
+} from '../agents/_lib/project/scaffold.ts';
 import { projectState } from './helpers/fixtures.ts';
 
 const execFileAsync = promisify(execFile);

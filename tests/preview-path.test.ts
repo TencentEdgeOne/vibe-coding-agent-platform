@@ -11,7 +11,7 @@ import {
   buildGeneratedChatSmokeScript,
   buildPreviewProxyScript,
 } from '../shared/makers-dev.ts';
-import { agentRoutesFromListing, generatedRoutesFromListing } from '../agents/project/_preview.ts';
+import { agentRoutesFromListing, generatedRoutesFromListing } from '../agents/_lib/project/preview.ts';
 import { previewDisplayPathFromPath } from '../shared/preview-display-path.ts';
 
 test('preview address bar shows the application route without the gateway prefix', async () => {
@@ -159,7 +159,7 @@ async function waitForServer(url: string) {
 }
 
 test('sandbox preview strips the public prefix before forwarding to makers-dev', async () => {
-  const preview = await readFile('agents/project/_preview.ts', 'utf8');
+  const preview = await readFile('agents/_lib/project/preview.ts', 'utf8');
   const makersDev = await readFile('shared/makers-dev.ts', 'utf8');
   assert.match(preview, /makers-dev/);
   assert.match(preview, /buildMakersDevLaunchCommand/);
@@ -177,7 +177,7 @@ test('sandbox preview strips the public prefix before forwarding to makers-dev',
 
 test('agent chat previews are smoke-tested before being published', async () => {
   const [preview, makersDev] = await Promise.all([
-    readFile('agents/project/_preview.ts', 'utf8'),
+    readFile('agents/_lib/project/preview.ts', 'utf8'),
     readFile('shared/makers-dev.ts', 'utf8'),
   ]);
   assert.match(preview, /assertGeneratedAgentChatReady/);
@@ -389,7 +389,7 @@ test('probes really pause between attempts outside the tests', () => {
 });
 
 test('only static routes are probed, and they come from the shared route mapping', async () => {
-  const preview = await readFile('agents/project/_preview.ts', 'utf8');
+  const preview = await readFile('agents/_lib/project/preview.ts', 'utf8');
 
   // Reuse the mapping the Files panel shows rather than a second copy of the
   // cloud-functions path rules.
@@ -424,7 +424,7 @@ test('the chat gate finds an agent entry in either accepted form', () => {
 });
 
 test('an unmounted route is restarted, while a bad reply is reported as-is', async () => {
-  const preview = await readFile('agents/project/_preview.ts', 'utf8');
+  const preview = await readFile('agents/_lib/project/preview.ts', 'utf8');
   // The restart is the whole fix for a handler missing from a running server,
   // which is what a dependency change under makers dev leaves behind.
   assert.match(preview, /error\.kind === 'route'/);
@@ -438,8 +438,8 @@ test('an unmounted route is restarted, while a bad reply is reported as-is', asy
 
 test('a preview publish never probes the generated agent twice in a row', async () => {
   const [preview, wrap] = await Promise.all([
-    readFile('agents/project/_preview.ts', 'utf8'),
-    readFile('agents/tools/_commands-wrap.ts', 'utf8'),
+    readFile('agents/_lib/project/preview.ts', 'utf8'),
+    readFile('agents/_lib/tools/commands-wrap.ts', 'utf8'),
   ]);
 
   // Each probe is a real model call against the generated agent, so the publish
@@ -450,7 +450,7 @@ test('a preview publish never probes the generated agent twice in a row', async 
 });
 
 test('healthy makers-dev previews are reused on follow-up turns', async () => {
-  const preview = await readFile('agents/project/_preview.ts', 'utf8');
+  const preview = await readFile('agents/_lib/project/preview.ts', 'utf8');
   const warmBranch = preview.match(/if \(warm\.exitCode === 0\) \{[\s\S]*?\n  \}/)?.[0] || '';
 
   assert.ok(warmBranch, 'the warm-probe branch must stay');
@@ -465,7 +465,7 @@ test('healthy makers-dev previews are reused on follow-up turns', async () => {
 });
 
 test('cold preview probes do not throw on curl connection refused', async () => {
-  const preview = await readFile('agents/project/_preview.ts', 'utf8');
+  const preview = await readFile('agents/_lib/project/preview.ts', 'utf8');
   assert.match(preview, /probePreviewReadyCommand/);
   assert.match(preview, /runCommandCapturingExit/);
   assert.match(preview, /set \+e/);

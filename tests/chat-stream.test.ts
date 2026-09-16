@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createSSEResponse, sseEvent } from '../agents/_shared.ts';
+import { createSSEResponse, sseEvent } from '../agents/_lib/shared.ts';
 
 test('SSE responses frame events and terminate with DONE', async () => {
   const response = createSSEResponse(async function* () {

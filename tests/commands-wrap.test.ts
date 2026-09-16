@@ -1,18 +1,18 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { wrapSandboxTools } from '../agents/tools/_commands-wrap.ts';
-import { resolveMakersProjectName } from '../agents/project/_makers-deploy.ts';
+import { wrapSandboxTools } from '../agents/_lib/tools/commands-wrap.ts';
+import { resolveMakersProjectName } from '../agents/_lib/project/makers-deploy.ts';
 import {
   MAKERS_DEV_PORT,
   PREVIEW_PATH_PREFIX,
   PREVIEW_PUBLIC_PORT,
   PREVIEW_SERVER_PORT,
-} from '../agents/_constants.ts';
+} from '../agents/_lib/constants.ts';
 import { MAKERS_DEV_LAUNCH_TIMEOUT_SECONDS } from '../shared/makers-dev.ts';
 import type {
   ClaudeMcpTool,
   DeploymentInfo,
-} from '../agents/_types.ts';
+} from '../agents/_lib/types.ts';
 import { projectState } from './helpers/fixtures.ts';
 
 test('wraps verification commands with EXIT echo without marking protocol error', async () => {

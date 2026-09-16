@@ -1,6 +1,6 @@
-import { createChatTaskAndStreamResponse } from './_chat-tasks.ts';
-import { createProjectResumeStreamResponse, DEFAULT_DEPLOY_REQUEST } from './_pipelines.ts';
-import { resolveRequestedModel } from './_models.ts';
+import { createChatTaskAndStreamResponse } from './_lib/chat-tasks.ts';
+import { createProjectResumeStreamResponse, DEFAULT_DEPLOY_REQUEST } from './_lib/pipelines/index.ts';
+import { resolveRequestedModel } from './_lib/models.ts';
 
 /** Session entry: history, workspace, and an in-flight task's SSE on one GET. */
 export async function onRequestGet(context: any) {

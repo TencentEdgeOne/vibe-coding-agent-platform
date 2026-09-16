@@ -1,7 +1,7 @@
-import { abortLiveChatTask, markChatTaskStopped } from './_chat-tasks.ts';
-import { getProjectState, saveActivityTurn, saveProjectState } from './_memory.ts';
-import { persistProjectSnapshot } from './pipelines/_helpers.ts';
-import type { PersistedActivity } from './_types.ts';
+import { abortLiveChatTask, markChatTaskStopped } from './_lib/chat-tasks.ts';
+import { getProjectState, saveActivityTurn, saveProjectState } from './_lib/memory.ts';
+import { persistProjectSnapshot } from './_lib/pipelines/helpers.ts';
+import type { PersistedActivity } from './_lib/types.ts';
 import { replyLocaleFor, STOPPED_TURN_REPLY } from '../shared/user-facing-reply.ts';
 
 export async function onRequest(context: any) {

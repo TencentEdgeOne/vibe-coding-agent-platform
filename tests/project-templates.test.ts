@@ -11,9 +11,9 @@ import {
   listProjectTemplates,
   resolveProjectTemplate,
   withPreviewAssetPrefix,
-} from '../agents/project/_templates.ts';
-import { describeScaffold } from '../agents/tools/_project-tools.ts';
-import { PREVIEW_ASSET_PREFIX_ENV } from '../agents/_constants.ts';
+} from '../agents/_lib/project/templates.ts';
+import { describeScaffold } from '../agents/_lib/tools/project-tools.ts';
+import { PREVIEW_ASSET_PREFIX_ENV } from '../agents/_lib/constants.ts';
 import { NPM_WARMUP_BASE } from '../shared/npm-install.ts';
 import { projectState } from './helpers/fixtures.ts';
 

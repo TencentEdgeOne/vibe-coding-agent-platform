@@ -15,7 +15,7 @@ import {
   shortenToolName,
   stripEchoedExit,
   withExitCodeEcho,
-} from '../agents/utils/_tool-phase.ts';
+} from '../agents/_lib/utils/tool-phase.ts';
 
 test('shortens MCP tool names', () => {
   assert.equal(shortenToolName('mcp__edgeone-sandbox__files_write'), 'files_write');

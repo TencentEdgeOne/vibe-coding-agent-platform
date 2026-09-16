@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readFileFromSandbox } from '../agents/project/_fs.ts';
+import { readFileFromSandbox } from '../agents/_lib/project/fs.ts';
 import { projectState } from './helpers/fixtures.ts';
 
 /** A workspace whose every read fails, with the message the real one raised. */

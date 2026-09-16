@@ -1,4 +1,4 @@
-import type { ProjectState } from '../../agents/_types.ts';
+import type { ProjectState } from '../../agents/_lib/types.ts';
 
 /**
  * A scaffolded project, as the pipelines see one. Lives here because four test

@@ -32,7 +32,7 @@ import {
   PREVIEW_PATH_PREFIX,
   PREVIEW_PUBLIC_PORT,
   PREVIEW_SERVER_PORT,
-} from '../agents/_constants.ts';
+} from '../agents/_lib/constants.ts';
 
 test('rewrites the public preview prefix onto Makers dev root paths', () => {
   assert.equal(rewritePreviewProxyPath('/preview/'), '/');
@@ -1044,7 +1044,7 @@ test('makers-dev captured exit markers preserve CLI failures', () => {
 });
 
 test('sandbox preview publishes the fixed gateway path through a local adapter', async () => {
-  const preview = await readFile('agents/project/_preview.ts', 'utf8');
+  const preview = await readFile('agents/_lib/project/preview.ts', 'utf8');
   assert.doesNotMatch(preview, /ensureEdgeoneCli|npm install -g edgeone/);
   assert.match(preview, /buildMakersDevLaunchCommand/);
   assert.match(preview, /buildMakersDevBackgroundCommand/);

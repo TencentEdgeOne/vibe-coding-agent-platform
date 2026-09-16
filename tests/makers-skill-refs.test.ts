@@ -7,8 +7,8 @@ import {
   listMakersSkillReferences,
   resolveMakersSkillDirectory,
   resolveMakersSkillReferencePath,
-} from '../agents/tools/_makers-skills.ts';
-import type { MakersReferenceSkillName } from '../agents/tools/_makers-skills.ts';
+} from '../agents/_lib/tools/makers-skills.ts';
+import type { MakersReferenceSkillName } from '../agents/_lib/tools/makers-skills.ts';
 
 async function collectMarkdownFiles(dir: string): Promise<string[]> {
   let entries;

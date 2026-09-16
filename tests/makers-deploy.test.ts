@@ -28,7 +28,7 @@ import {
   resolveConversationPublishArea,
   resolveMakersProjectName,
   syncSandboxEnvToMakersProject,
-} from '../agents/project/_makers-deploy.ts';
+} from '../agents/_lib/project/makers-deploy.ts';
 import { projectState } from './helpers/fixtures.ts';
 
 test('builds a non-interactive direct CLI deploy command', () => {
@@ -592,8 +592,8 @@ test('each conversation owns one project, for preview and deploy alike', () => {
 // would either be silently ignored or repoint it mid-conversation.
 test('preview and deploy resolve the project through the same function', async () => {
   const [previewSource, commandSource] = await Promise.all([
-    readFile('agents/project/_preview.ts', 'utf8'),
-    readFile('agents/tools/_commands-wrap.ts', 'utf8'),
+    readFile('agents/_lib/project/preview.ts', 'utf8'),
+    readFile('agents/_lib/tools/commands-wrap.ts', 'utf8'),
   ]);
 
   assert.match(previewSource, /resolveMakersProjectName\(context, state\)/);
@@ -790,9 +790,9 @@ test('deploy does not copy .env when there is no master token', async () => {
 
 test('deploy copies .env with the runtime master token, not the sandbox tenant token', async () => {
   const [deploy, wrap, helper] = await Promise.all([
-    readFile('agents/pipelines/_deploy.ts', 'utf8'),
-    readFile('agents/tools/_commands-wrap.ts', 'utf8'),
-    readFile('agents/project/_makers-deploy.ts', 'utf8'),
+    readFile('agents/_lib/pipelines/deploy.ts', 'utf8'),
+    readFile('agents/_lib/tools/commands-wrap.ts', 'utf8'),
+    readFile('agents/_lib/project/makers-deploy.ts', 'utf8'),
   ]);
 
   assert.match(helper, /masterToken: string/);
@@ -819,12 +819,12 @@ test('deploy copies .env with the runtime master token, not the sandbox tenant t
 test('uses the sandbox-provided CLI without installing or prewarming it', async () => {
   const paths = [
     'shared/makers-deploy.ts',
-    'agents/tools/_commands-wrap.ts',
-    'agents/project/_makers-deploy.ts',
-    'agents/project/_preview.ts',
-    'agents/project/_scaffold.ts',
-    'agents/pipelines/_chat.ts',
-    'agents/pipelines/_resume.ts',
+    'agents/_lib/tools/commands-wrap.ts',
+    'agents/_lib/project/makers-deploy.ts',
+    'agents/_lib/project/preview.ts',
+    'agents/_lib/project/scaffold.ts',
+    'agents/_lib/pipelines/chat.ts',
+    'agents/_lib/pipelines/resume.ts',
   ];
   const source = (await Promise.all(paths.map((path) => readFile(path, 'utf8')))).join('\n');
 

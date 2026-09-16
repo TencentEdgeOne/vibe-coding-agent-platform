@@ -5,8 +5,8 @@ import {
   dedupeActivityTurns,
   summarizeToolInput,
   summarizeToolOutput,
-} from '../agents/utils/_activity.ts';
-import type { PersistedActivityTurn } from '../agents/_types.ts';
+} from '../agents/_lib/utils/activity.ts';
+import type { PersistedActivityTurn } from '../agents/_lib/types.ts';
 
 test('tool summaries redact secrets and project paths', () => {
   const summary = summarizeToolInput('mcp__edgeone__commands', {
