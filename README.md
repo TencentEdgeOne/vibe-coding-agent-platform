@@ -4,7 +4,7 @@
 
 ## Quick start
 
-1. Create an [API Token](https://write.woa.com/document/177158578199498752).
+1. Create an [API Token](https://pages.edgeone.ai/document/api-token).
 
 2. Start from the example template below.
 
@@ -18,7 +18,7 @@
 
 ### Makers Skills
 
-- The template vendors [Makers Skills](https://write.woa.com/document/205349902137049088) under `.claude/skills/`, so the agent has framework conventions, platform APIs, directory rules, and deploy requirements.
+- The template vendors [Makers Skills](https://pages.edgeone.ai/document/skills) under `.claude/skills/`, so the agent has framework conventions, platform APIs, directory rules, and deploy requirements.
 
 - The agent loads the Skill that matches the task. Generated projects go through a Makers compatibility check first: adapters in place, platform manifest complete, directory layout valid. On failure it attempts one automatic repair pass.
 
@@ -81,7 +81,7 @@ const result = await context.sandbox.restore({path: projectPath});
 
 ### Start local development
 
-1. From the project root, install the [EdgeOne CLI](https://write.woa.com/document/162228053883678720):
+1. From the project root, install the [EdgeOne CLI](https://pages.edgeone.ai/document/edgeone-cli):
 
    ```bash
    npm install -g edgeone
