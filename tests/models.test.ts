@@ -71,7 +71,7 @@ test('an extra model that repeats a built-in does not appear twice', () => {
   assert.equal(catalog.length, BUILT_IN_MODELS.length);
   assert.equal(
     catalog.find((option) => option.id === DEFAULT_MODEL)?.label,
-    'DeepSeek V4 Flash',
+    'DeepSeek V4.1 Flash',
   );
 });
 
