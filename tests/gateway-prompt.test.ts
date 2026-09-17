@@ -302,11 +302,24 @@ test('a turn waiting for the API key is completed, not a red error', async () =>
     readFile('agents/_lib/pipelines/helpers.ts', 'utf8'),
     readFile('agents/_lib/prompt.ts', 'utf8'),
   ]);
+  const pause = chat.slice(
+    chat.indexOf('if (state.gatewayPromptPending)'),
+    chat.indexOf('const sanitizedModelOutput'),
+  );
+
   assert.match(helpers, /GATEWAY_CREDENTIALS_USER_REPLY/);
-  assert.match(chat, /if \(state\.gatewayPromptPending\)/);
-  assert.match(chat, /GATEWAY_CREDENTIALS_USER_REPLY\[replyLocale\]/);
-  assert.match(chat, /gatewayNeeded: true/);
-  assert.match(chat, /ok: true,\s*\n\s*reply: pauseReply/);
+  assert.match(pause, /GATEWAY_CREDENTIALS_USER_REPLY\[replyLocale\]/);
+  assert.match(pause, /gatewayNeeded: true/);
+  assert.match(pause, /ok: true,\s*\n\s*reply: pauseReply/);
+  // The card is gated on result/loading, so a Blob snapshot that hangs or
+  // fails must not sit in front of that event. Persist after it, unawaited.
+  assert.match(pause, /withSnapshot: false/);
+  assert.match(pause, /void checkpoint\.flush\(\)/);
+  assert.ok(
+    pause.indexOf("type: 'result'") < pause.indexOf('void checkpoint.flush()'),
+    'result must go out before snapshot persist, or the card waits on Blob',
+  );
+  assert.doesNotMatch(pause, /await checkpoint\.flush\(\)/);
   assert.match(prompt, /do not say the preview is ready/);
   assert.match(prompt, /preview and deploy must still run/);
 });

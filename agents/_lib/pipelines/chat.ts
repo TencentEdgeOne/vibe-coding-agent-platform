@@ -319,11 +319,15 @@ export async function runChatPipeline(
 
     let fileTree: FileTreeItem[] = [];
     if (modelResult.projectTouched) {
-      await checkpoint.flush();
+      // The Files panel can update without waiting for a Blob snapshot. Persist
+      // used to run here and again in finalizeTurn, so a slow or failing
+      // sandbox.persist held the result event — and the API key card, which is
+      // gated on it — for tens of seconds after the pause reply was already on
+      // screen.
       fileTree = await fileTreePush.flush('Failed to read the file list.');
     }
     await finalizeTurn(pauseReply, 'completed', {
-      withSnapshot: modelResult.projectTouched,
+      withSnapshot: false,
     });
     send({
       type: 'result',
@@ -346,6 +350,9 @@ export async function runChatPipeline(
         deployment: state.deployment,
       },
     });
+    if (modelResult.projectTouched) {
+      void checkpoint.flush();
+    }
     return;
   }
   const sanitizedModelOutput = modelResult.success && modelResult.output
