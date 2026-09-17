@@ -75,6 +75,21 @@ test('an untouched new project does not persist an empty conversation', async ()
   assert.doesNotMatch(startBlock, /createConversationId\(/);
 });
 
+test('stop sends makers-conversation-id like every other agent route', async () => {
+  const client = await readFile('app/features/workspace/workspace-api.ts', 'utf8');
+  const start = client.indexOf('export async function stopChatTask');
+  const end = client.indexOf('export function fetchProjectArchive');
+  const stopFn = client.slice(start, end);
+
+  assert.ok(start >= 0 && end > start);
+  // The platform 400s agent routes that omit the header
+  // (`Invalid makers-conversation-id: header is missing`). A body-only first
+  // request never reaches abortLiveChatTask.
+  assert.match(stopFn, /headers: conversationHeaders\(conversationId\)/);
+  assert.match(stopFn, /conversation_id: conversationId/);
+  assert.doesNotMatch(stopFn, /AGENT_CONVERSATION_ID_REQUIRED/);
+});
+
 test('starting a new project does not wait for the old stop request', async () => {
   const screen = await readFile('app/features/workspace/workspace-screen.tsx', 'utf8');
   const client = await readFile('app/features/workspace/workspace-api.ts', 'utf8');

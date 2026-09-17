@@ -99,26 +99,18 @@ export async function stopChatTask(
   turn: PersistedActivityTurn,
   options: { discardProject?: boolean } = {},
 ) {
-  const request = (headers: HeadersInit) => fetch('/stop', {
+  // Agent routes reject a missing makers-conversation-id before the handler
+  // runs. /stop still puts conversation_id in the body so abortActiveRun can
+  // target the live chat; the header is what gets the request accepted and
+  // sticky-routed to the instance that holds abortLiveChatTask.
+  return fetch('/stop', {
     method: 'POST',
-    headers,
+    headers: conversationHeaders(conversationId),
     body: JSON.stringify({
       conversation_id: conversationId,
       turn,
       ...(options.discardProject ? { discardProject: true } : {}),
     }),
-  });
-
-  const response = await request({ 'content-type': 'application/json' });
-  if (response.status !== 400) return response;
-  const error = await readJson<{ code?: string }>(response.clone());
-  if (error?.code !== 'AGENT_CONVERSATION_ID_REQUIRED') return response;
-
-  // Compatibility only: current runtimes require body-only /stop so sticky
-  // routing cannot pin cancellation to the busy chat instance.
-  return request({
-    'content-type': 'application/json',
-    'makers-conversation-id': conversationId,
   });
 }
 
