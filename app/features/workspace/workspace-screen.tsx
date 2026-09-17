@@ -14,7 +14,7 @@ import {
   Rocket,
   Smartphone,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@/app/components/ui/button';
 import {
   Dialog,
   DialogClose,
@@ -23,8 +23,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+} from '@/app/components/ui/dialog';
+import { Tabs, TabsList, TabsTrigger } from '@/app/components/ui/tabs';
 import {
   appendNarrationChunk,
   dropTrailingSummaryEcho,

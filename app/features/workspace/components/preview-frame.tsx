@@ -1,7 +1,7 @@
 'use client';
 
 import { memo } from 'react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@/app/components/ui/button';
 
 export type PreviewViewport = 'desktop' | 'mobile';
 

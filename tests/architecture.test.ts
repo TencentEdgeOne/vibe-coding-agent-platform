@@ -13,6 +13,19 @@ async function sourceFiles(root: string): Promise<string[]> {
   return nested.flat();
 }
 
+test('frontend UI and helpers live under app/, not the repo root', async () => {
+  const topLevel = await readdir('.', { withFileTypes: true });
+  const directories = new Set(topLevel.filter((entry) => entry.isDirectory()).map((entry) => entry.name));
+  assert.ok(
+    !directories.has('components'),
+    'root components/ is leftover shadcn layout; keep UI under app/components/',
+  );
+  assert.ok(
+    !directories.has('lib'),
+    'root lib/ is leftover shadcn layout; keep helpers under app/lib/',
+  );
+});
+
 test('frontend never imports the agent runtime', async () => {
   for (const file of await sourceFiles('app')) {
     const source = await readFile(file, 'utf8');

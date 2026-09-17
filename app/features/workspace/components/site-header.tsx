@@ -1,7 +1,7 @@
 'use client';
 
 import { ArrowLeft, MessageCircle } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@/app/components/ui/button';
 import {
   Dialog,
   DialogClose,
@@ -11,7 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@/components/ui/dialog';
+} from '@/app/components/ui/dialog';
 import { LanguageSwitch } from '@/app/components/language-switch';
 import type { Locale, UiCopy } from '@/app/i18n';
 
