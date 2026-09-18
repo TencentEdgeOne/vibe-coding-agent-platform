@@ -19,10 +19,9 @@ export const AgentConversation = dynamic(importAgentConversation, {
   ssr: false,
   loading: PanelLoading,
 });
-export const FilesPanel = dynamic(
-  () => import('./files').then((mod) => mod.FilesPanel),
-  { ssr: false, loading: PanelLoading },
-);
+// FilesPanel stays a static import in files-pane.tsx. Wrapping it with
+// next/dynamic makes Turbopack wait on the prism-react-renderer chunk
+// before mount, which is what crashed the files tab.
 export const SessionPanel = dynamic(
   () => import('./session-panel').then((mod) => mod.SessionPanel),
   { ssr: false, loading: PanelLoading },

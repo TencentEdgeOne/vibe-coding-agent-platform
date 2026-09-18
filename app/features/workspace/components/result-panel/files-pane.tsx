@@ -2,7 +2,7 @@
 
 import type { FileCopy } from '@/app/i18n';
 import type { FileContentCache } from '@/app/hooks/use-file-content-cache';
-import { FilesPanel } from '../lazy-panels';
+import { FilesPanel } from '../files';
 import type { WorkspaceStateApi } from '../../hooks/use-workspace-state';
 
 export function FilesPane({

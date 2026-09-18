@@ -1,12 +1,91 @@
 'use client';
 
-import { Highlight } from 'prism-react-renderer';
+import { useEffect, useState, type ReactElement, type ReactNode } from 'react';
+import type { HighlightProps } from 'prism-react-renderer';
 import type { FileCopy } from '@/app/i18n';
 import { Spinner } from '@/app/components/spinner';
 import { CODE_THEME, prismLanguage } from './code-theme';
 import { formatFileSize, type FilePreviewState } from './format';
 
+type HighlightComponent = (props: HighlightProps) => ReactElement;
+
+let cachedHighlight: HighlightComponent | null = null;
+let highlightLoad: Promise<HighlightComponent> | null = null;
+
+function loadHighlight() {
+  if (!highlightLoad) {
+    highlightLoad = import('prism-react-renderer')
+      .then((mod) => {
+        cachedHighlight = mod.Highlight as HighlightComponent;
+        return cachedHighlight;
+      })
+      .catch((error) => {
+        highlightLoad = null;
+        throw error;
+      });
+  }
+  return highlightLoad;
+}
+
+function usePrismHighlight() {
+  const [ready, setReady] = useState(() => cachedHighlight !== null);
+
+  useEffect(() => {
+    if (cachedHighlight) {
+      setReady(true);
+      return;
+    }
+    let cancelled = false;
+    void loadHighlight()
+      .then(() => {
+        if (!cancelled) setReady(true);
+      })
+      .catch(() => {
+        // A missing vendor chunk should not unmount the files tab.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return ready ? cachedHighlight : null;
+}
+
+function CodeLine({ lineNumber, children }: { lineNumber: number; children: ReactNode }) {
+  return (
+    <span className="grid min-w-max grid-cols-[3.5rem_minmax(0,1fr)] gap-3 px-4">
+      <span className="select-none border-r border-[var(--secondary)] pr-3 text-right text-[var(--code-gutter)]">
+        {lineNumber}
+      </span>
+      <span className="whitespace-pre">{children}</span>
+    </span>
+  );
+}
+
+function CodePre({ children }: { children: ReactNode }) {
+  return (
+    <pre className="min-h-0 flex-1 overflow-auto bg-[var(--code-paper)] py-3 font-mono text-[12px] leading-5 text-[var(--code-ink)]">
+      <code>{children}</code>
+    </pre>
+  );
+}
+
+function PlainCode({ content }: { content: string }) {
+  const lines = content.split('\n');
+  return (
+    <CodePre>
+      {lines.map((line, lineIndex) => (
+        <CodeLine key={lineIndex} lineNumber={lineIndex + 1}>
+          {line}
+        </CodeLine>
+      ))}
+    </CodePre>
+  );
+}
+
 export function FileContentView({ preview, copy }: { preview: FilePreviewState; copy: FileCopy }) {
+  const Highlight = usePrismHighlight();
+
   if (preview.status === 'idle') {
     return (
       <div className="flex h-full min-h-0 items-center justify-center px-6 text-center text-muted-foreground">
@@ -59,29 +138,23 @@ export function FileContentView({ preview, copy }: { preview: FilePreviewState; 
           )}
         </div>
       </div>
-      <Highlight code={preview.content} language={prismLanguage(preview.path)} theme={CODE_THEME}>
-        {({ tokens, getTokenProps }) => (
-          <pre className="min-h-0 flex-1 overflow-auto bg-[var(--code-paper)] py-3 font-mono text-[12px] leading-5 text-[var(--code-ink)]">
-            <code>
+      {Highlight ? (
+        <Highlight code={preview.content} language={prismLanguage(preview.path)} theme={CODE_THEME}>
+          {({ tokens, getTokenProps }) => (
+            <CodePre>
               {tokens.map((line, lineIndex) => (
-                <span
-                  key={lineIndex}
-                  className="grid min-w-max grid-cols-[3.5rem_minmax(0,1fr)] gap-3 px-4"
-                >
-                  <span className="select-none border-r border-[var(--secondary)] pr-3 text-right text-[var(--code-gutter)]">
-                    {lineIndex + 1}
-                  </span>
-                  <span className="whitespace-pre">
-                    {line.map((token, key) => (
-                      <span key={key} {...getTokenProps({ token })} />
-                    ))}
-                  </span>
-                </span>
+                <CodeLine key={lineIndex} lineNumber={lineIndex + 1}>
+                  {line.map((token, key) => (
+                    <span key={key} {...getTokenProps({ token })} />
+                  ))}
+                </CodeLine>
               ))}
-            </code>
-          </pre>
-        )}
-      </Highlight>
+            </CodePre>
+          )}
+        </Highlight>
+      ) : (
+        <PlainCode content={preview.content} />
+      )}
     </div>
   );
 }
