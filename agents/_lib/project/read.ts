@@ -1,10 +1,11 @@
+import type { AgentContext } from '../runtime/context.ts';
 import { PREVIEW_BATCH_MAX_FILES } from '../constants.ts';
 import { getProjectState } from '../session/store.ts';
-import { readFileFromSandbox, readFilesFromSandbox } from './index.ts';
+import { readFileFromSandbox, readFilesFromSandbox } from './fs.ts';
 import { toAppRelPath } from '../utils/paths.ts';
 import { getRequestQueryParam, resolveConversationId } from '../runtime/request.ts';
 
-export async function runFileReadPipeline(context: any): Promise<Response> {
+export async function runFileReadPipeline(context: AgentContext): Promise<Response> {
   const { conversationId } = resolveConversationId(context);
   const pathParam = getRequestQueryParam(context, 'path');
   const pathsParam = getRequestQueryParam(context, 'paths');

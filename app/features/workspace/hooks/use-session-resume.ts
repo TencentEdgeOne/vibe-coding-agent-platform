@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { dropTrailingSummaryEcho } from '../../../../shared/timeline';
-import type { FileContentCache } from '@/app/hooks/use-file-content-cache';
+import type { Locale } from '@/app/i18n';
 import {
   clearCachedConversationId,
   createMessageId,
@@ -18,27 +18,27 @@ import type {
 import { consumeEventStream } from '../sse';
 import { openSessionStream } from '../workspace-api';
 import type { LiveTurnApi } from './use-live-turn';
-import type { PreviewSurfaceApi } from './use-preview-surface';
 import type { WorkspaceStateApi } from './use-workspace-state';
+import type { WorkspaceSnapshotApi } from './use-workspace-snapshot';
 
 export function useSessionResume(options: {
   workspace: WorkspaceStateApi;
-  preview: PreviewSurfaceApi;
   live: LiveTurnApi;
-  fileCache: FileContentCache;
+  snapshot: WorkspaceSnapshotApi;
   setConversationId: (id: string | null) => void;
   setModel: (model: string) => void;
+  setLanguage: (language: Locale) => void;
   conversationIdRef: MutableRefObject<string | null>;
   workspaceEpochRef: MutableRefObject<number>;
   workspaceRestoringRef: MutableRefObject<boolean>;
 }) {
   const {
     workspace,
-    preview,
     live,
-    fileCache,
+    snapshot,
     setConversationId,
     setModel,
+    setLanguage,
     conversationIdRef,
     workspaceEpochRef,
     workspaceRestoringRef,
@@ -74,6 +74,9 @@ export function useSessionResume(options: {
       }
       if (data.model) {
         setModel(data.model);
+      }
+      if (data.language === 'zh' || data.language === 'en') {
+        setLanguage(data.language);
       }
       const activityHistory = Array.isArray(data.activityHistory) ? data.activityHistory : [];
       let nextMessages: ChatMessage[] = activityHistory.length > 0
@@ -178,16 +181,7 @@ export function useSessionResume(options: {
 
     const applyWorkspace = (data: ResumeData) => {
       if (data.gatewayNeeded) workspace.setGatewayNeeded(true);
-      if (data.files) {
-        workspace.setFileTree(data.files);
-      }
-      if (data.download?.url) {
-        workspace.setDownload(data.download);
-      }
-      if (data.deployment) {
-        workspace.setDeployment(data.deployment);
-      }
-      preview.applyResumedPreview(data.preview);
+      snapshot.applySnapshot(data);
     };
 
     const resumeController = new AbortController();
@@ -236,15 +230,8 @@ export function useSessionResume(options: {
             return;
           }
 
-          if (event.type === 'resume_file_content' && event.data?.path && typeof event.data.content === 'string') {
-            fileCache.write(event.data.path, {
-              content: event.data.content,
-              size: typeof event.data.size === 'number'
-                ? event.data.size
-                : new TextEncoder().encode(event.data.content).byteLength,
-              truncated: Boolean(event.data.truncated),
-              mtime: event.data.mtime,
-            });
+          if (event.type === 'file_changed' && event.data?.paths?.length) {
+            void snapshot.pullFiles(existing, event.data.paths.filter(Boolean));
             return;
           }
 

@@ -105,9 +105,22 @@ export type ResumeData = {
   activeTask?: ActiveChatTask | null;
   /** Model chosen for this conversation; '' or absent means the deployment default. */
   model?: string;
+  /** UI language chosen for this conversation. */
+  language?: 'zh' | 'en';
   /** Resume should show the Models API key card. */
   gatewayNeeded?: boolean;
   error?: string;
+};
+
+/** Workspace projection the frontend can fetch without the chat stream. */
+export type WorkspaceSnapshot = {
+  ok?: boolean;
+  conversation_id?: string;
+  files?: FileTree;
+  preview?: LinkInfo;
+  deployment?: DeploymentInfo;
+  download?: LinkInfo;
+  build?: BuildInfo;
 };
 
 /** Raw Claude JSONL for the Session tab. The file is the source of truth. */
@@ -126,15 +139,8 @@ export type ChatResponse = {
   ok?: boolean;
   reply?: string;
   conversation_id?: string;
-  build?: BuildInfo;
-  files?: FileTree;
-  preview?: LinkInfo;
-  deployment?: DeploymentInfo;
-  download?: LinkInfo;
   error?: string;
   stopped?: boolean;
-  /** Keep the Models API key card up after this turn ends. */
-  gatewayNeeded?: boolean;
 };
 
 type ProgressPhase = 'scaffold' | 'modify' | 'code' | 'install' | 'preview' | 'link';
@@ -152,8 +158,8 @@ export type ChatStreamEvent =
   | { type: 'agent'; data?: Pick<ChatResponse, 'ok' | 'reply' | 'error'> }
   | { type: 'file_tree'; data?: FileTree }
   | {
-      type: 'file_content';
-      data?: { path?: string; content?: string; size?: number };
+      type: 'file_changed';
+      data?: { paths?: string[] };
     }
   | {
       type: 'preview_ready';
@@ -209,16 +215,7 @@ export type ChatStreamEvent =
 export type ResumeStreamEvent =
   | { type: 'resume_history'; data?: ResumeData }
   | { type: 'resume_workspace'; data?: ResumeData }
-  | {
-      type: 'resume_file_content';
-      data?: {
-        path?: string;
-        content?: string;
-        size?: number;
-        truncated?: boolean;
-        mtime?: number;
-      };
-    }
+  | { type: 'file_changed'; data?: { paths?: string[] } }
   | { type: 'error'; error?: string }
   | { type: 'ping'; ts?: number };
 

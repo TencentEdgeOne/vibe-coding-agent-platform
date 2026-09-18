@@ -17,7 +17,7 @@ import type {
   ScaffoldLog,
   StreamSend,
 } from '../types.ts';
-import { wrapSandboxTools } from './commands-wrap.ts';
+import { wrapSandboxTools, type MakersCommandLifecycle } from './commands-wrap.ts';
 import { wrapWebSearchTool } from './web-search-wrap.ts';
 import {
   WEB_SEARCH_API_KEY_ENV,
@@ -35,6 +35,8 @@ export type LiveTurnCallbacks = {
   onProjectFilesChanged?: (file?: { path: string; content: string }) => void | Promise<void>;
   onPreviewReady?: (preview: { url?: string; sandboxDebugUrl?: string; kind?: PreviewKind }) => void;
   onDeploymentStatus?: (deployment: DeploymentInfo) => void;
+  /** Project files exist in this sandbox; the host can start dest. */
+  onWorkspaceReady?: () => void;
   send?: StreamSend;
   abortSignal?: AbortSignal;
 };
@@ -93,6 +95,7 @@ export function assembleAgentTools(session: LiveSessionHandle) {
     ({ created }) => {
       session.flags.projectTouched = true;
       session.flags.wasCreated = created;
+      session.getCallbacks().onWorkspaceReady?.();
     },
   );
   const writeProjectFileTool = buildWriteProjectFileTool(
@@ -105,7 +108,7 @@ export function assembleAgentTools(session: LiveSessionHandle) {
     },
   );
   const sandboxTools = wrapWebSearchTool(wrapSandboxTools(
-    edgeoneMcp.tools.filter((tool: { name: string }) => offerSandboxTool(tool.name)) as ClaudeMcpTool[],
+    (edgeoneMcp.tools as ClaudeMcpTool[]).filter((tool) => offerSandboxTool(tool.name)),
     {
       context,
       get state() {
@@ -126,7 +129,7 @@ export function assembleAgentTools(session: LiveSessionHandle) {
         session.flags.deploymentTouched = true;
         session.getCallbacks().onDeploymentStatus?.(deployment);
       },
-    } as any,
+    } as MakersCommandLifecycle,
   ));
   const mcpTools = [
     ...sandboxTools,

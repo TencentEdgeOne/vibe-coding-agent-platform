@@ -1,3 +1,4 @@
+import type { AgentContext } from './runtime/context.ts';
 import {
   resolveConfiguredModel,
   resolveModelCatalog,
@@ -12,7 +13,7 @@ export { resolveConfiguredModel, resolveModelCatalog };
  * read '' as "no choice" and fall back to the configured model, so a client that
  * sends an arbitrary string cannot pick what the gateway bills for.
  */
-export function resolveRequestedModel(context: any, requested: unknown) {
+export function resolveRequestedModel(context: AgentContext, requested: unknown) {
   return resolveSelectedModel(resolveModelCatalog(context), requested);
 }
 
@@ -21,7 +22,7 @@ export function resolveRequestedModel(context: any, requested: unknown) {
  * shows this label, and the agent has to say the same words the user is looking
  * at — a raw ID would name the platform tier no user-facing string names.
  */
-export function resolveRunningModelLabel(context: any, model: string) {
+export function resolveRunningModelLabel(context: AgentContext, model: string) {
   return resolveModelLabel(resolveModelCatalog(context), model);
 }
 

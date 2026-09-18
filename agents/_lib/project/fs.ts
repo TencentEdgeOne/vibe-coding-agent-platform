@@ -1,3 +1,4 @@
+import { requireSandbox, type SandboxCapable } from '../runtime/context.ts';
 import {
   FILE_TREE_IGNORED_DIRECTORIES,
   isIgnoredFileTreePath,
@@ -13,13 +14,8 @@ import {
 } from '../utils/file-preview.ts';
 import { readFileExtension } from '../utils/paths.ts';
 import { runSandboxCommand } from './commands.ts';
-import { repairNestedAppDirLayout } from './scaffold.ts';
 
-export async function getFileTree(context: any, state: ProjectState): Promise<FileTreeItem[]> {
-  // Heal sessions that still have the mistaken appDir/appDir/... layout before
-  // listing, so the Files panel shows package.json at the root.
-  await repairNestedAppDirLayout(context, state);
-
+export async function getFileTree(context: SandboxCapable, state: ProjectState): Promise<FileTreeItem[]> {
   const ignoredDirectoryPruneExpression = FILE_TREE_IGNORED_DIRECTORIES
     .map((dir) => `-path './${dir}'`)
     .join(' -o ');
@@ -108,7 +104,7 @@ function describeReadFailure(message: string): string {
 }
 
 export async function readFileFromSandbox(
-  context: any,
+  context: SandboxCapable,
   state: ProjectState,
   relPath: string,
 ): Promise<FileReadResult> {
@@ -119,10 +115,10 @@ export async function readFileFromSandbox(
 
   let content: string;
   try {
-    const result = await context.sandbox.files.read(`${state.appDir}/${relPath}`);
+    const result: unknown = await requireSandbox(context).files.read(`${state.appDir}/${relPath}`);
     if (typeof result === 'string') {
       content = result;
-    } else if (result instanceof Uint8Array) {
+    } else if (ArrayBuffer.isView(result)) {
       content = new TextDecoder().decode(result);
     } else if (result instanceof ArrayBuffer) {
       content = new TextDecoder().decode(new Uint8Array(result));
@@ -162,7 +158,7 @@ export async function readFileFromSandbox(
 }
 
 export async function readFilesFromSandbox(
-  context: any,
+  context: SandboxCapable,
   state: ProjectState,
   paths: string[],
 ): Promise<Array<FileReadResult & { path: string }>> {

@@ -1,20 +1,24 @@
-import { getProjectState, saveProjectState } from '../session/store.ts';
+import { requireSandbox, type AgentContext } from '../runtime/context.ts';
+import { getProjectState } from '../session/store.ts';
 import { getFileTree } from './fs.ts';
 import { restorePersistedProject } from './persistence.ts';
 import { separateLegacyMakersDeployment } from './state.ts';
+import { markCreated, persistWorkspace } from './workspace-store.ts';
+import { repairNestedAppDirLayout } from './layout.ts';
 import type { ProjectState, StreamSend } from '../types.ts';
 import { withTimeout } from '../turn/checkpoint.ts';
 
 const SANDBOX_PROBE_MS = 15_000;
 const RESTORE_BUDGET_MS = 45_000;
 
-async function ensureWorkspaceDirectories(context: any, state: ProjectState) {
-  await context.sandbox.files.makeDir(state.sessionDir);
-  await context.sandbox.files.makeDir(state.appDir);
+async function ensureWorkspaceDirectories(context: AgentContext, state: ProjectState) {
+  const files = requireSandbox(context).files;
+  await files.makeDir(state.sessionDir);
+  await files.makeDir(state.appDir);
 }
 
-async function probeSandboxHasFiles(context: any, state: ProjectState) {
-  if (!(await context.sandbox.files.exists(state.appDir))) return false;
+async function probeSandboxHasFiles(context: AgentContext, state: ProjectState) {
+  if (!(await requireSandbox(context).files.exists(state.appDir))) return false;
   const tree = await getFileTree(context, state);
   return tree.some((item) => item.type === 'file');
 }
@@ -24,11 +28,12 @@ async function probeSandboxHasFiles(context: any, state: ProjectState) {
  * prompt and when GET /session rebuilds the workspace.
  */
 export async function restoreProjectWorkspace(
-  context: any,
+  context: AgentContext,
   conversationId: string,
   options: { send?: StreamSend; mode?: 'prepare' | 'resume' } = {},
 ): Promise<{ state: ProjectState; hasFiles: boolean; restoreError?: string }> {
   const state = separateLegacyMakersDeployment(await getProjectState(context, conversationId));
+  await repairNestedAppDirLayout(context, state);
   const send = options.send;
   let hasFiles = false;
   let restoreError: string | undefined;
@@ -70,10 +75,10 @@ export async function restoreProjectWorkspace(
     });
   }
 
-  if (hasFiles) state.created = true;
+  if (hasFiles) markCreated(state);
   if (hasFiles) {
     try {
-      await saveProjectState(context, conversationId, state);
+      await persistWorkspace(context, conversationId, state);
     } catch {
       // The sandbox files are still the working copy for this turn.
     }
@@ -83,7 +88,7 @@ export async function restoreProjectWorkspace(
 }
 
 export async function prepareProjectWorkspace(
-  context: any,
+  context: AgentContext,
   conversationId: string,
   send?: StreamSend,
 ): Promise<ProjectState> {

@@ -1,9 +1,13 @@
+import type { AgentContext } from './_lib/runtime/context.ts';
 import { abortLiveChatTask, markChatTaskStopped } from './_lib/session/task.ts';
-import { getProjectState, saveProjectState } from './_lib/session/store.ts';
+import { getProjectState } from './_lib/session/store.ts';
 import { persistProjectSnapshot } from './_lib/turn/checkpoint.ts';
+import { markCreated, persistWorkspace } from './_lib/project/workspace-store.ts';
+import { getRequestBody } from './_lib/runtime/request.ts';
 
-export async function onRequest(context: any) {
-  const conversationId = String(context?.request?.body?.conversation_id || '').trim();
+export async function onRequest(context: AgentContext) {
+  const body = getRequestBody(context);
+  const conversationId = String(body.conversation_id || '').trim();
   if (!conversationId) {
     return new Response(JSON.stringify({ ok: false, error: 'missing conversation_id' }), {
       status: 400,
@@ -12,7 +16,7 @@ export async function onRequest(context: any) {
   }
 
   try {
-    const discardProject = context?.request?.body?.discardProject === true;
+    const discardProject = body.discardProject === true;
     abortLiveChatTask(conversationId);
     await markChatTaskStopped(context, conversationId);
     const result = await context.utils?.abortActiveRun?.(conversationId);
@@ -23,8 +27,8 @@ export async function onRequest(context: any) {
         const saved = await persistProjectSnapshot(context, conversationId, state);
         persisted = saved;
         if (saved && !state.created) {
-          state.created = true;
-          await saveProjectState(context, conversationId, state);
+          markCreated(state);
+          await persistWorkspace(context, conversationId, state);
         }
       } catch (error) {
         console.warn('[stop] project snapshot failed', error);

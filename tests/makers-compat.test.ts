@@ -7,6 +7,7 @@ import {
   MAKERS_REFERENCE_SKILL_NAMES,
   resolveMakersSkillDirectory,
 } from '../agents/_lib/tools/makers-skills.ts';
+import { readCommandsWrapSource } from './helpers/fixtures.ts';
 
 const skillsRoot = '.claude/skills';
 
@@ -77,7 +78,7 @@ test('direct sandbox CLI replaces custom tools while retaining relevant compatib
   const [agent, projectTools, commandTools, compatibility] = await Promise.all([
     readFile('agents/_lib/session/live.ts', 'utf8'),
     readFile('agents/_lib/tools/project-tools.ts', 'utf8'),
-    readFile('agents/_lib/tools/commands-wrap.ts', 'utf8'),
+    readCommandsWrapSource(),
     readFile('agents/_lib/makers/compat/lint-script.ts', 'utf8'),
   ]);
   const paths = await readFile('agents/_lib/utils/paths.ts', 'utf8');

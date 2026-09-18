@@ -1,5 +1,6 @@
+import type { AgentContext } from '../runtime/context.ts';
 import { getProjectState } from '../session/store.ts';
-import { readFileFromSandbox } from './index.ts';
+import { readFileFromSandbox } from './fs.ts';
 import type { FileTreeItem } from '../types.ts';
 import { selectResumeCacheFiles } from './resume-file-cache.ts';
 
@@ -19,7 +20,7 @@ export type ResumeFileContent = {
  * clicking an omitted or over-budget file still falls back to /file.
  */
 export async function loadResumeFileContents(
-  context: any,
+  context: AgentContext,
   conversationId: string,
   items: FileTreeItem[],
 ): Promise<ResumeFileContent[]> {

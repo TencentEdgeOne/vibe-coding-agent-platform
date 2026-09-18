@@ -1055,7 +1055,7 @@ test('sandbox preview publishes the fixed gateway path through a local adapter',
   assert.match(preview, /prepareMakersSession/);
   assert.match(session, /ensureMakersPublishProject/);
   assert.doesNotMatch(preview, /syncSandboxEnvToMakersProject/);
-  assert.match(preview, /getHost\(PREVIEW_PUBLIC_PORT\)/);
+  assert.match(preview, /getHost\?\.\(PREVIEW_PUBLIC_PORT\)/);
   assert.match(
     preview,
     /127\.0\.0\.1:\$\{PREVIEW_SERVER_PORT\}\$\{PREVIEW_PATH_PREFIX\}chat/,

@@ -1,7 +1,9 @@
+import type { AgentContext } from '../runtime/context.ts';
 import { randomUUID } from 'node:crypto';
 import { Makers, MakersError } from '@edgeone/makers-sdk';
 import type { ProjectState } from '../types.ts';
 import { readProjectGatewayEnv } from '../project/gateway.ts';
+import { bindMakersApiRegion, bindMakersTenantId } from '../project/workspace-store.ts';
 
 // Every preview start, wrapped CLI call and deploy mints its own token, so this
 // only has to outlive a single CLI invocation. An hour is already far more than
@@ -10,12 +12,12 @@ const SUB_TOKEN_TTL_SECONDS = 60 * 60;
 
 let cachedPlatformClient: { masterToken: string; client: Makers } | null = null;
 
-function pickEnvValue(context: any, key: string) {
+function pickEnvValue(context: AgentContext, key: string) {
   const value = context?.env?.[key];
   return typeof value === 'string' ? value.trim() : '';
 }
 
-export function resolveMakersMasterToken(context: any) {
+export function resolveMakersMasterToken(context: AgentContext) {
   return pickEnvValue(context, 'API_TOKEN');
 }
 
@@ -28,8 +30,7 @@ export function ensureMakersTenantId(state: ProjectState) {
   // Keeping it server-generated prevents a client-controlled conversation ID
   // from selecting another tenant.
   const tenantId = `vibe-${randomUUID().replaceAll('-', '')}`;
-  state.makersTenantId = tenantId;
-  return tenantId;
+  return bindMakersTenantId(state, tenantId);
 }
 
 function getPlatformClient(masterToken: string) {
@@ -80,7 +81,7 @@ export async function issueSandboxMakersSubToken(
       ? client.region
       : undefined;
     if (region) {
-      state.makersApiRegion = region;
+      bindMakersApiRegion(state, region);
     }
     return created;
   } catch (error) {
@@ -127,7 +128,7 @@ export function describeMissingMakersRuntimeToken(output = '') {
 const SANDBOX_GATEWAY_KEY = 'AI_GATEWAY_API_KEY';
 const SANDBOX_GATEWAY_URL = 'AI_GATEWAY_BASE_URL';
 
-export function resolveSandboxGatewayEnv(context: any): Record<string, string> {
+export function resolveSandboxGatewayEnv(context: AgentContext): Record<string, string> {
   const key = pickEnvValue(context, SANDBOX_GATEWAY_KEY);
   const url = pickEnvValue(context, SANDBOX_GATEWAY_URL);
   return {
@@ -147,7 +148,7 @@ export function resolveSandboxGatewayEnv(context: any): Record<string, string> {
  * this helper's. A skip must still leave preview and deploy able to run.
  */
 export async function prepareSandboxGatewayEnv(
-  context: any,
+  context: AgentContext,
   state: ProjectState,
 ) {
   return readProjectGatewayEnv(context, state);

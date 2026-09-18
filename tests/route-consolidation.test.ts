@@ -42,7 +42,8 @@ test('session is GET restore; turns go through /prompt and /deploy', async () =>
   assert.doesNotMatch(client, /resetProject/);
   assert.match(preview, /onRequestPost/);
   assert.match(preview, /runProjectResumePreviewPipeline/);
-  assert.doesNotMatch(preview, /onRequestGet/);
+  assert.match(preview, /onRequestGet/);
+  assert.match(preview, /runPreviewStatusPipeline/);
   assert.match(client, /fetch\('\/preview',[\s\S]*?method: 'POST'/);
   await assert.rejects(access('agents/chat.ts'));
   await assert.rejects(access('agents/resume.ts'));
@@ -143,13 +144,26 @@ test('workspace persistence uses the sandbox SDK and Blob state.json, not contex
   const persistence = await readFile('agents/_lib/project/persistence.ts', 'utf8');
   const store = await readFile('agents/_lib/session/store.ts', 'utf8');
 
-  assert.match(helpers, /context\.sandbox\.persist\(\{ path: state\.appDir \}\)/);
-  assert.match(persistence, /context\.sandbox\.restore\(\{ path: state\.appDir \}\)/);
+  assert.match(helpers, /requireSandbox\(context\)\.persist\?\.\(\{ path: state\.appDir \}\)/);
+  assert.match(persistence, /requireSandbox\(context\)\.restore\?\.\(\{ path: state\.appDir \}\)/);
   assert.doesNotMatch(persistence, /getLegacyProjectSnapshot/);
   assert.doesNotMatch(persistence, /clearLegacyProjectSnapshot/);
-  assert.match(store, /getStore\(\{ name: BLOB_STORE_NAME, consistency: 'strong' \}\)/);
+  assert.match(store, /BLOB_STORE_NAME/);
+  assert.match(store, /consistency: 'strong'/);
   assert.doesNotMatch(store, /context\.store/);
   assert.doesNotMatch(store, /saveProjectSnapshot/);
   assert.doesNotMatch(store, /listConversations/);
   assert.doesNotMatch(store, /deleteConversation/);
+});
+
+test('workspace snapshot and preview status are pullable without the chat stream', async () => {
+  const workspace = await readFile('agents/workspace.ts', 'utf8');
+  const preview = await readFile('agents/preview.ts', 'utf8');
+  const client = await readFile('app/features/workspace/workspace-api.ts', 'utf8');
+
+  assert.match(workspace, /onRequestGet/);
+  assert.match(workspace, /runWorkspaceSnapshotPipeline/);
+  assert.match(preview, /onRequestGet/);
+  assert.match(client, /fetch\('\/workspace'/);
+  assert.match(client, /fetch\(`\/file\?paths=/);
 });

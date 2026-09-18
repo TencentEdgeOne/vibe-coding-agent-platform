@@ -1,6 +1,8 @@
+import { requireSandbox, type AgentContext } from '../runtime/context.ts';
 import { tool as defineClaudeTool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
-import { ensureProjectScaffold } from '../project/index.ts';
+import { ensureProjectScaffold } from '../project/scaffold.ts';
+import { markCreated } from '../project/workspace-store.ts';
 import { buildNpmWarmupCommand } from '../makers/npm-install.ts';
 import {
   ensureMakersAgentDeclarations,
@@ -95,7 +97,7 @@ export function describeScaffold(
 }
 
 export function buildProjectScaffoldTool(
-  context: any,
+  context: AgentContext,
   state: ProjectState,
   onLog?: (log: ScaffoldLog) => void,
   onResult?: (result: { created: boolean }) => void,
@@ -113,7 +115,7 @@ export function buildProjectScaffoldTool(
           onLog,
           { framework: typeof requested.framework === 'string' ? requested.framework : undefined },
         );
-        state.created = true;
+        markCreated(state);
         onResult?.({ created });
         return {
           content: [{
@@ -134,7 +136,7 @@ export function buildProjectScaffoldTool(
   ) as ClaudeMcpTool;
 }
 export function buildWriteProjectFileTool(
-  context: any,
+  context: AgentContext,
   state: ProjectState,
   // The content is handed back so the pipeline can push it straight to the
   // frontend, which then renders the file without a /file round trip.
@@ -163,9 +165,9 @@ export function buildWriteProjectFileTool(
 
         const parent = relPath.split('/').slice(0, -1).join('/');
         if (parent) {
-          await context.sandbox.files.makeDir(`${state.appDir}/${parent}`);
+          await requireSandbox(context).files.makeDir(`${state.appDir}/${parent}`);
         }
-        await context.sandbox.files.write(`${state.appDir}/${relPath}`, file.content);
+        await requireSandbox(context).files.write(`${state.appDir}/${relPath}`, file.content);
         await onResult?.({ written: relPath, content: file.content });
         // An agents/ project needs agents.framework and .env.example declared,
         // and meeting that at the preview gate instead costs the user a failed
@@ -191,7 +193,7 @@ export function buildWriteProjectFileTool(
             declared.push(adapter);
             adapterAdded = true;
           }
-          await context.sandbox.commands
+          await requireSandbox(context).commands
             .run(buildNpmWarmupCommand(), { cwd: state.appDir })
             .catch(() => undefined);
         }

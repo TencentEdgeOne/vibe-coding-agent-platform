@@ -31,62 +31,22 @@ import type {
   ProjectState,
 } from '../types.ts';
 import { detectFatalToolError, truncateForStream } from '../utils/text.ts';
-import {
-  resolveNarrationEmit,
-  sanitizeAssistantText,
-  sanitizeNarrationText,
-  summarizeToolInput,
-  summarizeToolOutput,
-  type NarrationEmitState,
-} from '../../../shared/timeline.ts';
-import {
-  isInstallCommand,
-  isMakersDeployCommand,
-  isPreviewCommand,
-  parseEchoedExitCode,
-  shortenToolName,
-} from '../makers/tool-phase.ts';
+import { sanitizeAssistantText, summarizeToolOutput } from '../../../shared/timeline.ts';
+import { parseEchoedExitCode } from '../makers/tool-phase.ts';
 import { buildPrompt } from '../prompt.ts';
 import { resolveMakersProjectName } from '../makers/project.ts';
-import { getConversationRecord, patchConversationRecord } from './store.ts';
+import { getConversationRecord, getLanguagePreference, patchConversationRecord } from './store.ts';
 import { downloadTranscript, resolveClaudeTranscriptPath, uploadTranscript } from './transcript.ts';
-
-class PromptQueue implements AsyncIterable<SDKUserMessage> {
-  private messages: SDKUserMessage[] = [];
-  private waiters: Array<(result: IteratorResult<SDKUserMessage>) => void> = [];
-  private closed = false;
-
-  push(message: SDKUserMessage) {
-    if (this.closed) return;
-    const waiter = this.waiters.shift();
-    if (waiter) waiter({ value: message, done: false });
-    else this.messages.push(message);
-  }
-
-  close() {
-    this.closed = true;
-    for (const waiter of this.waiters) {
-      waiter({ value: undefined as unknown as SDKUserMessage, done: true });
-    }
-    this.waiters = [];
-  }
-
-  [Symbol.asyncIterator](): AsyncIterator<SDKUserMessage> {
-    return {
-      next: () => {
-        if (this.messages.length > 0) {
-          return Promise.resolve({ value: this.messages.shift()!, done: false as const });
-        }
-        if (this.closed) {
-          return Promise.resolve({ value: undefined as unknown as SDKUserMessage, done: true as const });
-        }
-        return new Promise<IteratorResult<SDKUserMessage>>((resolve) => {
-          this.waiters.push(resolve);
-        });
-      },
-    };
-  }
-}
+import { PromptQueue } from './prompt-queue.ts';
+import {
+  SCAFFOLD_TOOL_NAME,
+  createProgressEmitter,
+  extractVisibleNarrationDelta,
+  extractVisibleTextBlock,
+  isToolUseContentBlock,
+  parseToolInputJson,
+  type StreamingToolUseBlock,
+} from './stream-projector.ts';
 
 type TurnWaiter = {
   callbacks: LiveTurnCallbacks;
@@ -118,6 +78,7 @@ export type RunCodingAgentOptions = {
   onProjectFilesChanged?: LiveTurnCallbacks['onProjectFilesChanged'];
   onPreviewReady?: LiveTurnCallbacks['onPreviewReady'];
   onDeploymentStatus?: LiveTurnCallbacks['onDeploymentStatus'];
+  onWorkspaceReady?: LiveTurnCallbacks['onWorkspaceReady'];
   abortSignal?: AbortSignal;
   model?: string;
   send?: LiveTurnCallbacks['send'];
@@ -142,79 +103,6 @@ function buildAnthropicCustomHeaders(customHeaders: string, conversationId: stri
       ? `${GATEWAY_CONVERSATION_ID_HEADER_NAME}: ${safeConversationId}`
       : '',
   ].filter(Boolean).join('\n');
-}
-
-function extractSandboxCommand(input: unknown) {
-  const record = input && typeof input === 'object' ? input as Record<string, unknown> : {};
-  const command = typeof record.command === 'string'
-    ? record.command
-    : typeof record.cmd === 'string'
-      ? record.cmd
-      : '';
-  return command.trim();
-}
-
-function extractVisibleNarrationDelta(event: SDKMessage) {
-  if (event.type !== 'stream_event') return '';
-  const streamEvent = (event as { event?: { type?: string; delta?: { type?: string; text?: string } } }).event;
-  if (streamEvent?.type !== 'content_block_delta') return '';
-  const delta = streamEvent.delta;
-  if (delta?.type === 'text_delta' && typeof delta.text === 'string') {
-    return sanitizeNarrationText(delta.text);
-  }
-  return '';
-}
-
-type StreamingToolUseBlock = {
-  id: string;
-  name: string;
-  inputJson: string;
-  input?: unknown;
-};
-
-function isToolUseContentBlock(block: unknown): block is {
-  type: string;
-  id?: string;
-  name?: string;
-  input?: unknown;
-} {
-  const record = block && typeof block === 'object' ? block as Record<string, unknown> : {};
-  return record.type === 'tool_use' || record.type === 'mcp_tool_use';
-}
-
-function extractVisibleTextBlock(block: unknown) {
-  const record = block && typeof block === 'object' ? block as Record<string, unknown> : {};
-  if (record.type !== 'text' || typeof record.text !== 'string') return '';
-  return sanitizeNarrationText(record.text);
-}
-
-function parseToolInputJson(rawJson: string, fallback: unknown) {
-  if (!rawJson.trim()) return fallback ?? {};
-  try {
-    return JSON.parse(rawJson);
-  } catch {
-    return fallback ?? {};
-  }
-}
-
-type ToolProgressPhase = 'scaffold' | 'code' | 'install' | 'preview' | 'link';
-
-function inferToolProgress(name: string, input: unknown): {
-  phaseHint?: ToolProgressPhase;
-  fileCount?: number;
-} {
-  const toolName = shortenToolName(name);
-  if (toolName === 'ensure_project_scaffold') return { phaseHint: 'scaffold' };
-  if (toolName === 'files_write' || toolName === 'write_files' || toolName === 'files_make_dir' || toolName === 'files_remove') {
-    return { phaseHint: 'code' };
-  }
-  if (toolName === 'write_project_file') return { phaseHint: 'code', fileCount: 1 };
-  if (toolName === 'commands') {
-    const cmd = extractSandboxCommand(input);
-    if (isInstallCommand(cmd)) return { phaseHint: 'install' };
-    if (isPreviewCommand(cmd) || isMakersDeployCommand(cmd)) return { phaseHint: 'preview' };
-  }
-  return {};
 }
 
 function userMessage(content: string): SDKUserMessage {
@@ -248,62 +136,15 @@ async function persistTranscript(session: LiveQuerySession) {
   });
 }
 
+
 async function pumpSession(session: LiveQuerySession) {
-  const toolContextById = new Map<string, { name: string; command?: string }>();
-  const toolStartedAtById = new Map<string, number>();
   const pendingToolUseBlocks = new Map<number, StreamingToolUseBlock>();
-  const emittedToolUseProgress = new Map<string, string>();
-  let narrationState: NarrationEmitState = { currentTextBlock: '', emittedNarration: '' };
-  const scaffoldToolName = `mcp__${SANDBOX_MCP_SERVER_NAME}__ensure_project_scaffold`;
+  const progress = createProgressEmitter({
+    appDir: session.getState().appDir,
+    onProgress: (event) => session.turn?.onProgress?.(event),
+  });
   let scaffoldHandled = false;
   let fatalError: string | null = null;
-
-  const emitNarration = (rawText: string, uuid: string, complete = false) => {
-    const resolved = resolveNarrationEmit(narrationState, rawText, complete);
-    narrationState = resolved.state;
-    if (!resolved.text) return;
-    session.turn?.onProgress?.({
-      type: 'text_segment',
-      data: { uuid, text: resolved.text },
-    });
-  };
-
-  const emitToolUseProgress = (toolUse: { id?: string; name?: string; input?: unknown }) => {
-    const toolName = typeof toolUse.name === 'string' ? toolUse.name : '<unknown>';
-    const toolUseId = typeof toolUse.id === 'string' ? toolUse.id : '';
-    const shortToolName = shortenToolName(toolName);
-    const command = shortToolName === 'commands' ? extractSandboxCommand(toolUse.input) : '';
-    const progress = typeof toolUse.name === 'string' ? inferToolProgress(toolName, toolUse.input) : {};
-    const inputSummary = summarizeToolInput(toolName, toolUse.input, session.getState().appDir);
-    const progressSignature = JSON.stringify({
-      name: toolName,
-      command,
-      phaseHint: progress.phaseHint || '',
-      fileCount: progress.fileCount || 0,
-      inputSummary,
-    });
-    if (toolUseId) {
-      if (emittedToolUseProgress.get(toolUseId) === progressSignature) return;
-      emittedToolUseProgress.set(toolUseId, progressSignature);
-    }
-    narrationState = { ...narrationState, currentTextBlock: '' };
-    if (toolUseId && typeof toolUse.name === 'string') {
-      toolContextById.set(toolUseId, { name: toolUse.name, ...(command ? { command } : {}) });
-    }
-    const startedAt = toolUseId ? toolStartedAtById.get(toolUseId) || Date.now() : Date.now();
-    if (toolUseId) toolStartedAtById.set(toolUseId, startedAt);
-    session.turn?.onProgress?.({
-      type: 'tool_use',
-      data: {
-        id: toolUseId,
-        name: toolName,
-        ...(command ? { command } : {}),
-        ...progress,
-        inputSummary,
-        startedAt,
-      },
-    });
-  };
 
   const finishTurn = async (result: CodingAgentResult) => {
     await persistTranscript(session).catch((error) => {
@@ -332,7 +173,7 @@ async function pumpSession(session: LiveQuerySession) {
       if (!session.turn) continue;
 
       if (event.type === 'stream_event') {
-        emitNarration(
+        progress.emitNarration(
           extractVisibleNarrationDelta(event),
           typeof event.uuid === 'string' ? event.uuid : '',
           false,
@@ -341,7 +182,7 @@ async function pumpSession(session: LiveQuerySession) {
         if (streamEvent?.type === 'content_block_start') {
           const contentBlock = streamEvent.content_block;
           if (contentBlock?.type === 'text') {
-            narrationState = { ...narrationState, currentTextBlock: '' };
+            progress.beginTextBlock();
           }
           if (isToolUseContentBlock(contentBlock) && typeof streamEvent.index === 'number') {
             pendingToolUseBlocks.set(streamEvent.index, {
@@ -350,7 +191,7 @@ async function pumpSession(session: LiveQuerySession) {
               inputJson: '',
               input: contentBlock.input,
             });
-            emitToolUseProgress({
+            progress.emitToolUseProgress({
               id: contentBlock.id,
               name: contentBlock.name,
               input: contentBlock.input,
@@ -370,7 +211,7 @@ async function pumpSession(session: LiveQuerySession) {
             : undefined;
           if (pendingToolUse) {
             pendingToolUseBlocks.delete(streamEvent.index);
-            emitToolUseProgress({
+            progress.emitToolUseProgress({
               id: pendingToolUse.id,
               name: pendingToolUse.name,
               input: parseToolInputJson(pendingToolUse.inputJson, pendingToolUse.input),
@@ -384,13 +225,13 @@ async function pumpSession(session: LiveQuerySession) {
         const blocks = (event as { message?: { content?: unknown } }).message?.content;
         if (Array.isArray(blocks)) {
           for (const block of blocks) {
-            emitNarration(
+            progress.emitNarration(
               extractVisibleTextBlock(block),
               typeof event.uuid === 'string' ? event.uuid : '',
               true,
             );
             if (isToolUseContentBlock(block)) {
-              emitToolUseProgress({ id: block.id, name: block.name, input: block.input });
+              progress.emitToolUseProgress({ id: block.id, name: block.name, input: block.input });
             }
           }
         }
@@ -407,7 +248,7 @@ async function pumpSession(session: LiveQuerySession) {
               ? record.content.map((item: any) => (typeof item?.text === 'string' ? item.text : '')).join(' ')
               : (typeof record.content === 'string' ? record.content : '');
             const toolUseId = typeof record.tool_use_id === 'string' ? record.tool_use_id : '';
-            const toolContext = toolContextById.get(toolUseId);
+            const toolContext = progress.toolContextById.get(toolUseId);
             const toolName = toolContext?.name || '<unknown>';
             const echoedExit = parseEchoedExitCode(text);
             const commandFailed = typeof echoedExit === 'number' && echoedExit !== 0;
@@ -425,7 +266,7 @@ async function pumpSession(session: LiveQuerySession) {
                 endedAt: Date.now(),
               },
             });
-            if (!scaffoldHandled && toolName === scaffoldToolName && record.is_error !== true) {
+            if (!scaffoldHandled && toolName === SCAFFOLD_TOOL_NAME && record.is_error !== true) {
               scaffoldHandled = true;
               try {
                 await session.getCallbacks().onProjectFilesChanged?.();
@@ -476,11 +317,8 @@ async function pumpSession(session: LiveQuerySession) {
             ...flagsFrom(session),
           });
         }
-        toolContextById.clear();
-        toolStartedAtById.clear();
         pendingToolUseBlocks.clear();
-        emittedToolUseProgress.clear();
-        narrationState = { currentTextBlock: '', emittedNarration: '' };
+        progress.resetTurn();
         scaffoldHandled = false;
         fatalError = null;
       }
@@ -604,6 +442,7 @@ async function startLiveQuery(options: RunCodingAgentOptions): Promise<LiveQuery
       resolveMakersProjectName(context, session.getState()),
       resolveRunningModelLabel(context, model),
       assembled.webSearchAvailable,
+      await getLanguagePreference(context, conversationId),
     ),
     env: sdkEnv,
     cwd: process.cwd(),
@@ -720,6 +559,7 @@ export async function runCodingAgent(options: RunCodingAgentOptions): Promise<Co
           onProjectFilesChanged: options.onProjectFilesChanged,
           onPreviewReady: options.onPreviewReady,
           onDeploymentStatus: options.onDeploymentStatus,
+          onWorkspaceReady: options.onWorkspaceReady,
           send: options.send,
           abortSignal: options.abortSignal,
         },

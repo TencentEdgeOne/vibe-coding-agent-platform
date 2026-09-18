@@ -8,7 +8,8 @@
  */
 
 import { tool as defineClaudeTool } from '@anthropic-ai/claude-agent-sdk';
-import { saveProjectState } from '../session/store.ts';
+import { persistWorkspace, setGatewayPending, setGatewaySkipped } from './workspace-store.ts';
+import { requireSandbox, type AgentContext, type SandboxCapable } from '../runtime/context.ts';
 import type { ClaudeMcpTool, ProjectState, StreamSend } from '../types.ts';
 import { stringifyToolResult } from '../utils/text.ts';
 import { getFileTree } from './fs.ts';
@@ -61,9 +62,9 @@ export function envAssignmentValue(content: string, key: string): string {
   return value.trim();
 }
 
-async function readProjectFile(context: any, state: ProjectState, relPath: string) {
+async function readProjectFile(context: SandboxCapable, state: ProjectState, relPath: string) {
   try {
-    const content = await context.sandbox.files.read(`${state.appDir}/${relPath}`);
+    const content = await requireSandbox(context).files.read(`${state.appDir}/${relPath}`);
     return typeof content === 'string' ? content : '';
   } catch {
     return '';
@@ -71,23 +72,23 @@ async function readProjectFile(context: any, state: ProjectState, relPath: strin
 }
 
 export async function projectDeclaresGatewayKeys(
-  context: any,
+  context: AgentContext,
   state: ProjectState,
 ): Promise<boolean> {
   const content = await readProjectFile(context, state, '.env.example');
   return Boolean(content) && declaredGatewayKeys(content).length > 0;
 }
 
-async function projectHasAgentsDirectory(context: any, state: ProjectState) {
+async function projectHasAgentsDirectory(context: AgentContext, state: ProjectState) {
   try {
-    return Boolean(await context.sandbox.files.exists(`${state.appDir}/agents`));
+    return Boolean(await requireSandbox(context).files.exists(`${state.appDir}/agents`));
   } catch {
     return false;
   }
 }
 
 export async function projectNeedsGatewayKey(
-  context: any,
+  context: AgentContext,
   state: ProjectState,
 ): Promise<boolean> {
   return await projectDeclaresGatewayKeys(context, state)
@@ -95,14 +96,14 @@ export async function projectNeedsGatewayKey(
 }
 
 export async function sandboxGatewayKeyIsSet(
-  context: any,
+  context: AgentContext,
   state: ProjectState,
 ): Promise<boolean> {
   const content = await readProjectFile(context, state, '.env');
   return Boolean(content) && Boolean(envAssignmentValue(content, 'AI_GATEWAY_API_KEY'));
 }
 
-async function readProjectAgentFramework(context: any, state: ProjectState) {
+async function readProjectAgentFramework(context: AgentContext, state: ProjectState) {
   const content = await readProjectFile(context, state, 'edgeone.json');
   if (!content) return '';
   try {
@@ -114,7 +115,7 @@ async function readProjectAgentFramework(context: any, state: ProjectState) {
 }
 
 export async function readProjectGatewayEnv(
-  context: any,
+  context: AgentContext,
   state: ProjectState,
 ): Promise<Record<string, string>> {
   const content = await readProjectFile(context, state, '.env');
@@ -142,7 +143,7 @@ function upsertEnvValues(content: string, values: Record<string, string>) {
 }
 
 export async function writeSandboxGatewayEnv(
-  context: any,
+  context: AgentContext,
   state: ProjectState,
   values: Record<string, string>,
 ) {
@@ -150,18 +151,18 @@ export async function writeSandboxGatewayEnv(
   const envPath = `${state.appDir}/.env`;
   let current = '';
   try {
-    const existing = await context.sandbox.files.read(envPath);
+    const existing = await requireSandbox(context).files.read(envPath);
     if (typeof existing === 'string') current = existing;
   } catch {
     current = '';
   }
   const next = upsertEnvValues(current, values);
   if (next === current.replace(/\r\n/g, '\n').replace(/\n*$/, '\n')) return;
-  await context.sandbox.files.write(envPath, next);
+  await requireSandbox(context).files.write(envPath, next);
 }
 
 async function publishFileTreeAfterEnvWrite(
-  context: any,
+  context: AgentContext,
   state: ProjectState,
   send?: StreamSend,
 ) {
@@ -185,11 +186,11 @@ export type GatewayPromptOptions = {
 };
 
 export async function askUserForGatewayCredentials(
-  context: any,
+  context: AgentContext,
   state: ProjectState,
   options: GatewayPromptOptions = {},
 ) {
-  state.gatewayPromptPending = true;
+  setGatewayPending(state, true);
   await persistGatewayState(context, options.conversationId || '', state);
   options.send?.({
     type: 'gateway_credentials',
@@ -201,7 +202,7 @@ export async function askUserForGatewayCredentials(
 }
 
 export async function shouldPauseForGatewayCredentials(
-  context: any,
+  context: AgentContext,
   state: ProjectState,
 ): Promise<boolean> {
   if (state.gatewaySkipped) return false;
@@ -210,7 +211,7 @@ export async function shouldPauseForGatewayCredentials(
 }
 
 export async function pauseForGatewayCredentialsIfNeeded(
-  context: any,
+  context: AgentContext,
   state: ProjectState,
   options: GatewayPromptOptions = {},
 ): Promise<string> {
@@ -220,29 +221,28 @@ export async function pauseForGatewayCredentialsIfNeeded(
 }
 
 async function persistGatewayState(
-  context: any,
+  context: AgentContext,
   conversationId: string,
   state: ProjectState,
 ) {
   const id = conversationId.trim();
   if (!id) return;
   try {
-    await saveProjectState(context, id, state);
+    await persistWorkspace(context, id, state);
   } catch {
     // The card and `.env` write are still useful without a durable flag.
   }
 }
 
 export async function applyUserGatewayDecision(
-  context: any,
+  context: AgentContext,
   state: ProjectState,
   conversationId: string,
   decision: { apiKey?: string; skip?: boolean },
   send?: StreamSend,
 ) {
   if (decision.skip) {
-    state.gatewayPromptPending = false;
-    state.gatewaySkipped = true;
+    setGatewaySkipped(state, true);
     await persistGatewayState(context, conversationId, state);
     return {};
   }
@@ -257,15 +257,15 @@ export async function applyUserGatewayDecision(
     ),
   };
   await writeSandboxGatewayEnv(context, state, values);
-  state.gatewayPromptPending = false;
-  state.gatewaySkipped = false;
+  setGatewayPending(state, false);
+  setGatewaySkipped(state, false);
   await persistGatewayState(context, conversationId, state);
   await publishFileTreeAfterEnvWrite(context, state, send);
   return values;
 }
 
 export function buildRequestGatewayCredentialsTool(options: {
-  context: any;
+  context: AgentContext;
   state: ProjectState;
   conversationId?: string;
   send?: StreamSend;

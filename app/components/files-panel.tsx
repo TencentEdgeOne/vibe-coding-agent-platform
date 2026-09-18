@@ -184,7 +184,7 @@ export const FilesPanel = memo(function FilesPanel({
 
   // Open the path the parent asked for (first generated file). Prefer waiting until
   // the tree lists it so parent dirs can expand; fall back to cache-only so a
-  // file_content that arrives before file_tree still shows immediately.
+  // file_changed that arrives before file_tree still shows immediately.
   useEffect(() => {
     if (!focusPath || focusedPathRef.current === focusPath) {
       return;

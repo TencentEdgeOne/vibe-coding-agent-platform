@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { isMakersDeployUrl } from '../../../../shared/makers-url';
 import { previewDeepLink } from '../../../../shared/preview-link';
-import type { FileTree, LinkInfo } from '@/app/types/workspace';
+import type { LinkInfo } from '@/app/types/workspace';
 import { fetchPreviewRefresh } from '../workspace-api';
 
 const PREVIEW_CREDENTIAL_REFRESH_MS = 8 * 60_000;
@@ -35,8 +35,7 @@ export function usePreviewSurface(options: {
   conversationIdRef: MutableRefObject<string | null>;
   loadingRef: MutableRefObject<boolean>;
   workspaceRestoringRef: MutableRefObject<boolean>;
-  setFileTree: (tree: FileTree) => void;
-  setDownload: (download: LinkInfo) => void;
+  refreshWorkspace?: (conversationId: string) => Promise<unknown>;
 }) {
   const [preview, setPreview] = useState<LinkInfo | null>(null);
   const [previewViewport, setPreviewViewport] = useState<'desktop' | 'mobile'>('desktop');
@@ -143,12 +142,7 @@ export function usePreviewSurface(options: {
           applyFreshPreviewUrl(data.preview.url, data.preview.sandboxDebugUrl, {
             remountIframe: willRemount || data.preview.restarted === true,
           });
-          if (data.files?.items?.length) {
-            options.setFileTree(data.files);
-          }
-          if (data.download?.url) {
-            options.setDownload(data.download);
-          }
+          void options.refreshWorkspace?.(id);
           return true;
         }
         if (refreshOptions?.showLoading) {
@@ -311,7 +305,7 @@ export function usePreviewSurface(options: {
     setPreviewRefreshFailed(false);
     previewRefreshedAtRef.current = Date.now();
     let revision = activatedPreviewRevisions.get(nextPreview.url);
-    if (revision === undefined) {
+    if (revision === undefined || nextPreview.restarted) {
       revision = previewRevisionRef.current + 1;
       previewRevisionRef.current = revision;
       activatedPreviewRevisions.set(nextPreview.url, revision);

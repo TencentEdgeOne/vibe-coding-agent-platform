@@ -1,15 +1,19 @@
-export function getRequestHeader(context: any, name: string): string {
+import type { AgentContext, RequestCapable } from './context.ts';
+
+export function getRequestHeader(context: RequestCapable, name: string): string {
   const headers = context?.request?.headers;
   if (!headers) return '';
 
-  if (typeof headers.get === 'function') {
-    return String(headers.get(name) || '');
+  const maybeHeaders = headers as Headers | Record<string, string>;
+  if (typeof (maybeHeaders as Headers).get === 'function') {
+    return String((maybeHeaders as Headers).get(name) || '');
   }
 
+  const record = maybeHeaders as Record<string, string>;
   const lowerName = name.toLowerCase();
-  const directValue = headers[name] ?? headers[lowerName];
+  const directValue = record[name] ?? record[lowerName];
   const value = directValue
-    ?? Object.entries(headers).find(([key]) => key.toLowerCase() === lowerName)?.[1];
+    ?? Object.entries(record).find(([key]) => key.toLowerCase() === lowerName)?.[1];
   return typeof value === 'string' ? value : String(value || '');
 }
 
@@ -46,7 +50,10 @@ function getSearchParamFromString(rawValue: unknown, name: string): string {
   return '';
 }
 
-export function getRequestQueryParam(context: any, name: string): {
+export function getRequestQueryParam(context: AgentContext & {
+  query?: unknown;
+  params?: unknown;
+}, name: string): {
   value: string;
   source: string;
 } {
@@ -75,15 +82,16 @@ export function getRequestQueryParam(context: any, name: string): {
     { source: 'context.params', value: context?.params },
   ];
   for (const query of queryObjects) {
-    if (query.value && typeof query.value.get === 'function') {
-      const value = query.value.get(name);
+    const bag = query.value as { get?: (key: string) => unknown } | Record<string, unknown> | undefined;
+    if (bag && typeof (bag as { get?: unknown }).get === 'function') {
+      const value = (bag as { get: (key: string) => unknown }).get(name);
       if (value) {
         return { value: queryValueToString(value), source: query.source };
       }
       continue;
     }
-    if (!query || typeof query !== 'object') continue;
-    const value = query.value?.[name];
+    if (!bag || typeof bag !== 'object') continue;
+    const value = (bag as Record<string, unknown>)[name];
     const normalized = queryValueToString(value);
     if (normalized) {
       return { value: normalized, source: query.source };
@@ -93,8 +101,16 @@ export function getRequestQueryParam(context: any, name: string): {
   return { value: '', source: 'none' };
 }
 
+export function getRequestBody(context: RequestCapable): Record<string, unknown> {
+  const body = context.request?.body;
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return {};
+  }
+  return body as Record<string, unknown>;
+}
+
 export function resolveConversationId(
-  context: any,
+  context: AgentContext,
   options?: { allowQuery?: boolean },
 ): { conversationId: string; source: string } {
   const contextConversationId = String(context?.conversation_id || '');
@@ -124,4 +140,20 @@ export function resolveConversationId(
   }
 
   return { conversationId: '', source: 'none' };
+}
+
+/**
+ * Public site root from the incoming Host, used to pick Makers acceleration
+ * area. Mirrors the browser hostname split: `foo.edgeone.dev` → `edgeone.dev`.
+ */
+export function resolveRequestSiteDomain(context: RequestCapable): string {
+  const forwarded = getRequestHeader(context, 'x-forwarded-host');
+  const host = (forwarded || getRequestHeader(context, 'host')).split(',')[0].trim();
+  const hostname = host.split(':')[0].toLowerCase();
+  if (!hostname || hostname === 'localhost' || /^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
+    return '';
+  }
+  const parts = hostname.split('.');
+  if (parts.length < 2) return hostname;
+  return parts.slice(1).join('.');
 }

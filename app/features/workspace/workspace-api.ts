@@ -1,8 +1,10 @@
 import type {
   PersistedActivityTurn,
   ResumeData,
+  WorkspaceSnapshot,
 } from '../../../shared/protocol';
 import type { ModelOption } from '../../../shared/models';
+import type { Locale } from '@/app/i18n';
 
 function conversationHeaders(conversationId: string): HeadersInit {
   return {
@@ -58,7 +60,7 @@ export function startPromptTurn(options: {
   message: string;
   turnId: string;
   model?: string;
-  siteDomain?: string;
+  language?: Locale;
   apiKey?: string;
   gatewaySkip?: boolean;
   signal?: AbortSignal;
@@ -70,7 +72,7 @@ export function startPromptTurn(options: {
       message: options.message,
       turnId: options.turnId,
       ...(options.model ? { model: options.model } : {}),
-      ...(options.siteDomain ? { siteDomain: options.siteDomain } : {}),
+      ...(options.language ? { language: options.language } : {}),
       ...(options.apiKey ? { apiKey: options.apiKey } : {}),
       ...(options.gatewaySkip ? { gatewaySkip: true } : {}),
     }),
@@ -81,7 +83,7 @@ export function startPromptTurn(options: {
 export function startDeployTurn(options: {
   conversationId: string;
   turnId: string;
-  siteDomain?: string;
+  language?: Locale;
   apiKey?: string;
   gatewaySkip?: boolean;
   signal?: AbortSignal;
@@ -91,7 +93,7 @@ export function startDeployTurn(options: {
     headers: conversationHeaders(options.conversationId),
     body: JSON.stringify({
       turnId: options.turnId,
-      ...(options.siteDomain ? { siteDomain: options.siteDomain } : {}),
+      ...(options.language ? { language: options.language } : {}),
       ...(options.apiKey ? { apiKey: options.apiKey } : {}),
       ...(options.gatewaySkip ? { gatewaySkip: true } : {}),
     }),
@@ -133,4 +135,43 @@ export function openTranscriptStream(conversationId: string, signal?: AbortSigna
     headers: conversationHeaders(conversationId),
     signal,
   });
+}
+
+export function fetchWorkspaceSnapshot(conversationId: string, signal?: AbortSignal) {
+  return fetch('/workspace', {
+    method: 'GET',
+    headers: conversationHeaders(conversationId),
+    signal,
+  }).then((response) => readJson<WorkspaceSnapshot>(response)).catch(() => null);
+}
+
+export type FileBatchEntry = {
+  path: string;
+  ok?: boolean;
+  content?: string;
+  size?: number;
+  truncated?: boolean;
+  error?: string;
+};
+
+const FILE_BATCH_MAX = 12;
+
+export async function fetchFileBatch(
+  conversationId: string,
+  paths: string[],
+  signal?: AbortSignal,
+): Promise<FileBatchEntry[]> {
+  const unique = [...new Set(paths.map((path) => path.trim()).filter(Boolean))];
+  const files: FileBatchEntry[] = [];
+  for (let index = 0; index < unique.length; index += FILE_BATCH_MAX) {
+    const batch = unique.slice(index, index + FILE_BATCH_MAX);
+    const response = await fetch(`/file?paths=${encodeURIComponent(batch.join(','))}`, {
+      method: 'GET',
+      headers: conversationHeaders(conversationId),
+      signal,
+    });
+    const data = await readJson<{ ok?: boolean; files?: FileBatchEntry[] }>(response);
+    if (Array.isArray(data?.files)) files.push(...data.files);
+  }
+  return files;
 }

@@ -7,6 +7,7 @@
  * project already declares. Discovering them at the gate costs the user a
  * failed preview for something nothing had to decide.
  */
+import { requireSandbox, type AgentContext } from '../runtime/context.ts';
 
 import type { ProjectState } from '../types.ts';
 import {
@@ -258,7 +259,7 @@ export function withFrameworkAdapter(
  * the dependency is already there and only the config wiring is left.
  */
 export async function ensureMakersFrameworkAdapter(
-  context: any,
+  context: AgentContext,
   state: ProjectState,
   packageJsonContent: string,
 ): Promise<{ path: string; content: string } | undefined> {
@@ -268,12 +269,12 @@ export async function ensureMakersFrameworkAdapter(
     profiles,
   );
   if (!content) return undefined;
-  await context.sandbox.files.write(`${state.appDir}/package.json`, content);
+  await requireSandbox(context).files.write(`${state.appDir}/package.json`, content);
   return { path: 'package.json', content };
 }
 
 async function readProjectFile(
-  context: any,
+  context: AgentContext,
   state: ProjectState,
   relPath: string,
 ): Promise<ProjectFileRead> {
@@ -301,7 +302,7 @@ async function readProjectFile(
  * withholds the framework rather than guessing one.
  */
 async function readAgentImportLines(
-  context: any,
+  context: AgentContext,
   state: ProjectState,
 ): Promise<string[]> {
   try {
@@ -337,7 +338,7 @@ let declarationQueue: Promise<unknown> = Promise.resolve();
  * in line costs four reads and no writes.
  */
 export function ensureMakersAgentDeclarations(
-  context: any,
+  context: AgentContext,
   state: ProjectState,
 ): Promise<Array<{ path: string; content: string }>> {
   const run = declarationQueue.then(
@@ -351,7 +352,7 @@ export function ensureMakersAgentDeclarations(
 }
 
 async function declareMakersAgentFiles(
-  context: any,
+  context: AgentContext,
   state: ProjectState,
 ): Promise<Array<{ path: string; content: string }>> {
   const [edgeoneConfig, envExample, packageJson, requirements, agentSources] = await Promise.all([
@@ -372,7 +373,7 @@ async function declareMakersAgentFiles(
   if (envContent) written.push({ path: '.env.example', content: envContent });
 
   for (const file of written) {
-    await context.sandbox.files.write(`${state.appDir}/${file.path}`, file.content);
+    await requireSandbox(context).files.write(`${state.appDir}/${file.path}`, file.content);
   }
   return written;
 }

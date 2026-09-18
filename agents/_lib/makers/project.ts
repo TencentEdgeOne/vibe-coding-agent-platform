@@ -1,3 +1,4 @@
+import type { AgentContext } from '../runtime/context.ts';
 import { createHash } from 'node:crypto';
 import { ConflictError, Makers } from '@edgeone/makers-sdk';
 import type { ProjectState } from '../types.ts';
@@ -18,12 +19,12 @@ import { resolveMakersPublishTarget } from '../../../shared/publish-target.ts';
 // every turn of the same conversation resolves to the same project.
 const PROJECT_NAME_PREFIX = 'vibe-coding';
 
-function pickEnvValue(context: any, key: string) {
+function pickEnvValue(context: AgentContext, key: string) {
   const value = context?.env?.[key];
   return typeof value === 'string' ? value.trim() : '';
 }
 
-export function resolveMakersProjectName(context: any, state: ProjectState) {
+export function resolveMakersProjectName(context: AgentContext, state: ProjectState) {
   // An explicit name is an operator decision: honour it exactly, including the
   // consequence that every conversation then shares the one project.
   const pinned = pickEnvValue(context, 'MAKERS_DEPLOY_PROJECT_NAME');
@@ -107,7 +108,7 @@ export function parsePublishableDotEnv(content: string) {
   return values;
 }
 
-async function readSandboxDotEnv(context: any, state: ProjectState) {
+async function readSandboxDotEnv(context: AgentContext, state: ProjectState) {
   try {
     const content = await context?.sandbox?.files?.read?.(`${state.appDir}/.env`);
     return typeof content === 'string' ? content : '';
@@ -175,7 +176,7 @@ export async function ensureMakersPublishProject(
  * `setEnvs` depends on.
  */
 export async function syncSandboxEnvToMakersProject(
-  context: any,
+  context: AgentContext,
   state: ProjectState,
   masterToken: string,
   projectName: string,

@@ -39,10 +39,10 @@ function toolBlocks(content: unknown): JsonRecord[] {
  */
 export function projectTranscript(jsonl: string, projectDir = ''): PersistedActivityTurn[] {
   const turns: PersistedActivityTurn[] = [];
-  let current: PersistedActivityTurn | null = null;
+  const active: { turn: PersistedActivityTurn | null } = { turn: null };
 
   const openTurn = (user: string, createdAt: number) => {
-    current = {
+    const turn: PersistedActivityTurn = {
       id: `turn-${createdAt}-${turns.length}`,
       user,
       assistant: '',
@@ -50,7 +50,9 @@ export function projectTranscript(jsonl: string, projectDir = ''): PersistedActi
       createdAt,
       activities: [],
     };
-    turns.push(current);
+    active.turn = turn;
+    turns.push(turn);
+    return turn;
   };
 
   for (const rawLine of jsonl.split('\n')) {
@@ -70,11 +72,12 @@ export function projectTranscript(jsonl: string, projectDir = ''): PersistedActi
       const tools = toolBlocks(content);
       const text = textFromContent(content);
       if (tools.some((block) => block.type === 'tool_result')) {
-        if (!current) continue;
+        const turn = active.turn;
+        if (!turn) continue;
         for (const block of tools) {
           if (block.type !== 'tool_result') continue;
           const id = typeof block.tool_use_id === 'string' ? block.tool_use_id : '';
-          const existing = current.activities.find(
+          const existing = turn.activities.find(
             (activity): activity is Extract<AssistantActivity, { kind: 'tool' }> =>
               activity.kind === 'tool' && activity.toolUseId === id,
           );
@@ -93,17 +96,18 @@ export function projectTranscript(jsonl: string, projectDir = ''): PersistedActi
       continue;
     }
 
-    if (entry.type === 'assistant' && current) {
+    if (entry.type === 'assistant' && active.turn) {
+      const turn = active.turn;
       const text = textFromContent(content);
       if (text) {
-        current.activities = appendNarrationChunk(current.activities, text);
-        current.assistant = text;
+        turn.activities = appendNarrationChunk(turn.activities, text);
+        turn.assistant = text;
       }
       for (const block of toolBlocks(content)) {
         if (block.type !== 'tool_use' && block.type !== 'mcp_tool_use') continue;
         const id = typeof block.id === 'string' ? block.id : '';
         const name = typeof block.name === 'string' ? block.name : 'tool';
-        current.activities.push({
+        turn.activities.push({
           kind: 'tool',
           toolUseId: id,
           name,

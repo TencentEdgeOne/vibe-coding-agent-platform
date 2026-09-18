@@ -1,3 +1,4 @@
+import { requireSandbox, type AgentContext } from '../runtime/context.ts';
 import {
   MAKERS_DEV_PORT,
   PREVIEW_ASSET_PREFIX_ENV,
@@ -33,15 +34,17 @@ import { assertMakersProjectCompatible } from '../makers/compat/run.ts';
 import { prepareMakersSession } from '../makers/session.ts';
 import { resolveConversationPublishArea, resolveMakersProjectName } from '../makers/project.ts';
 import { describeMissingMakersRuntimeToken } from '../makers/token.ts';
+import { publishPreview } from './workspace-store.ts';
 
 // Where Makers mounts generated HTTP handlers; both are optional in a project.
 const CLOUD_FUNCTION_DIRECTORIES = ['cloud-functions', 'edge-functions'];
 
-export async function resolvePublicLinks(context: any) {
-  const previewHost = context.sandbox.getHost(PREVIEW_PUBLIC_PORT);
-  const accessToken = context.sandbox.envdAccessToken;
+export async function resolvePublicLinks(context: AgentContext) {
+  const sandbox = requireSandbox(context);
+  const previewHost = await Promise.resolve(sandbox.getHost?.(PREVIEW_PUBLIC_PORT));
+  const accessToken = sandbox.envdAccessToken;
   const previewBaseUrl = normalizePublicUrl(previewHost);
-  const sandboxDebugUrl = normalizePublicUrl(context.sandbox.browser?.liveUrl);
+  const sandboxDebugUrl = normalizePublicUrl(sandbox.browser?.liveUrl);
 
   const previewUrl = (previewBaseUrl && accessToken)
     ? buildPublicPreviewUrl(previewBaseUrl, accessToken)
@@ -110,7 +113,7 @@ export function rewritePreviewAccessToken(existingUrl: string, token: string) {
  * the restart, so re-running them buys a second opinion on the same code.
  */
 export async function startPreviewServer(
-  context: any,
+  context: AgentContext,
   state: ProjectState,
   options: { verifyRoutes?: boolean } = {},
 ) {
@@ -247,7 +250,7 @@ const ROUTE_LISTING_COMMAND = [
  * sites, and it is why neither gate needs a project-shape flag passed in from
  * outside — the routes a project declares are the shape.
  */
-async function assertGeneratedRoutesReady(context: any, state: ProjectState) {
+async function assertGeneratedRoutesReady(context: AgentContext, state: ProjectState) {
   const listing = await runSandboxCommand(
     context,
     ROUTE_LISTING_COMMAND,
@@ -309,7 +312,7 @@ function smokeFailure(exitCode: number | undefined, detail: string, guidance: st
  * request still publishes a preview that looks fine until the user clicks.
  */
 async function assertGeneratedApiRoutesReady(
-  context: any,
+  context: AgentContext,
   state: ProjectState,
   routes: string[],
 ) {
@@ -356,7 +359,7 @@ export function agentRoutesFromListing(stdout: string) {
 }
 
 async function assertGeneratedAgentChatReady(
-  context: any,
+  context: AgentContext,
   state: ProjectState,
   routes: Set<string>,
 ) {
@@ -412,7 +415,7 @@ async function assertGeneratedAgentChatReady(
  * of why — an import it cannot resolve, a framework that is not installed. At
  * the point the route gate fails, that account is the whole answer.
  */
-async function readMakersDevLog(context: any) {
+async function readMakersDevLog(context: AgentContext) {
   try {
     const result = await runSandboxCommand(
       context,
@@ -427,7 +430,7 @@ async function readMakersDevLog(context: any) {
 }
 
 export async function publishRunningPreview(
-  context: any,
+  context: AgentContext,
   state: ProjectState,
   options: { routesAlreadyVerified?: boolean } = {},
 ) {
@@ -441,10 +444,11 @@ export async function publishRunningPreview(
   if (!links.previewUrl) {
     throw new Error(`Makers dev is ready, but the sandbox did not return a public URL for port ${PREVIEW_PUBLIC_PORT}.`);
   }
-  state.previewUrl = links.previewUrl;
-  state.sandboxDebugUrl = links.sandboxDebugUrl;
-  state.previewKind = 'sandbox';
-  state.previewPublished = true;
+  publishPreview(state, {
+    url: links.previewUrl,
+    sandboxDebugUrl: links.sandboxDebugUrl,
+    kind: 'sandbox',
+  });
   return {
     url: links.previewUrl,
     sandboxDebugUrl: links.sandboxDebugUrl,
@@ -453,7 +457,7 @@ export async function publishRunningPreview(
 }
 
 export async function assertPreviewServerReady(
-  context: any,
+  context: AgentContext,
   readyPath = PREVIEW_PATH_PREFIX,
 ) {
   const result = await runCommandCapturingExit(

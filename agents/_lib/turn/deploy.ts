@@ -1,12 +1,14 @@
+import type { AgentContext } from '../runtime/context.ts';
 import { MAKERS_DEV_PORT } from '../constants.ts';
-import { saveProjectState } from '../session/store.ts';
-import { getFileTree, runSandboxCommand } from '../project/index.ts';
+import { getFileTree } from '../project/fs.ts';
+import { runSandboxCommand } from '../project/commands.ts';
+import { startPreviewServer } from '../project/preview.ts';
+import { bindSiteDomain, persistWorkspace, setDeployment } from '../project/workspace-store.ts';
 import { assertMakersProjectCompatible } from '../makers/compat/run.ts';
 import {
   resolveConversationPublishArea,
   resolveMakersProjectName,
 } from '../makers/project.ts';
-import { startPreviewServer } from '../project/preview.ts';
 import {
   applyUserGatewayDecision,
   askUserForGatewayCredentials,
@@ -31,16 +33,17 @@ import {
   readMakersDeployOutcome,
   redactSecret,
 } from '../makers/cli-deploy.ts';
-import { resolveConversationId } from '../runtime/request.ts';
+import { resolveConversationId, resolveRequestSiteDomain } from '../runtime/request.ts';
 import {
   createProjectCheckpointController,
   ensureProjectDependencies,
-  extendExistingSandboxTimeout,
-  previewLinkFromState,
-  withLiveDeploymentUrl,
+    extendExistingSandboxTimeout,
+    replyLocaleFor,
+    withLiveDeploymentUrl,
 } from './checkpoint.ts';
 import { createTurnLifecycle } from './lifecycle.ts';
 import { prepareProjectWorkspace } from '../project/workspace.ts';
+import { sendTurnResult } from './result.ts';
 
 /** Used when an API caller asks to publish without wording the request itself. */
 const DEPLOY_TIMEOUT_SECONDS = 600;
@@ -111,7 +114,7 @@ function summarizeDeployError(error: string) {
  * turn a live site into a reported failure.
  */
 async function publishWithProgress(
-  context: any,
+  context: AgentContext,
   target: { projectName: string; appDir: string; env: Record<string, string>; area: string },
   onTail: (tail: string) => void,
 ): Promise<{ log: string; timedOut: boolean }> {
@@ -168,29 +171,25 @@ async function publishWithProgress(
  * is what keeps a publish and a generation from touching the sandbox at once.
  */
 export async function runDeployPipeline(
-  context: any,
+  context: AgentContext,
   message: string,
   send: StreamSend,
   options: {
     turnId?: string;
-    siteDomain?: string;
+    language?: string;
     apiKey?: string;
     gatewaySkip?: boolean;
   } = {},
 ) {
   const { conversationId } = resolveConversationId(context);
   const request = message.trim() || 'Deploy this project';
-  const copy = /[\u3400-\u9fff]/.test(request) ? COPY.zh : COPY.en;
+  const copy = replyLocaleFor(request, options.language) === 'zh' ? COPY.zh : COPY.en;
 
   if (!conversationId) {
-    send({
-      type: 'result',
-      data: {
-        ok: false,
-        conversation_id: '',
-        reply: copy.missingConversation,
-        preview: {},
-      },
+    sendTurnResult(send, {
+      ok: false,
+      conversation_id: '',
+      reply: copy.missingConversation,
     });
     return;
   }
@@ -198,10 +197,8 @@ export async function runDeployPipeline(
   await extendExistingSandboxTimeout(context);
 
   const state = await prepareProjectWorkspace(context, conversationId, send);
-  const siteDomain = String(options.siteDomain || '').trim();
-  if (siteDomain && state.siteDomain !== siteDomain) {
-    state.siteDomain = siteDomain;
-    await saveProjectState(context, conversationId, state);
+  if (bindSiteDomain(state, resolveRequestSiteDomain(context))) {
+    await persistWorkspace(context, conversationId, state);
   }
   const turn = createTurnLifecycle({
     context,
@@ -218,16 +215,10 @@ export async function runDeployPipeline(
   // clear whatever the last generation said about the project.
   const finish = async (reply: string, status: 'completed' | 'failed') => {
     await turn.finalize(reply, status);
-    send({
-      type: 'result',
-      data: {
-        ok: status === 'completed',
-        reply,
-        conversation_id: conversationId,
-        ...(state.gatewayPromptPending ? { gatewayNeeded: true } : {}),
-        preview: previewLinkFromState(state),
-        deployment: state.deployment,
-      },
+    sendTurnResult(send, {
+      ok: status === 'completed',
+      reply,
+      conversation_id: conversationId,
     });
   };
 
@@ -264,10 +255,8 @@ export async function runDeployPipeline(
     send(event);
   };
   const publish = (deployment: DeploymentInfo) => {
-    state.deployment = deployment;
-    // Eagerly persisted so a refresh mid-publish resumes into the same state
-    // the deployment bar was showing.
-    void saveProjectState(context, conversationId, state);
+    setDeployment(state, deployment);
+    void persistWorkspace(context, conversationId, state);
     send({ type: 'deployment_status', data: deployment });
   };
   // `detail` is whatever the CLI printed when it failed without phrasing the

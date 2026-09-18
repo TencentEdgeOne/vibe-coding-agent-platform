@@ -241,7 +241,7 @@ test('the composer model travels on /prompt, not a session-model route', async (
   assert.doesNotMatch(client, /\/session-model/);
   assert.match(client, /\.\.\.\(options\.model \? \{ model: options\.model \} : \{\}\)/);
   assert.match(live, /model: modelRef\.current/);
-  assert.match(prompt, /resolveRequestedModel\(context, body\?\.model\)/);
+  assert.match(prompt, /resolveRequestedModel\(context, body\.model\)/);
   assert.doesNotMatch(task, /getModelPreference/);
   assert.match(task, /requestedModel \? \{ model: requestedModel \}/);
   assert.match(task, /saveModelPreference\(context, conversationId, requestedModel\)/);

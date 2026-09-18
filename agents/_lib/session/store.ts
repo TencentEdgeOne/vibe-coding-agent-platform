@@ -1,6 +1,6 @@
 import { getStore } from '@edgeone/pages-blob';
 import { createProjectState } from '../project/state.ts';
-import type { BlobStoreLike } from '../runtime/context.ts';
+import type { BlobStoreLike, PersistCapable } from '../runtime/context.ts';
 import type { ChatTask, ProjectState } from '../types.ts';
 
 const BLOB_STORE_NAME = 'vibe-sessions';
@@ -9,6 +9,7 @@ export type ConversationRecord = {
   claudeSessionId?: string;
   transcriptPath?: string;
   modelPreference?: string;
+  languagePreference?: 'zh' | 'en';
   projectState: ProjectState;
   chatTask?: ChatTask | null;
 };
@@ -87,9 +88,12 @@ export function createMemoryBlobStore(): BlobStoreLike {
   };
 }
 
-export function getBlobStore(context?: { blobStore?: BlobStoreLike }): BlobStoreLike {
+export function getBlobStore(context?: PersistCapable): BlobStoreLike {
   if (context?.blobStore) return context.blobStore;
-  return getStore({ name: BLOB_STORE_NAME, consistency: 'strong' }) as BlobStoreLike;
+  return (getStore as unknown as (options: { name: string; consistency: 'strong' }) => BlobStoreLike)({
+    name: BLOB_STORE_NAME,
+    consistency: 'strong',
+  });
 }
 
 export async function getConversationRecord(
@@ -163,4 +167,22 @@ export async function saveModelPreference(
   model: string,
 ) {
   await patchConversationRecord(context, conversationId, { modelPreference: model.trim() });
+}
+
+export async function getLanguagePreference(
+  context: { blobStore?: BlobStoreLike },
+  conversationId: string,
+) {
+  const value = (await getConversationRecord(context, conversationId)).languagePreference;
+  return value === 'zh' || value === 'en' ? value : '';
+}
+
+export async function saveLanguagePreference(
+  context: { blobStore?: BlobStoreLike },
+  conversationId: string,
+  language: string,
+) {
+  const next = language.trim();
+  if (next !== 'zh' && next !== 'en') return;
+  await patchConversationRecord(context, conversationId, { languagePreference: next });
 }

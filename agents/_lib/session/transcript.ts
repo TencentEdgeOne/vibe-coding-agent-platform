@@ -1,3 +1,4 @@
+import type { AgentContext } from '../runtime/context.ts';
 import { createReadStream, createWriteStream, existsSync, readdirSync } from 'node:fs';
 import { mkdir, stat } from 'node:fs/promises';
 import path from 'node:path';
@@ -15,7 +16,7 @@ function toNodeReadable(value: unknown): Readable | null {
   if (!value) return null;
   if (value instanceof Readable) return value;
   if (typeof (value as ReadableStream).getReader === 'function') {
-    return Readable.fromWeb(value as ReadableStream<Uint8Array>);
+    return Readable.fromWeb(value as import('node:stream/web').ReadableStream);
   }
   if (typeof value === 'string') {
     return Readable.from([value]);
@@ -182,7 +183,7 @@ function sleep(ms: number, signal?: AbortSignal) {
 
 /** GET /transcript — JSONL snapshots while the live file is being written. */
 export async function createTranscriptStreamResponse(
-  context: any,
+  context: AgentContext,
   resolveLive: (conversationId: string) => LiveTranscriptRef | null,
 ): Promise<Response> {
   const { conversationId } = resolveConversationId(context);

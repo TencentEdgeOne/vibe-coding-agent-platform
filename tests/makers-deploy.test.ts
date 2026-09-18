@@ -29,7 +29,7 @@ import {
   resolveMakersProjectName,
   syncSandboxEnvToMakersProject,
 } from '../agents/_lib/makers/project.ts';
-import { projectState } from './helpers/fixtures.ts';
+import { projectState, readCommandsWrapSource } from './helpers/fixtures.ts';
 
 test('builds a non-interactive direct CLI deploy command', () => {
   const production = buildMakersDeployCommand('vibe-coding-playground');
@@ -593,7 +593,7 @@ test('each conversation owns one project, for preview and deploy alike', () => {
 test('preview and deploy resolve the project through the same function', async () => {
   const [previewSource, commandSource, sessionSource] = await Promise.all([
     readFile('agents/_lib/project/preview.ts', 'utf8'),
-    readFile('agents/_lib/tools/commands-wrap.ts', 'utf8'),
+    readCommandsWrapSource(),
     readFile('agents/_lib/makers/session.ts', 'utf8'),
   ]);
 
@@ -792,7 +792,7 @@ test('deploy does not copy .env when there is no master token', async () => {
 test('deploy copies .env with the runtime master token, not the sandbox tenant token', async () => {
   const [session, wrap, helper] = await Promise.all([
     readFile('agents/_lib/makers/session.ts', 'utf8'),
-    readFile('agents/_lib/tools/commands-wrap.ts', 'utf8'),
+    readCommandsWrapSource(),
     readFile('agents/_lib/makers/project.ts', 'utf8'),
   ]);
 

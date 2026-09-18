@@ -11,6 +11,7 @@ import {
   resolveSandboxMakersToken,
 } from '../agents/_lib/makers/token.ts';
 import { projectState } from './helpers/fixtures.ts';
+import { readCommandsWrapSource } from './helpers/fixtures.ts';
 
 test('sandbox Makers tenant IDs are generated server-side and remain stable', () => {
   const first = projectState();
@@ -171,7 +172,7 @@ test('the master credential is exchanged, never handed to the sandbox', async ()
 test('the tenant token is redacted out of CLI output', async () => {
   const [previewSource, commandSource] = await Promise.all([
     readFile('agents/_lib/project/preview.ts', 'utf8'),
-    readFile('agents/_lib/tools/commands-wrap.ts', 'utf8'),
+    readCommandsWrapSource(),
   ]);
 
   assert.match(previewSource, /redactSecret\(\s*failure,\s*makers\.sandboxToken,?\s*\)/);
@@ -183,7 +184,7 @@ test('direct CLI calls route the runtime credential through one resolver', async
   const [tokenSource, previewSource, commandSource, sessionSource, packageSource] = await Promise.all([
     readFile('agents/_lib/makers/token.ts', 'utf8'),
     readFile('agents/_lib/project/preview.ts', 'utf8'),
-    readFile('agents/_lib/tools/commands-wrap.ts', 'utf8'),
+    readCommandsWrapSource(),
     readFile('agents/_lib/makers/session.ts', 'utf8'),
     readFile('package.json', 'utf8'),
   ]);

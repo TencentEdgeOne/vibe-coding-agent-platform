@@ -1,6 +1,6 @@
 import type { SdkMcpToolDefinition } from '@anthropic-ai/claude-agent-sdk';
 import type {
-  ActivityStatus,
+  BuildInfo,
   BuildStatus,
   ChatStreamEvent,
   DeploymentInfo,
@@ -9,9 +9,12 @@ import type {
 
 export type {
   ActivityStatus,
+  AssistantActivity as PersistedActivity,
+  BuildInfo,
   BuildStatus,
   DeploymentInfo,
   FileTreeItem,
+  PersistedActivityTurn,
   PreviewKind,
 } from '../../shared/protocol.ts';
 
@@ -32,6 +35,8 @@ export type ProjectState = {
   previewKind?: PreviewKind;
   /** Latest live deployment, kept separate from the sandbox preview iframe. */
   deployment?: DeploymentInfo;
+  /** Last verification result; GET /workspace exposes it independently of the chat stream. */
+  lastBuild?: BuildInfo;
   /** The host is waiting for a Models API key in the next user turn. */
   gatewayPromptPending?: boolean;
   /** The user skipped the Models API key for this conversation. */
@@ -60,31 +65,6 @@ export type ChatTask = {
   startedAt?: number;
   finishedAt?: number;
   error?: string;
-};
-
-export type PersistedActivity =
-  | {
-      kind: 'text';
-      content: string;
-    }
-  | {
-      kind: 'tool';
-      toolUseId: string;
-      name: string;
-      status: ActivityStatus;
-      inputSummary?: string;
-      outputSummary?: string;
-      startedAt: number;
-      endedAt?: number;
-    };
-
-export type PersistedActivityTurn = {
-  id: string;
-  user: string;
-  assistant: string;
-  status: 'completed' | 'failed' | 'stopped';
-  createdAt: number;
-  activities: PersistedActivity[];
 };
 
 export type StreamSend = (event: ChatStreamEvent) => void;

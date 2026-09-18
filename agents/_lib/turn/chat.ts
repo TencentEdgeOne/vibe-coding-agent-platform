@@ -1,55 +1,67 @@
-import { runCodingAgent } from '../session/live.ts';
+import type { AgentContext } from '../runtime/context.ts';
 import { AUTO_FIX_MAX_ATTEMPTS } from '../constants.ts';
-import { saveProjectState } from '../session/store.ts';
-import { getFileTree, runVerification } from '../project/index.ts';
+import { runCodingAgent } from '../session/live.ts';
+import { runVerification } from '../project/scaffold.ts';
+import { publishRunningPreview, startPreviewServer } from '../project/preview.ts';
+import {
+  bindSiteDomain,
+  persistWorkspace,
+  publishPreview,
+  setDeployment,
+  setLastBuild,
+} from '../project/workspace-store.ts';
 import type {
   AgentProgressEvent,
-  BuildStatus,
   DeploymentInfo,
-  FileTreeItem,
   ScaffoldLog,
   StreamSend,
 } from '../types.ts';
-import { buildAutoFixPrompt } from '../utils/build-errors.ts';
 import { toAppRelPath } from '../utils/paths.ts';
 import { sanitizeAssistantText } from '../../../shared/timeline.ts';
-import { resolveConversationId } from '../runtime/request.ts';
+import { resolveConversationId, resolveRequestSiteDomain } from '../runtime/request.ts';
 import {
-  FILE_PUSH_MAX_BYTES,
-  FILE_PUSH_TURN_BUDGET_BYTES,
-  buildRequirementConclusionFallback,
+  GATEWAY_CREDENTIALS_USER_REPLY,
   compactUserFacingReply,
   createFileTreePushController,
   createProjectCheckpointController,
   extendExistingSandboxTimeout,
-  GATEWAY_CREDENTIALS_USER_REPLY,
   isGenericCompletionReply,
   previewLinkFromState,
   replyLocaleFor,
   resolveFinishedTurn,
   STOPPED_TURN_REPLY,
   stripReturnedPreviewLinks,
-  utf8ByteLength,
   withLiveDeploymentUrl,
+  buildRequirementConclusionFallback,
 } from './checkpoint.ts';
 import { createTurnLifecycle } from './lifecycle.ts';
 import { prepareProjectWorkspace } from '../project/workspace.ts';
-import { isMakersDeployUrl } from '../../../shared/makers-url.ts';
 import {
   applyUserGatewayDecision,
   isRequestGatewayCredentialsTool,
 } from '../project/gateway.ts';
 import { resolveGatewayUserTurn } from '../../../shared/gateway-secret.ts';
+import { runAutoFixTurn } from './auto-fix.ts';
+import { sendTurnResult } from './result.ts';
+import type { ChatResponse } from '../../../shared/protocol.ts';
+import type { ReplyLocale } from '../../../shared/user-facing-reply.ts';
+
+function slimResult(
+  conversationId: string,
+  extra: Omit<ChatResponse, 'conversation_id'>,
+): ChatResponse {
+  return { conversation_id: conversationId, ...extra };
+}
 
 export async function runChatPipeline(
-  context: any,
+  context: AgentContext,
   message: string,
   send: StreamSend,
   options: {
     turnId?: string;
     /** Validated model for this turn; '' or absent runs the configured default. */
     model?: string;
-    siteDomain?: string;
+    language?: ReplyLocale | string;
     /** Real Models API key from the card or a chat sentence; never persisted. */
     apiKey?: string;
     gatewaySkip?: boolean;
@@ -57,36 +69,21 @@ export async function runChatPipeline(
 ) {
   const { conversationId } = resolveConversationId(context);
   const abortSignal = context?.request?.signal as AbortSignal | undefined;
-  // Every reply this pipeline writes itself — stopped, failed, fallback — has to
-  // answer in the language of the request, so the language is decided once here
-  // rather than re-sniffed at each of the five places that needed it.
-  const replyLocale = replyLocaleFor(message);
+  const replyLocale = replyLocaleFor(message, options.language);
 
   if (!message) {
-    send({
-      type: 'result',
-      data: {
-        ok: false,
-        conversation_id: conversationId,
-        reply: 'Please describe the page or feature you want to build first.',
-        build: { status: 'skipped' as BuildStatus },
-        preview: {},
-      },
-    });
+    sendTurnResult(send, slimResult(conversationId, {
+      ok: false,
+      reply: 'Please describe the page or feature you want to build first.',
+    }));
     return;
   }
 
   if (!conversationId) {
-    send({
-      type: 'result',
-      data: {
-        ok: false,
-        conversation_id: '',
-        reply: 'Missing conversationId. The project workspace cannot be prepared.',
-        build: { status: 'skipped' as BuildStatus },
-        preview: {},
-      },
-    });
+    sendTurnResult(send, slimResult('', {
+      ok: false,
+      reply: 'Missing conversationId. The project workspace cannot be prepared.',
+    }));
     return;
   }
 
@@ -97,10 +94,8 @@ export async function runChatPipeline(
     conversationId,
     send,
   );
-  const siteDomain = String(options.siteDomain || '').trim();
-  if (siteDomain && state.siteDomain !== siteDomain) {
-    state.siteDomain = siteDomain;
-    await saveProjectState(context, conversationId, state);
+  if (bindSiteDomain(state, resolveRequestSiteDomain(context))) {
+    await persistWorkspace(context, conversationId, state);
   }
   const inboundGateway = resolveGatewayUserTurn(message, options.apiKey);
   message = inboundGateway.message;
@@ -121,8 +116,6 @@ export async function runChatPipeline(
   const activityTurnId = options.turnId
     || String(context?.run_id || `${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
-  // Mid-turn debounced snapshots + exit-path flush so a recycled sandbox still
-  // has a restorable workspace in project Blob storage.
   const checkpoint = createProjectCheckpointController(context, conversationId, state, (persistenceError) => {
     console.warn('[checkpoint]', persistenceError);
   });
@@ -139,25 +132,22 @@ export async function runChatPipeline(
 
   const handleScaffoldLog = (_log: ScaffoldLog) => {};
   const forwardProgress = (event: AgentProgressEvent) => {
-    // Forward structured progress events directly; the frontend renders by type.
     if (event.type === 'tool_use') {
-      const name = event.data.name || '';
+      const name = event.data?.name || '';
       const hideScaffold = !isInitialProjectTurn
         && (name === 'ensure_project_scaffold' || name.endsWith('__ensure_project_scaffold'));
       if (hideScaffold || isRequestGatewayCredentialsTool(name)) {
-        hiddenScaffoldToolUseIds.add(event.data.id);
+        hiddenScaffoldToolUseIds.add(event.data?.id || '');
         return;
       }
     }
-    if (event.type === 'tool_result' && hiddenScaffoldToolUseIds.has(event.data.id)) {
+    if (event.type === 'tool_result' && hiddenScaffoldToolUseIds.has(event.data?.id || '')) {
       return;
     }
     if (event.type === 'text_segment') {
-      // Keep the model's step-by-step narration visible; only the final summary
-      // is compacted. Preview links stay out of the chat.
       const text = state.previewUrl
-        ? stripReturnedPreviewLinks(event.data.text, state.previewUrl)
-        : event.data.text;
+        ? stripReturnedPreviewLinks(event.data?.text || '', state.previewUrl)
+        : event.data?.text || '';
       if (text.length === 0) {
         return;
       }
@@ -170,55 +160,31 @@ export async function runChatPipeline(
     send(event);
   };
   const fileTreePush = createFileTreePushController(context, state, send);
-  // The model already handed us the full text of every file it wrote, so stream it
-  // to the frontend instead of making it fetch the file back over /file (which costs
-  // a sandbox shell round trip per click). Bounded per file and per turn so a large
-  // asset cannot bloat the stream or the in-process replay buffer — anything over
-  // budget simply falls back to /file.
-  let filePushBudgetBytes = FILE_PUSH_TURN_BUDGET_BYTES;
   const handleProjectFilesChanged = async (file?: { path: string; content: string }) => {
     if (file) {
-      const bytes = utf8ByteLength(file.content);
-      if (bytes <= FILE_PUSH_MAX_BYTES && bytes <= filePushBudgetBytes) {
-        filePushBudgetBytes -= bytes;
-        send({
-          type: 'file_content',
-          data: {
-            path: toAppRelPath(file.path, state.appDir) || file.path,
-            content: file.content,
-            size: bytes,
-          },
-        });
-      }
+      const path = toAppRelPath(file.path, state.appDir) || file.path;
+      send({ type: 'file_changed', data: { paths: [path] } });
     }
-    // The tree follows the content so the panel does not wait for the whole
-    // turn, but debounced: a scaffold writes a dozen files at once and only the
-    // last listing is the one anybody sees.
     fileTreePush.schedule();
-    // Debounced store backup while the agent is still writing — covers the long
-    // window where files live only in the volatile sandbox.
     checkpoint.schedule();
   };
 
-  // Switch the iframe the moment a direct Makers CLI command returns a URL,
-  // without waiting for verification or the finalize behind it, which can take
-  // several more seconds.
-  const handlePreviewReady = (preview: { url?: string; sandboxDebugUrl?: string; kind?: 'sandbox' | 'makers' }) => {
-    if (!preview.url) {
+  const handlePreviewReady = async (preview: { url?: string; sandboxDebugUrl?: string; kind?: 'sandbox' | 'makers' }) => {
+    const url = preview.url;
+    if (!url) {
       return;
     }
-    state.previewUrl = preview.url;
-    state.sandboxDebugUrl = preview.sandboxDebugUrl;
-    state.previewKind = preview.kind || (isMakersDeployUrl(preview.url) ? 'makers' : 'sandbox');
-    state.previewPublished = true;
-    // Persist before the turn finishes so a refresh during verification still
-    // resumes into the preview pane and restarts the live server.
-    void saveProjectState(context, conversationId, state);
+    publishPreview(state, {
+      url,
+      sandboxDebugUrl: preview.sandboxDebugUrl,
+      kind: preview.kind,
+    });
+    await persistWorkspace(context, conversationId, state);
     send({
       type: 'preview_ready',
       data: {
         preview: {
-          url: preview.url,
+          url,
           sandboxDebugUrl: preview.sandboxDebugUrl,
           kind: state.previewKind,
         },
@@ -226,18 +192,40 @@ export async function runChatPipeline(
       },
     });
   };
+  let hostPreviewInFlight: Promise<boolean> | null = null;
+  const startHostPreview = async (reason: string) => {
+    if (hostPreviewInFlight) return hostPreviewInFlight;
+    hostPreviewInFlight = (async () => {
+      try {
+        await startPreviewServer(context, state);
+        const preview = await publishRunningPreview(context, state, { routesAlreadyVerified: true });
+        await handlePreviewReady(preview);
+        return Boolean(state.previewUrl);
+      } catch (error) {
+        console.warn(
+          reason,
+          error instanceof Error ? error.message : error,
+        );
+        return false;
+      } finally {
+        hostPreviewInFlight = null;
+      }
+    })();
+    return hostPreviewInFlight;
+  };
   const handleDeploymentStatus = (deployment: DeploymentInfo) => {
-    state.deployment = deployment;
-    // The final turn commit is authoritative. This eager save keeps a completed
-    // deployment recoverable if the browser refreshes during later model output.
-    void saveProjectState(context, conversationId, state);
+    setDeployment(state, deployment);
+    void persistWorkspace(context, conversationId, state);
     send({
       type: 'deployment_status',
       data: deployment,
     });
   };
 
-  // The model handles creative code work; build and service steps remain deterministic.
+  if (state.created) {
+    void startHostPreview('[preview] workspace ready:');
+  }
+
   const modelResult = await runCodingAgent({
     context,
     conversationId,
@@ -249,6 +237,9 @@ export async function runChatPipeline(
     onProjectFilesChanged: handleProjectFilesChanged,
     onPreviewReady: handlePreviewReady,
     onDeploymentStatus: handleDeploymentStatus,
+    onWorkspaceReady: () => {
+      void startHostPreview('[preview] after scaffold:');
+    },
     abortSignal,
     model: options.model,
     send,
@@ -259,26 +250,20 @@ export async function runChatPipeline(
     await finalizeTurn(stoppedReply, 'stopped', {
       withSnapshot: modelResult.projectTouched,
     });
-    send({
-      type: 'result',
-      data: {
-        ok: false,
-        stopped: true,
-        reply: stoppedReply,
-        conversation_id: conversationId,
-        build: { status: 'skipped' as BuildStatus },
-        preview: previewLinkFromState(state),
-        deployment: state.deployment,
-      },
-    });
+    sendTurnResult(send, slimResult(conversationId, {
+      ok: false,
+      stopped: true,
+      reply: stoppedReply,
+    }));
     return;
   }
 
-  // Dest was skipped so the user can type a key. That is not a missing preview
-  // and not a failed build — running verification here would paint the model's
-  // wrap-up as a red error and then wipe the input card when the turn ended.
   if (state.gatewayPromptPending) {
     const pauseReply = GATEWAY_CREDENTIALS_USER_REPLY[replyLocale];
+    send({
+      type: 'gateway_credentials',
+      data: { status: 'needed' },
+    });
     send({
       type: 'agent',
       data: {
@@ -287,39 +272,16 @@ export async function runChatPipeline(
       },
     });
 
-    let fileTree: FileTreeItem[] = [];
     if (modelResult.projectTouched) {
-      // The Files panel can update without waiting for a Blob snapshot. Persist
-      // used to run here and again in finalizeTurn, so a slow or failing
-      // sandbox.persist held the result event — and the API key card, which is
-      // gated on it — for tens of seconds after the pause reply was already on
-      // screen.
-      fileTree = await fileTreePush.flush('Failed to read the file list.');
+      await fileTreePush.flush('Failed to read the file list.');
     }
     await finalizeTurn(pauseReply, 'completed', {
       withSnapshot: false,
     });
-    send({
-      type: 'result',
-      data: {
-        ok: true,
-        reply: pauseReply,
-        conversation_id: conversationId,
-        gatewayNeeded: true,
-        project: {
-          dir: state.appDir,
-          created: modelResult.wasCreated,
-        },
-        build: { status: 'skipped' as BuildStatus },
-        files: {
-          root: state.appDir,
-          items: fileTree,
-        },
-        download: { url: '/download', filename: 'source.zip' },
-        preview: previewLinkFromState(state),
-        deployment: state.deployment,
-      },
-    });
+    sendTurnResult(send, slimResult(conversationId, {
+      ok: true,
+      reply: pauseReply,
+    }));
     if (modelResult.projectTouched) {
       void checkpoint.flush();
     }
@@ -337,8 +299,6 @@ export async function runChatPipeline(
   const rawAssistantReply = stripReturnedPreviewLinks(sanitizeAssistantText(
     modelOutput || fallbackReply
   ) || fallbackReply, state.previewUrl);
-  // Only a deployment from this turn: state.deployment outlives the turn, and
-  // re-appending yesterday's URL to every later reply would be worse than none.
   const liveDeploymentUrl = modelResult.deploymentTouched
     && state.deployment?.status === 'success'
     ? state.deployment.url
@@ -363,37 +323,26 @@ export async function runChatPipeline(
     await finalizeTurn(assistantReply, 'failed', {
       withSnapshot: modelResult.projectTouched,
     });
-
-    send({
-      type: 'result',
-      data: {
-        ok: false,
-        reply: assistantReply,
-        conversation_id: conversationId,
-        build: {
-          status: 'skipped' as BuildStatus,
-          stderr: modelResult.error || assistantReply,
-        },
-        preview: {},
-        deployment: state.deployment,
-      },
-    });
+    sendTurnResult(send, slimResult(conversationId, {
+      ok: false,
+      reply: assistantReply,
+      error: modelResult.error || undefined,
+    }));
     return;
   }
 
-  if (
-    !modelResult.projectTouched
-    && (modelResult.previewTouched || modelResult.deploymentTouched)
-  ) {
-    if (modelResult.previewTouched && state.previewUrl) {
+  if (!modelResult.projectTouched) {
+    // The model no longer launches preview. A finished project with no URL
+    // still needs the host to start it — including Q&A turns after a write
+    // that never set projectTouched, or a previous turn that skipped dest.
+    if (state.created && !state.previewUrl) {
+      await checkpoint.flush();
+      await startHostPreview('[preview] host start failed:');
+    } else if (modelResult.previewTouched && state.previewUrl) {
       send({
         type: 'preview_ready',
         data: {
-          preview: {
-            url: state.previewUrl,
-            sandboxDebugUrl: state.sandboxDebugUrl,
-            kind: state.previewKind,
-          },
+          preview: previewLinkFromState(state),
         },
       });
     }
@@ -402,112 +351,53 @@ export async function runChatPipeline(
     const deploymentReady = !modelResult.deploymentTouched
       || state.deployment?.status === 'success';
     const operationOk = modelResult.success && previewReady && deploymentReady;
-    await finalizeTurn(assistantReply, operationOk ? 'completed' : 'failed');
-
-    send({
-      type: 'result',
-      data: {
-        ok: operationOk,
-        reply: assistantReply,
-        conversation_id: conversationId,
-        build: { status: 'skipped' as BuildStatus },
-        preview: modelResult.previewTouched
-          ? {
-              url: state.previewUrl,
-              sandboxDebugUrl: state.sandboxDebugUrl,
-              kind: state.previewKind,
-              ...(!state.previewUrl ? { error: 'The agent did not complete the Makers CLI preview.' } : {}),
-            }
-          : previewLinkFromState(state),
-        deployment: state.deployment,
-      },
+    await finalizeTurn(assistantReply, operationOk ? 'completed' : 'failed', {
+      withState: Boolean(state.previewUrl) || modelResult.deploymentTouched,
     });
+    sendTurnResult(send, slimResult(conversationId, {
+      ok: operationOk,
+      reply: assistantReply,
+    }));
     return;
   }
 
-  if (!modelResult.projectTouched) {
-    await finalizeTurn(assistantReply, modelResult.success ? 'completed' : 'failed', {
-      withState: false,
-    });
-
-    send({
-      type: 'result',
-      data: {
-        ok: modelResult.success,
-        reply: assistantReply,
-        conversation_id: conversationId,
-        build: { status: 'skipped' as BuildStatus },
-        preview: {},
-        deployment: state.deployment,
-      },
-    });
-    return;
-  }
-
-  // Files are on disk now — flush before verification/auto-fix so that long
-  // build window cannot recycle the sandbox with only an in-memory project.
   await checkpoint.flush();
 
-  let fileTree = await fileTreePush.flush('Failed to read the file list.');
-  // A preview that came up in this turn already compiled this turn's code and
-  // answered its smoke tests, so the production build has nothing left to prove
-  // here that publishing does not prove for real. Without one, the build is the
-  // only evidence the project assembles at all, so it runs.
+  let previewVerified = Boolean(state.previewUrl);
+  if (!previewVerified) {
+    previewVerified = await startHostPreview('[preview] host start failed:');
+  }
+
+  await fileTreePush.flush('Failed to read the file list.');
   let build = await runVerification(context, state, {
-    previewVerified: modelResult.previewTouched && Boolean(state.previewUrl),
+    previewVerified,
   });
   let autoFixAttempts = 0;
   let autoFixApplied = false;
   let autoFixReply = '';
 
-  // The project has files on disk from here on, so expose a download link. The
-  // archive is built on demand by /download; this is just a pointer (the
-  // authoritative filename comes from the /download response).
-  const downloadLink = { url: '/download', filename: 'source.zip' };
-
   if (build.fatal) {
+    setLastBuild(state, build);
+    await persistWorkspace(context, conversationId, state);
     const fatalReply = build.stderr || 'The task failed, and the remaining workflow was stopped.';
     await finalizeTurn(fatalReply, 'failed', { withSnapshot: true });
-
-    send({
-      type: 'result',
-      data: {
-        ok: false,
-        reply: fatalReply,
-        conversation_id: conversationId,
-        project: {
-          dir: state.appDir,
-          created: modelResult.wasCreated,
-        },
-        build,
-        files: {
-          root: state.appDir,
-          items: fileTree,
-        },
-        download: downloadLink,
-        preview: {},
-        deployment: state.deployment,
-      },
-    });
+    sendTurnResult(send, slimResult(conversationId, {
+      ok: false,
+      reply: fatalReply,
+    }));
     return;
   }
 
   if (build.status === 'failed' && modelResult.success) {
     autoFixAttempts = AUTO_FIX_MAX_ATTEMPTS;
     autoFixApplied = true;
-    const autoFixPrompt = buildAutoFixPrompt(
-      message,
-      assistantReply,
-      build,
-      1,
-      AUTO_FIX_MAX_ATTEMPTS,
-    );
-    const autoFixResult = await runCodingAgent({
+    const { result: autoFixResult } = await runAutoFixTurn({
       context,
       conversationId,
-      userMessage: autoFixPrompt,
+      message,
       state,
-      isNewProject: false,
+      assistantReply,
+      build,
       onScaffoldLog: handleScaffoldLog,
       onProgress: forwardProgress,
       onProjectFilesChanged: handleProjectFilesChanged,
@@ -520,18 +410,11 @@ export async function runChatPipeline(
     if (autoFixResult.stopped || abortSignal?.aborted) {
       const stoppedReply = STOPPED_TURN_REPLY[replyLocale];
       await finalizeTurn(stoppedReply, 'stopped', { withSnapshot: true });
-      send({
-        type: 'result',
-        data: {
-          ok: false,
-          stopped: true,
-          reply: stoppedReply,
-          conversation_id: conversationId,
-          build: { status: 'skipped' as BuildStatus },
-          preview: previewLinkFromState(state),
-          deployment: state.deployment,
-        },
-      });
+      sendTurnResult(send, slimResult(conversationId, {
+        ok: false,
+        stopped: true,
+        reply: stoppedReply,
+      }));
       return;
     }
     const rawAutoFixReply = stripReturnedPreviewLinks(sanitizeAssistantText(
@@ -557,36 +440,22 @@ export async function runChatPipeline(
       });
     }
 
-    fileTree = await fileTreePush.flush('Failed to read the file list after auto-fix.');
-    // Deliberately the full verification, preview or not: getting here means
-    // something was already broken, and the repair is exactly when the cheaper
-    // evidence is worth the least.
+    await fileTreePush.flush('Failed to read the file list after auto-fix.');
     build = await runVerification(context, state);
     if (build.fatal) {
+      setLastBuild(state, build);
+      await persistWorkspace(context, conversationId, state);
       const fatalReply = build.stderr || 'The task failed, and the remaining workflow was stopped.';
       await finalizeTurn(fatalReply, 'failed', { withSnapshot: true });
-
-      send({
-        type: 'result',
-        data: {
-          ok: false,
-          reply: fatalReply,
-          conversation_id: conversationId,
-          project: {
-            dir: state.appDir,
-            created: modelResult.wasCreated,
-          },
-          build,
-          files: {
-            root: state.appDir,
-            items: fileTree,
-          },
-          download: downloadLink,
-          preview: {},
-          deployment: state.deployment,
-        },
-      });
+      sendTurnResult(send, slimResult(conversationId, {
+        ok: false,
+        reply: fatalReply,
+      }));
       return;
+    }
+
+    if (!previewVerified) {
+      previewVerified = await startHostPreview('[preview] host start after auto-fix failed:');
     }
   }
 
@@ -594,16 +463,16 @@ export async function runChatPipeline(
     ...build,
     ...(autoFixAttempts > 0 ? { autoFixAttempts, autoFixApplied } : {}),
   };
+  setLastBuild(state, build);
+  await persistWorkspace(context, conversationId, state);
 
-  // Makers dev owns preview state; deployments are streamed separately.
   if (state.previewUrl) {
     send({
       type: 'preview_ready',
       data: {
         preview: {
-          url: state.previewUrl,
-          sandboxDebugUrl: state.sandboxDebugUrl,
-          kind: state.previewKind,
+          ...previewLinkFromState(state),
+          ...(modelResult.filesWritten ? { restarted: true } : {}),
         },
       },
     });
@@ -611,8 +480,6 @@ export async function runChatPipeline(
 
   const isChinese = replyLocale === 'zh';
   const outcome = resolveFinishedTurn({
-    // Scaffolding sets projectTouched and the workflow asks for it every turn,
-    // so it cannot stand in for this.
     filesWritten: modelResult.filesWritten !== false,
     previewUrl: state.previewUrl,
     buildFailed: build.status === 'failed',
@@ -628,38 +495,14 @@ export async function runChatPipeline(
       ? (isChinese ? '项目已生成，但检查未通过，我还需要继续修复。' : 'The project was generated, but checks still fail and need another fix.')
       : (isChinese ? '项目已生成，但预览暂时不可用，请重试。' : 'The project was generated, but the preview is temporarily unavailable. Please retry.'),
   });
-  const previewMissing = outcome.previewMissing;
   const turnFailed = outcome.failed;
   const reply = withLiveDeploymentUrl(outcome.reply, liveDeploymentUrl);
 
-  // Code first, then state, then conversation — so a crash mid-finalize still
-  // leaves a restorable workspace for resume after sandbox recycle.
   const turnOk = modelResult.success && !turnFailed;
   await finalizeTurn(reply, turnOk ? 'completed' : 'failed', { withSnapshot: true });
 
-  send({
-    type: 'result',
-    data: {
-      ok: turnOk,
-      reply,
-      conversation_id: conversationId,
-      project: {
-        dir: state.appDir,
-        created: modelResult.wasCreated,
-      },
-      build,
-      files: {
-        root: state.appDir,
-        items: fileTree,
-      },
-      download: downloadLink,
-      preview: {
-        url: state.previewUrl,
-        sandboxDebugUrl: state.sandboxDebugUrl,
-        kind: state.previewKind,
-        ...(previewMissing ? { error: 'The agent did not complete the Makers CLI preview.' } : {}),
-      },
-      deployment: state.deployment,
-    },
-  });
+  sendTurnResult(send, slimResult(conversationId, {
+    ok: turnOk,
+    reply,
+  }));
 }

@@ -1,16 +1,18 @@
+import type { AgentContext } from './_lib/runtime/context.ts';
 import { createChatTaskAndStreamResponse } from './_lib/session/task.ts';
+import { getRequestBody } from './_lib/runtime/request.ts';
 
 /** Publish the current project. Deterministic — does not call the model. */
-export async function onRequestPost(context: any) {
-  const body = context?.request?.body || {};
+export async function onRequestPost(context: AgentContext) {
+  const body = getRequestBody(context);
   try {
-    const apiKey = String(body?.apiKey || '').trim();
-    return await createChatTaskAndStreamResponse(context, String(body?.message || '').trim(), {
+    const apiKey = String(body.apiKey || '').trim();
+    return await createChatTaskAndStreamResponse(context, String(body.message || '').trim(), {
       kind: 'deploy',
-      turnId: String(body?.turnId || '').trim() || undefined,
-      siteDomain: String(body?.siteDomain || '').trim() || undefined,
+      turnId: String(body.turnId || '').trim() || undefined,
+      language: String(body.language || '').trim() || undefined,
       ...(apiKey ? { apiKey } : {}),
-      ...(body?.gatewaySkip === true ? { gatewaySkip: true } : {}),
+      ...(body.gatewaySkip === true ? { gatewaySkip: true } : {}),
     });
   } catch (error) {
     return new Response(JSON.stringify({

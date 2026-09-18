@@ -1,8 +1,11 @@
+import type { AgentContext } from '../runtime/context.ts';
 import { runChatPipeline } from '../turn/chat.ts';
 import { runDeployPipeline } from '../turn/deploy.ts';
 import {
   getChatTask,
+  getLanguagePreference,
   saveChatTask,
+  saveLanguagePreference,
   saveModelPreference,
 } from './store.ts';
 import { interruptLiveQuery } from './live.ts';
@@ -51,7 +54,7 @@ export function abortLiveChatTask(conversationId: string) {
   }
 }
 
-export async function markChatTaskStopped(context: any, conversationId: string) {
+export async function markChatTaskStopped(context: AgentContext, conversationId: string) {
   const trimmed = conversationId.trim();
   if (!trimmed) return;
   try {
@@ -68,7 +71,7 @@ export async function markChatTaskStopped(context: any, conversationId: string) 
   }
 }
 
-export async function markOrphanedTaskFailed(context: any, conversationId: string) {
+export async function markOrphanedTaskFailed(context: AgentContext, conversationId: string) {
   const existing = await getChatTask(context, conversationId);
   if (!existing || !isChatTaskActive(existing)) return null;
   if (hasLiveTask(conversationId, existing.id)) return existing;
@@ -93,7 +96,7 @@ function createTaskId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-export function getConversationId(context: any): string {
+export function getConversationId(context: AgentContext): string {
   return resolveConversationId(context).conversationId.trim();
 }
 
@@ -128,20 +131,7 @@ function getOrCreateLiveTask(conversationId: string, task: ChatTask): LiveChatTa
   return liveTask;
 }
 
-function filePushPath(event: ChatStreamEvent): string {
-  if (event.type !== 'file_content') return '';
-  return event.data?.path || '';
-}
-
 function publish(liveTask: LiveChatTask, event: ChatStreamEvent) {
-  const supersededPath = filePushPath(event);
-  if (supersededPath) {
-    const previousIndex = liveTask.events.findIndex(
-      (record) => filePushPath(record.event) === supersededPath,
-    );
-    if (previousIndex >= 0) liveTask.events.splice(previousIndex, 1);
-  }
-
   const record = {
     sequence: ++liveTask.nextSequence,
     event,
@@ -153,7 +143,9 @@ function publish(liveTask: LiveChatTask, event: ChatStreamEvent) {
   for (const listener of liveTask.listeners) listener(record);
 }
 
-export function isChatTaskActive(task: ChatTask | null | undefined): task is ChatTask {
+export function isChatTaskActive(
+  task: ChatTask | null | undefined,
+): task is ChatTask & { status: 'queued' | 'running' } {
   return task?.status === 'queued' || task?.status === 'running';
 }
 
@@ -166,13 +158,13 @@ type ChatTaskOptions = {
   turnId?: string;
   kind?: ChatTaskKind;
   model?: string;
-  siteDomain?: string;
+  language?: string;
   apiKey?: string;
   gatewaySkip?: boolean;
 };
 
 async function createChatTask(
-  context: any,
+  context: AgentContext,
   message: string,
   options: ChatTaskOptions = {},
 ) {
@@ -199,12 +191,11 @@ async function createChatTask(
   }
 
   const requestedModel = (options.model || '').trim();
-  const siteDomain = (options.siteDomain || '').trim();
+  const language = (options.language || '').trim();
   const task: ChatTask = {
     id: taskId,
     message,
     ...(options.kind === 'deploy' ? { kind: 'deploy' as const } : { kind: 'prompt' as const }),
-    ...(siteDomain ? { siteDomain } : {}),
     ...(requestedModel ? { model: requestedModel } : {}),
     status: 'queued',
     createdAt: Date.now(),
@@ -213,17 +204,20 @@ async function createChatTask(
   if (requestedModel) {
     await saveModelPreference(context, conversationId, requestedModel);
   }
+  if (language === 'zh' || language === 'en') {
+    await saveLanguagePreference(context, conversationId, language);
+  }
   return { ok: true as const, conversationId, task };
 }
 
-function withTaskAbortSignal(context: any, signal: AbortSignal) {
+function withTaskAbortSignal(context: AgentContext, signal: AbortSignal) {
   const request = context?.request && typeof context.request === 'object'
     ? { ...context.request, signal }
     : { signal };
   return { ...context, request };
 }
 
-async function executeLiveTask(context: any, liveTask: LiveChatTask) {
+async function executeLiveTask(context: AgentContext, liveTask: LiveChatTask) {
   const runningTask: ChatTask = {
     ...liveTask.task,
     status: 'running',
@@ -241,10 +235,11 @@ async function executeLiveTask(context: any, liveTask: LiveChatTask) {
 
   try {
     await saveChatTask(taskContext, liveTask.conversationId, runningTask);
+    const language = await getLanguagePreference(taskContext, liveTask.conversationId);
     if (liveTask.task.kind === 'deploy') {
       await runDeployPipeline(taskContext, liveTask.task.message, send, {
         turnId: liveTask.task.id,
-        siteDomain: liveTask.task.siteDomain,
+        language: language || undefined,
         apiKey: liveTask.gatewayApiKey,
         gatewaySkip: liveTask.gatewaySkip,
       });
@@ -252,7 +247,7 @@ async function executeLiveTask(context: any, liveTask: LiveChatTask) {
       await runChatPipeline(taskContext, liveTask.task.message, send, {
         turnId: liveTask.task.id,
         model: liveTask.task.model,
-        siteDomain: liveTask.task.siteDomain,
+        language: language || undefined,
         apiKey: liveTask.gatewayApiKey,
         gatewaySkip: liveTask.gatewaySkip,
       });
@@ -295,7 +290,7 @@ async function executeLiveTask(context: any, liveTask: LiveChatTask) {
 }
 
 function ensureChatTaskStarted(
-  context: any,
+  context: AgentContext,
   conversationId: string,
   task: ChatTask,
   extras?: { gatewayApiKey?: string; gatewaySkip?: boolean },
@@ -331,7 +326,7 @@ class AsyncEventQueue<T> {
 const ABORTED = Symbol('aborted');
 
 export async function* iterateLiveChatTaskEvents(
-  context: any,
+  context: AgentContext,
   conversationId: string,
   task: ChatTask,
   extras?: { gatewayApiKey?: string; gatewaySkip?: boolean },
@@ -386,7 +381,7 @@ export async function* iterateLiveChatTaskEvents(
 }
 
 function createLiveTaskStreamResponse(
-  context: any,
+  context: AgentContext,
   conversationId: string,
   task: ChatTask,
   extras?: { gatewayApiKey?: string; gatewaySkip?: boolean },
@@ -397,7 +392,7 @@ function createLiveTaskStreamResponse(
 }
 
 export async function createChatTaskAndStreamResponse(
-  context: any,
+  context: AgentContext,
   message: string,
   options: ChatTaskOptions = {},
 ) {

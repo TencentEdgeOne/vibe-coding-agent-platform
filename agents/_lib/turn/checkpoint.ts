@@ -1,4 +1,6 @@
-import { getFileTree, runSandboxCommand } from '../project/index.ts';
+import { requireSandbox, type AgentContext } from '../runtime/context.ts';
+import { getFileTree } from '../project/fs.ts';
+import { runSandboxCommand } from '../project/commands.ts';
 import type { FileTreeItem, ProjectState, StreamSend } from '../types.ts';
 export {
   compactUserFacingReply,
@@ -26,12 +28,12 @@ export function previewLinkFromState(state: ProjectState) {
  * carries source without node_modules, and both the preview server and the
  * Makers build need dependencies on disk.
  */
-export async function ensureProjectDependencies(context: any, state: ProjectState) {
-  const hasPackageJson = await context.sandbox.files.exists(`${state.appDir}/package.json`);
+export async function ensureProjectDependencies(context: AgentContext, state: ProjectState) {
+  const hasPackageJson = await requireSandbox(context).files.exists(`${state.appDir}/package.json`);
   if (!hasPackageJson) {
     return false;
   }
-  const hasNodeModules = await context.sandbox.files.exists(`${state.appDir}/node_modules`);
+  const hasNodeModules = await requireSandbox(context).files.exists(`${state.appDir}/node_modules`);
   if (hasNodeModules) {
     return true;
   }
@@ -43,18 +45,6 @@ export async function ensureProjectDependencies(context: any, state: ProjectStat
 }
 
 const SANDBOX_EXTENSION_SECONDS = 1800;
-
-// Caps for streaming generated file contents to the frontend (see
-// handleProjectFilesChanged). Per-file keeps a single large asset off the stream;
-// the per-turn budget bounds how much the replay buffer can hold.
-export const FILE_PUSH_MAX_BYTES = 96 * 1024;
-export const FILE_PUSH_TURN_BUDGET_BYTES = 2 * 1024 * 1024;
-
-const utf8Encoder = new TextEncoder();
-
-export function utf8ByteLength(value: string) {
-  return utf8Encoder.encode(value).length;
-}
 
 /** Reject if `promise` does not settle within `ms`. Clears the timer on settle. */
 export async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
@@ -137,7 +127,7 @@ export function isGenericCompletionReply(text: string) {
     || /^theagentdidnotreturnanythingdisplayable$/i.test(normalized);
 }
 
-export async function extendExistingSandboxTimeout(context: any) {
+export async function extendExistingSandboxTimeout(context: AgentContext) {
   const sandbox = context?.sandbox as SandboxWithTimeoutExtension | undefined;
   if (!sandbox || typeof sandbox.extendTimeout !== 'function') {
     return;
@@ -157,12 +147,12 @@ export async function extendExistingSandboxTimeout(context: any) {
 // Persist the project through the sandbox SDK. Archive bytes travel directly from
 // the sandbox to project Blob storage and never enter conversation metadata.
 export async function persistProjectSnapshot(
-  context: any,
+  context: AgentContext,
   conversationId: string,
   state: ProjectState,
 ): Promise<boolean> {
   try {
-    await context.sandbox.persist({ path: state.appDir });
+    await requireSandbox(context).persist?.({ path: state.appDir });
     return true;
   } catch (error) {
     // Losing a snapshot silently means the next resume rebuilds from an older
@@ -191,7 +181,7 @@ export type ProjectCheckpointController = {
 // Mid-turn + exit-path persistence controller. schedule() is cheap and coalesces;
 // flush() forces a final sandbox-to-Blob write on stop/fatal/success paths.
 export function createProjectCheckpointController(
-  context: any,
+  context: AgentContext,
   conversationId: string,
   state: ProjectState,
   onFailure?: (message: string) => void,
@@ -256,7 +246,7 @@ export type FileTreePushController = {
 // shows the newest listing. Bursts now collapse into a single read, and reads
 // never overlap.
 export function createFileTreePushController(
-  context: any,
+  context: AgentContext,
   state: ProjectState,
   send: StreamSend,
 ): FileTreePushController {

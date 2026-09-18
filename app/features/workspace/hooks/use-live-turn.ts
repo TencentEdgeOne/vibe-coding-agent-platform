@@ -2,9 +2,8 @@
 
 import { useEffect, useRef, useState, type MutableRefObject } from 'react';
 import {
-  appendNarrationChunk,
+  applyStreamEvent,
   dropTrailingSummaryEcho,
-  sanitizeThinkingContent,
 } from '../../../../shared/timeline';
 import { extractApiKeyFromUserText } from '../../../../shared/gateway-secret';
 import { STOPPED_TURN_REPLY } from '../../../../shared/user-facing-reply';
@@ -13,13 +12,10 @@ import {
   cacheConversationId,
   createConversationId,
   createMessageId,
-  extractProjectName,
   getOrCreateCachedConversationId,
   markLastTurnStopped,
 } from '@/app/lib/conversation';
-import type { FileContentCache } from '@/app/hooks/use-file-content-cache';
 import type {
-  AssistantActivity,
   AssistantStatus,
   ChatMessage,
   ChatResponse,
@@ -34,6 +30,8 @@ import {
 } from '../workspace-api';
 import type { PreviewSurfaceApi } from './use-preview-surface';
 import type { WorkspaceStateApi } from './use-workspace-state';
+import type { WorkspaceSnapshotApi } from './use-workspace-snapshot';
+import type { PersistedActivityTurn } from '../../../../shared/protocol';
 
 type LiveCopy = {
   noDisplay: string;
@@ -47,9 +45,9 @@ export function useLiveTurn(options: {
   language: Locale;
   model: string;
   t: { response: LiveCopy; workspace: { deployRequest: string; gatewayPromptApiKey: string; gatewayPromptSkip: string } };
-  fileCache: FileContentCache;
   workspace: WorkspaceStateApi;
   preview: PreviewSurfaceApi;
+  snapshot: WorkspaceSnapshotApi;
   conversationId: string | null;
   setConversationId: (id: string | null) => void;
   conversationIdRef: MutableRefObject<string | null>;
@@ -60,9 +58,9 @@ export function useLiveTurn(options: {
     language,
     model,
     t,
-    fileCache,
     workspace,
     preview,
+    snapshot,
     conversationId,
     setConversationId,
     conversationIdRef,
@@ -134,46 +132,21 @@ export function useLiveTurn(options: {
       );
     };
 
-    const appendTextActivity = (text: string) => {
+    const foldActivityEvent = (event: ChatStreamEvent) => {
       setMessages((current) =>
         current.map((item) => {
           if (item.id !== assistantMessageId) return item;
-          const nextText = sanitizeThinkingContent(text);
-          if (!nextText) return item;
-          return {
-            ...item,
-            activities: appendNarrationChunk(item.activities ?? [], nextText),
-          };
+          const folded = applyStreamEvent({
+            id: item.id,
+            user: '',
+            assistant: item.content,
+            status: 'completed',
+            createdAt: 0,
+            activities: item.activities ?? [],
+          } satisfies PersistedActivityTurn, event);
+          return { ...item, activities: folded.activities };
         }),
       );
-    };
-
-    const upsertToolActivity = (
-      toolUseId: string,
-      patch: Partial<Extract<AssistantActivity, { kind: 'tool' }>>,
-    ) => {
-      setMessages((current) => current.map((item) => {
-        if (item.id !== assistantMessageId) return item;
-        const activities = [...(item.activities ?? [])];
-        const index = activities.findIndex(
-          (activity) => activity.kind === 'tool' && activity.toolUseId === toolUseId,
-        );
-        if (index >= 0) {
-          activities[index] = { ...activities[index], ...patch } as AssistantActivity;
-        } else {
-          activities.push({
-            kind: 'tool',
-            toolUseId,
-            name: patch.name || '<unknown>',
-            status: patch.status || 'running',
-            inputSummary: patch.inputSummary,
-            outputSummary: patch.outputSummary,
-            startedAt: patch.startedAt || Date.now(),
-            endedAt: patch.endedAt,
-          });
-        }
-        return { ...item, activities };
-      }));
     };
 
     const finalizeAssistant = (
@@ -215,29 +188,13 @@ export function useLiveTurn(options: {
         cacheConversationId(data.conversation_id);
         setConversationId(data.conversation_id);
       }
-      if (data.preview) {
-        preview.activatePreview(data.preview, activatedPreviewRevisions);
-      }
-      if (data.deployment) {
-        workspace.setDeployment(data.deployment);
-      }
-      if (data.download) {
-        workspace.setDownload(data.download);
-      }
-      if (data.build) {
-        workspace.setBuild(data.build);
-      }
-      if (data.files) {
-        workspace.setFileTree(data.files);
-      }
-      if (data.gatewayNeeded) {
-        workspace.setGatewayNeeded(true);
-      }
       workspace.setFilesRefreshing(false);
 
       const finalText = data.reply || data.error || t.response.noDisplay;
       const finalStatus: AssistantStatus = data.stopped ? 'stopped' : data.ok === false ? 'error' : 'done';
       finalizeAssistant(finalText, finalStatus);
+      const cid = data.conversation_id || sessionOptions.requestConversationId;
+      if (cid) void snapshot.refresh(cid);
     };
 
     const handleStreamEvent = (event: ChatStreamEvent) => {
@@ -276,40 +233,21 @@ export function useLiveTurn(options: {
         patchAssistant({ content: text });
         return;
       }
-      if (event.type === 'text_segment' && event.data?.text) {
-        appendTextActivity(event.data.text);
+      if (event.type === 'text_segment' || event.type === 'tool_use' || event.type === 'tool_result') {
+        if (event.type !== 'text_segment') sawProjectActivity = true;
+        foldActivityEvent(event);
         return;
       }
-      if (event.type === 'tool_use' && event.data) {
+      if (event.type === 'file_changed' && event.data?.paths?.length) {
         sawProjectActivity = true;
-        upsertToolActivity(event.data.id || '', {
-          name: event.data.name || '<unknown>',
-          status: 'running',
-          inputSummary: event.data.inputSummary || event.data.command,
-          ...(event.data.outputSummary ? { outputSummary: event.data.outputSummary } : {}),
-          startedAt: event.data.startedAt,
-        });
-        return;
-      }
-      if (event.type === 'tool_result' && event.data) {
-        sawProjectActivity = true;
-        upsertToolActivity(event.data.id || '', {
-          name: event.data.toolName || '<unknown>',
-          status: event.data.status || (event.data.ok === false ? 'failed' : 'completed'),
-          outputSummary: event.data.outputSummary || event.data.preview,
-          endedAt: event.data.endedAt || Date.now(),
-        });
-        return;
-      }
-      if (event.type === 'file_content' && event.data?.path) {
-        const content = event.data.content || '';
-        fileCache.write(event.data.path, {
-          content,
-          size: typeof event.data.size === 'number' ? event.data.size : content.length,
-          truncated: false,
-        });
-        if (!openedFirstFile) {
-          pendingFirstFilePath = event.data.path;
+        const paths = event.data.paths.filter(Boolean);
+        const cid = conversationIdRef.current || sessionOptions.requestConversationId;
+        if (cid && paths.length > 0) {
+          void snapshot.pullFiles(cid, paths).then(() => {
+            if (!openedFirstFile && paths[0]) revealFirstFile(paths[0]);
+          });
+        } else if (!openedFirstFile && paths[0]) {
+          pendingFirstFilePath = paths[0];
         }
         return;
       }
@@ -493,9 +431,9 @@ export function useLiveTurn(options: {
         ? await startDeployTurn({
             conversationId: requestConversationId,
             turnId: assistantMessageId,
+            language,
             ...(inboundApiKey ? { apiKey: inboundApiKey } : {}),
             ...(sendOptions.gatewaySkip ? { gatewaySkip: true } : {}),
-            siteDomain: extractProjectName().domain,
             signal: requestAbortController.signal,
           })
         : await startPromptTurn({
@@ -503,9 +441,9 @@ export function useLiveTurn(options: {
             message: displayMessage,
             turnId: assistantMessageId,
             model: modelRef.current,
+            language,
             ...(inboundApiKey ? { apiKey: inboundApiKey } : {}),
             ...(sendOptions.gatewaySkip ? { gatewaySkip: true } : {}),
-            siteDomain: extractProjectName().domain,
             signal: requestAbortController.signal,
           });
       await attachChatStream({

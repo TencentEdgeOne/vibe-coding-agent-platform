@@ -1,23 +1,23 @@
+import type { AgentContext } from '../runtime/context.ts';
 import {
   getChatTask,
   getConversationRecord,
+  getLanguagePreference,
   getModelPreference,
   getProjectState,
-  saveProjectState,
 } from './store.ts';
 import { hasLiveChatTask, isChatTaskActive, iterateLiveChatTaskEvents, markOrphanedTaskFailed } from './task.ts';
 import { loadTranscriptJsonl } from './transcript.ts';
 import { projectTranscript, turnsToMessages } from './projection.ts';
-import {
-  assertPreviewServerReady,
-  getFileTree,
-  resolvePublicLinks,
-  rewritePreviewAccessToken,
-  separateLegacyMakersDeployment,
-  startPreviewServer,
-} from '../project/index.ts';
+import { assertPreviewServerReady, resolvePublicLinks, rewritePreviewAccessToken, startPreviewServer } from '../project/preview.ts';
+import { getFileTree } from '../project/fs.ts';
+import { separateLegacyMakersDeployment } from '../project/state.ts';
 import { restoreProjectWorkspace } from '../project/workspace.ts';
-import { loadResumeFileContents } from '../project/resume-files.ts';
+import {
+  clearPreview,
+  persistWorkspace,
+  publishPreview,
+} from '../project/workspace-store.ts';
 import type { FileTreeItem, PersistedActivity, PersistedActivityTurn, ProjectState } from '../types.ts';
 import { createSSEResponse, sseEvent } from '../runtime/sse.ts';
 import { mergeSseGenerators } from '../runtime/merge.ts';
@@ -83,11 +83,12 @@ function jsonResponse(obj: Record<string, unknown>, status = 200) {
   });
 }
 
-async function loadProjectResumeHistory(context: any, conversationId: string) {
-  const [record, jsonl, model] = await Promise.all([
+async function loadProjectResumeHistory(context: AgentContext, conversationId: string) {
+  const [record, jsonl, model, language] = await Promise.all([
     getConversationRecord(context, conversationId),
     loadTranscriptJsonl(context, conversationId),
     getModelPreference(context, conversationId),
+    getLanguagePreference(context, conversationId),
   ]);
   const state = separateLegacyMakersDeployment(record.projectState);
   const activityHistory = projectTranscript(jsonl, state.appDir);
@@ -122,11 +123,12 @@ async function loadProjectResumeHistory(context: any, conversationId: string) {
     needsWorkspace: hasProject,
     deployment: state.deployment,
     model,
+    language: language || undefined,
     gatewayNeeded: state.gatewayPromptPending === true,
   };
 }
 
-async function republishPreviewOnResume(context: any, state: ProjectState) {
+async function republishPreviewOnResume(context: AgentContext, state: ProjectState) {
   if (isMakersPreviewState(state) && state.previewUrl) {
     return {
       url: state.previewUrl,
@@ -144,8 +146,11 @@ async function republishPreviewOnResume(context: any, state: ProjectState) {
       const rewritten = rewritePreviewAccessToken(state.previewUrl, accessToken);
       if (rewritten) {
         const warmLinks = await resolvePublicLinks(context);
-        state.previewUrl = rewritten;
-        state.sandboxDebugUrl = warmLinks.sandboxDebugUrl || state.sandboxDebugUrl;
+        publishPreview(state, {
+          url: rewritten,
+          sandboxDebugUrl: warmLinks.sandboxDebugUrl || state.sandboxDebugUrl,
+          kind: 'sandbox',
+        });
         return {
           url: rewritten,
           sandboxDebugUrl: state.sandboxDebugUrl,
@@ -156,8 +161,11 @@ async function republishPreviewOnResume(context: any, state: ProjectState) {
 
     const warmLinks = await resolvePublicLinks(context);
     if (warmLinks.previewUrl) {
-      state.previewUrl = warmLinks.previewUrl;
-      state.sandboxDebugUrl = warmLinks.sandboxDebugUrl;
+      publishPreview(state, {
+        url: warmLinks.previewUrl,
+        sandboxDebugUrl: warmLinks.sandboxDebugUrl,
+        kind: 'sandbox',
+      });
       return {
         url: warmLinks.previewUrl,
         sandboxDebugUrl: warmLinks.sandboxDebugUrl,
@@ -179,8 +187,11 @@ async function republishPreviewOnResume(context: any, state: ProjectState) {
   if (!links.previewUrl) {
     throw new Error('Preview server started but no public preview URL was available.');
   }
-  state.previewUrl = links.previewUrl;
-  state.sandboxDebugUrl = links.sandboxDebugUrl;
+  publishPreview(state, {
+    url: links.previewUrl,
+    sandboxDebugUrl: links.sandboxDebugUrl,
+    kind: 'sandbox',
+  });
   return {
     url: links.previewUrl,
     sandboxDebugUrl: links.sandboxDebugUrl,
@@ -188,16 +199,10 @@ async function republishPreviewOnResume(context: any, state: ProjectState) {
   };
 }
 
-async function runWorkspaceRestoreBody(context: any, conversationId: string) {
-  const [storedState, chatTask, jsonl] = await Promise.all([
-    getProjectState(context, conversationId),
-    getChatTask(context, conversationId),
-    loadTranscriptJsonl(context, conversationId),
-  ]);
-  const activityHistory = projectTranscript(jsonl, storedState.appDir);
+async function runWorkspaceRestoreBody(context: AgentContext, conversationId: string) {
+  const chatTask = await getChatTask(context, conversationId);
   const restored = await restoreProjectWorkspace(context, conversationId, { mode: 'resume' });
   const state = restored.state;
-  const hadPreview = projectStateImpliesPreview(state, activityHistory);
   const generationActive = isChatTaskActive(chatTask) && hasLiveChatTask(conversationId, chatTask.id);
 
   if (!restored.hasFiles) {
@@ -220,7 +225,7 @@ async function runWorkspaceRestoreBody(context: any, conversationId: string) {
   }
 
   const hasFileItems = items.some((item) => item.type === 'file');
-  const shouldRestartPreview = !generationActive && hasFileItems && hadPreview;
+  const shouldStartPreview = !generationActive && hasFileItems;
 
   let preview: {
     url?: string;
@@ -229,31 +234,25 @@ async function runWorkspaceRestoreBody(context: any, conversationId: string) {
     restarted?: boolean;
     kind?: 'sandbox' | 'makers';
   } = {};
-  if (shouldRestartPreview) {
+  if (shouldStartPreview) {
     try {
       preview = await withTimeout(
         republishPreviewOnResume(context, state),
         PREVIEW_RESTART_BUDGET_MS,
         'preview resume',
       );
-      state.previewPublished = true;
     } catch (error) {
-      state.previewUrl = undefined;
-      state.sandboxDebugUrl = undefined;
+      clearPreview(state);
       console.warn(
         '[resume:workspace] preview restart failed:',
         error instanceof Error ? error.message : error,
       );
       preview = {};
     }
-  } else if (!generationActive && !hadPreview) {
-    state.previewUrl = undefined;
-    state.sandboxDebugUrl = undefined;
-    state.previewKind = undefined;
   }
 
   try {
-    await saveProjectState(context, conversationId, state);
+    await persistWorkspace(context, conversationId, state);
   } catch {
     // Non-fatal — the files payload below is still useful.
   }
@@ -271,14 +270,10 @@ async function runWorkspaceRestoreBody(context: any, conversationId: string) {
   };
 }
 
-async function runPreviewRefreshBody(context: any, conversationId: string) {
-  const [storedState, jsonl] = await Promise.all([
-    getProjectState(context, conversationId),
-    loadTranscriptJsonl(context, conversationId),
-  ]);
+async function runPreviewRefreshBody(context: AgentContext, conversationId: string) {
+  const storedState = await getProjectState(context, conversationId);
   const state = separateLegacyMakersDeployment(storedState);
-  const hadPreview = projectStateImpliesPreview(state, projectTranscript(jsonl, state.appDir));
-  if (!hadPreview) {
+  if (!state.created && !state.previewUrl && !state.previewPublished) {
     return {
       ok: true as const,
       stage: 'preview' as const,
@@ -290,9 +285,8 @@ async function runPreviewRefreshBody(context: any, conversationId: string) {
 
   try {
     const preview = await republishPreviewOnResume(context, state);
-    state.previewPublished = true;
     try {
-      await saveProjectState(context, conversationId, state);
+      await persistWorkspace(context, conversationId, state);
     } catch {
       // Non-fatal — the fresh URL below is still usable for this session.
     }
@@ -315,7 +309,7 @@ async function runPreviewRefreshBody(context: any, conversationId: string) {
   }
 }
 
-export async function runProjectResumePreviewPipeline(context: any): Promise<Response> {
+export async function runProjectResumePreviewPipeline(context: AgentContext): Promise<Response> {
   const { conversationId } = resolveConversationId(context, { allowQuery: true });
   if (!conversationId) {
     return jsonResponse({ ok: false, error: 'missing conversation_id' }, 400);
@@ -341,7 +335,7 @@ export async function runProjectResumePreviewPipeline(context: any): Promise<Res
 }
 
 async function* iterateWorkspaceResumeEvents(
-  context: any,
+  context: AgentContext,
   conversationId: string,
   signal?: AbortSignal,
 ): AsyncGenerator<string> {
@@ -355,12 +349,9 @@ async function* iterateWorkspaceResumeEvents(
     yield sseEvent({ type: 'resume_workspace', data: workspace });
 
     const fileItems = workspace.files?.items || [];
-    if (!signal?.aborted && fileItems.length > 0) {
-      const contents = await loadResumeFileContents(context, conversationId, fileItems);
-      for (const file of contents) {
-        if (signal?.aborted) return;
-        yield sseEvent({ type: 'resume_file_content', data: file });
-      }
+    const paths = fileItems.filter((item) => item.type === 'file').map((item) => item.path);
+    if (!signal?.aborted && paths.length > 0) {
+      yield sseEvent({ type: 'file_changed', data: { paths } });
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Workspace resume failed.';
@@ -381,7 +372,7 @@ async function* iterateWorkspaceResumeEvents(
   }
 }
 
-export async function createProjectResumeStreamResponse(context: any): Promise<Response> {
+export async function createProjectResumeStreamResponse(context: AgentContext): Promise<Response> {
   const { conversationId } = resolveConversationId(context, { allowQuery: true });
   if (!conversationId) {
     return jsonResponse({ ok: false, error: 'missing conversation_id' }, 400);

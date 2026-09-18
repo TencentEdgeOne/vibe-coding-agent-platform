@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { presentToolActivity } from '../app/lib/tool-activity.ts';
+import { readCommandsWrapSource } from './helpers/fixtures.ts';
 
 // Publishing and generating both drive the same sandbox, so they share the one
 // task slot: whichever starts first makes the other wait, and a refresh
@@ -16,9 +17,11 @@ test('publishing occupies the chat task slot instead of a route of its own', asy
 
   assert.match(tasks, /kind === 'deploy'[\s\S]*?runDeployPipeline/);
   assert.match(route, /kind: 'deploy'/);
-  assert.match(route, /siteDomain: String\(body\?\.siteDomain/);
+  assert.match(route, /language: String\(body\.language/);
   assert.match(client, /fetch\('\/deploy'/);
-  assert.match(client, /siteDomain: options\.siteDomain/);
+  assert.match(client, /language: options\.language/);
+  assert.doesNotMatch(route, /siteDomain: String\(body\?\.siteDomain/);
+  assert.doesNotMatch(client, /siteDomain: options\.siteDomain/);
   assert.doesNotMatch(resume, /streamUrl: `\/chat\?runId=/);
   assert.match(resume, /iterateLiveChatTaskEvents/);
 });
@@ -63,7 +66,7 @@ test('publishing stops the preview dev server before the build starts', async ()
     readFile('agents/_lib/makers/cli-deploy.ts', 'utf8'),
     readFile('agents/_lib/makers/cli-dev.ts', 'utf8'),
     readFile('agents/_lib/turn/deploy.ts', 'utf8'),
-    readFile('agents/_lib/tools/commands-wrap.ts', 'utf8'),
+    readCommandsWrapSource(),
   ]);
 
   // Stopping is part of the command, so it cannot be skipped by a caller.
@@ -95,7 +98,7 @@ test('publishing restarts the preview without paying for the smoke gates again',
   const [preview, pipeline, wrapper] = await Promise.all([
     readFile('agents/_lib/project/preview.ts', 'utf8'),
     readFile('agents/_lib/turn/deploy.ts', 'utf8'),
-    readFile('agents/_lib/tools/commands-wrap.ts', 'utf8'),
+    readCommandsWrapSource(),
   ]);
 
   // The gates cost a real model call, and the project did not change.
@@ -217,7 +220,8 @@ test('the deploy button is disabled until a project exists and nothing is runnin
     /const canDeployProject = hasDeployableProject && !deployRunning && !resume\.workspaceRestoring/,
   );
   assert.match(screen, /sendMessage\(t\.workspace\.deployRequest, \{ deploy: true \}\)/);
-  assert.match(live, /siteDomain: extractProjectName\(\)\.domain/);
+  assert.match(live, /language,/);
+  assert.doesNotMatch(live, /siteDomain: extractProjectName\(\)\.domain/);
   assert.match(screen, /disabled=\{!canDeployProject\}/);
   assert.match(screen, /className="workspace-icon-button is-publish"/);
   assert.doesNotMatch(screen, /is-running/);

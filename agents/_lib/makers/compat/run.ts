@@ -1,3 +1,4 @@
+import { requireSandbox, type AgentContext } from '../../runtime/context.ts';
 import { createHash } from 'node:crypto';
 import type { ProjectState } from '../../types.ts';
 import { runCommandCapturingExit } from '../../project/commands.ts';
@@ -52,7 +53,7 @@ export function buildMakersCompatibilityCommand() {
 }
 
 export async function runMakersCompatibilityCheck(
-  context: any,
+  context: AgentContext,
   state: ProjectState,
 ) {
   const [rules, profiles] = await Promise.all([
@@ -63,7 +64,7 @@ export async function runMakersCompatibilityCheck(
   const scriptPath = `${state.sessionDir}/${COMPAT_SCRIPT_NAME}`;
   const fingerprint = compatScriptFingerprint(script);
   const upload = async () => {
-    await context.sandbox.files.write(scriptPath, script);
+    await requireSandbox(context).files.write(scriptPath, script);
     uploadedCompatScripts.set(state.sessionDir, fingerprint);
   };
 
@@ -105,7 +106,7 @@ export async function runMakersCompatibilityCheck(
  * the deployment is broken anyway.
  */
 export async function assertMakersProjectCompatible(
-  context: any,
+  context: AgentContext,
   state: ProjectState,
 ) {
   const result = await runMakersCompatibilityCheck(context, state);

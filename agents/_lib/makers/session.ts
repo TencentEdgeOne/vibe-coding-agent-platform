@@ -1,3 +1,4 @@
+import type { AgentContext } from '../runtime/context.ts';
 import type { ProjectState } from '../types.ts';
 import {
   ensureMakersPublishProject,
@@ -26,7 +27,7 @@ export type PreparedMakersSession = {
  * Preview, deploy, and the commands wrapper all used to do this separately.
  */
 export async function prepareMakersSession(
-  context: any,
+  context: AgentContext,
   state: ProjectState,
   options: { syncEnv?: boolean } = {},
 ): Promise<PreparedMakersSession> {

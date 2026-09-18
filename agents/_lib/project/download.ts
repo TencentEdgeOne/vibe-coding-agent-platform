@@ -1,8 +1,10 @@
+import type { AgentContext } from '../runtime/context.ts';
 import { getProjectState } from '../session/store.ts';
-import { createProjectArchive, restorePersistedProject } from './index.ts';
+import { createProjectArchive } from './archive.ts';
+import { restorePersistedProject } from './persistence.ts';
 import { resolveConversationId } from '../runtime/request.ts';
 
-export async function runProjectDownloadPipeline(context: any): Promise<Response> {
+export async function runProjectDownloadPipeline(context: AgentContext): Promise<Response> {
   const { conversationId } = resolveConversationId(context, { allowQuery: true });
 
   const jsonError = (error: string, status = 400) => new Response(

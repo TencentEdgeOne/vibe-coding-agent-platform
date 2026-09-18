@@ -53,6 +53,7 @@ import { useLiveTurn } from './hooks/use-live-turn';
 import { usePreviewSurface } from './hooks/use-preview-surface';
 import { useSessionResume } from './hooks/use-session-resume';
 import { useWorkspaceState, type SandboxTab } from './hooks/use-workspace-state';
+import { useWorkspaceSnapshot } from './hooks/use-workspace-snapshot';
 
 function ResultPanelToggle({
   open,
@@ -124,22 +125,28 @@ export function WorkspaceScreen() {
   const fileCache = useFileContentCache();
 
   const workspace = useWorkspaceState();
+  const snapshotRefreshRef = useRef<(conversationId: string) => Promise<unknown>>(async () => null);
   const preview = usePreviewSurface({
     conversationIdRef,
     loadingRef,
     workspaceRestoringRef,
-    setFileTree: workspace.setFileTree,
-    setDownload: workspace.setDownload,
+    refreshWorkspace: (id) => snapshotRefreshRef.current(id),
   });
+  const snapshot = useWorkspaceSnapshot({
+    workspace,
+    preview,
+    fileCache,
+  });
+  snapshotRefreshRef.current = snapshot.refresh;
 
   const t = TRANSLATIONS[language];
   const live = useLiveTurn({
     language,
     model,
     t,
-    fileCache,
     workspace,
     preview,
+    snapshot,
     conversationId,
     setConversationId,
     conversationIdRef,
@@ -148,11 +155,11 @@ export function WorkspaceScreen() {
   });
   const resume = useSessionResume({
     workspace,
-    preview,
     live,
-    fileCache,
+    snapshot,
     setConversationId,
     setModel,
+    setLanguage,
     conversationIdRef,
     workspaceEpochRef,
     workspaceRestoringRef,

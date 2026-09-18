@@ -1,9 +1,7 @@
 import {
-  MAKERS_DEV_PORT,
   PREVIEW_ASSET_PREFIX_ENV,
   PREVIEW_PATH_PREFIX,
   PREVIEW_PUBLIC_PORT,
-  PREVIEW_SERVER_PORT,
 } from './constants.ts';
 import type { ProjectState } from './types.ts';
 import { resolveConversationPublishArea } from './makers/project.ts';
@@ -115,7 +113,7 @@ function buildSandboxTools(appDir: string, mcpServerName: string) {
     // One place says what to do about a missing CLI. The same instruction used
     // to appear in the workflow and in the code-quality rules as well, and
     // three copies of a rule are three chances for one of them to go stale.
-    'A missing CLI is a platform-capability failure, not a project bug. If makers dev or deploy fails before returning a concrete CLI error, one read-only edgeone --version check is allowed. If any command returns errorCode=MAKERS_CLI_UNAVAILABLE, stop immediately and tell the user the sandbox image does not provide the CLI yet. Do not inspect PATH or installation directories, run command -v/which/npm ls, install packages, use npx, retry, or replace the prescribed command with ad-hoc shell diagnostics.',
+    'A missing CLI is a platform-capability failure, not a project bug. If makers deploy fails before returning a concrete CLI error, one read-only edgeone --version check is allowed. If any command returns errorCode=MAKERS_CLI_UNAVAILABLE, stop immediately and tell the user the sandbox image does not provide the CLI yet. Do not inspect PATH or installation directories, run command -v/which/npm ls, install packages, use npx, retry, or replace the prescribed command with ad-hoc shell diagnostics.',
     'Never probe or enumerate platform internals to explain a failure: no AI Gateway URLs, no model lists, no generated .edgeone output, no process or port state.',
   ];
 }
@@ -124,19 +122,19 @@ function buildSandboxPreview(appDir: string, makersProjectName: string, area: st
   const quotedProjectName = JSON.stringify(makersProjectName);
   const publishArea = area === 'overseas' ? 'overseas' : 'global';
   return [
-    `To publish the right-hand development preview, run edgeone makers dev --port ${MAKERS_DEV_PORT} --skip-env-sync --skip-ai-gateway-sync --name ${quotedProjectName} --area ${publishArea} once through commands with cwd=${appDir}. The commands tool keeps Makers dev running at its root, exposes it through the sandbox path adapter on port ${PREVIEW_SERVER_PORT}, and publishes sandbox.getHost(${PREVIEW_PUBLIC_PORT})${PREVIEW_PATH_PREFIX} to the preview panel. Do not add nohup, start another server, synthesize a public URL, or use a cloud deploy as the normal preview.`,
+    `The host starts the right-hand development preview as soon as the project workspace exists in this sandbox, and keeps that dest server watching files so later edits show up there. Do not run a preview server, add nohup, start another server, synthesize a public URL, or use a cloud deploy as the normal preview. The sandbox path adapter publishes sandbox.getHost(${PREVIEW_PUBLIC_PORT})${PREVIEW_PATH_PREFIX} to the preview panel.`,
     // The model has no restart primitive, and it went looking for one: a turn
     // that changed dependencies under a running server tried to kill it, free
     // its port, and relaunch it, none of which the host acts on.
-    'Rerunning that same command is your only restart mechanism, and whether a restart actually happens is the host\'s decision: it probes the generated endpoints first and restarts the server when one is not mounted. Do not kill processes or free ports to force one — the host terminates the previous server itself before every launch.',
+    'The host restarts the preview when generated endpoints are missing. Do not kill processes, free ports, or launch a preview server yourself — the host terminates the previous server before every launch.',
     // A run installed dependencies and built while the preview was up, and both
     // lost the race silently: the build reported a Pages Router page the project
     // does not have, and npm reported ENOTEMPTY on a package the server held.
-    'A build or an install cannot run beside the preview, so the host stops the dev server before either and says so in that command\'s output. The preview is then down until you launch it again. Do not report a preview as running across an install or a build you issued after it.',
-    `Only when the user explicitly asks for a live deployment, run edgeone makers deploy --json once through commands with cwd=${appDir}. The host supplies credentials, pins the project this conversation publishes to, allows the long timeout, parses the final JSON line, and renders the result in its own deployment card.`,
+    'A build or an install cannot run beside the preview, so the host stops the dev server before either and says so in that command\'s output. The preview is then down until the host starts it again. Do not report a preview as running across an install or a build you issued after it.',
+    `Only when the user explicitly asks for a live deployment, run edgeone makers deploy --json once through commands with cwd=${appDir}. This conversation publishes to ${quotedProjectName} with --area ${publishArea}. The host supplies credentials, pins the project this conversation publishes to, allows the long timeout, parses the final JSON line, and renders the result in its own deployment card.`,
     'Never pass -n, invent a project name, or retry a failed deploy under a different one: the name identifies the user\'s site, and a deploy under a name you chose publishes somewhere nobody can find again. A deployment never replaces the right-hand preview, so do not tell the user their live site opened there.',
     'Declare AI_GATEWAY_API_KEY= and AI_GATEWAY_BASE_URL= in .env.example when the project calls a model. Never write a .env file yourself, and never write an actual API key or gateway URL value into source. Generated agents read them from context.env.',
-    'Before preview or deploy of an AI project — one that declares those keys in .env.example, or that has an agents/ directory — call request_gateway_credentials. If the result says the key is already configured, not required, or previously skipped, continue. If it says the user has been asked, stop this turn: do not run edgeone makers dest or deploy, and do not call the tool again. The host shows the input card. Your last user-facing sentence must ask them to enter the key or skip; do not say the preview is ready.',
+    'Before preview or deploy of an AI project — one that declares those keys in .env.example, or that has an agents/ directory — call request_gateway_credentials. If the result says the key is already configured, not required, or previously skipped, continue. If it says the user has been asked, stop this turn: do not start a preview or run edgeone makers deploy, and do not call the tool again. The host shows the input card. Your last user-facing sentence must ask them to enter the key or skip; do not say the preview is ready.',
     'The user may type a key in the composer in natural language, for example "我的 apikey 是 …，配置好并重新预览", or submit the input card. The host extracts it, writes .env, and the message you see is a masked API Key line — or a skip. After a provided key the host has written .env; after a skip, preview and deploy must still run — a missing key is not a preview or deploy failure. Chat in the generated app may not answer until a key is added later. Never write .env yourself and never quote an API key value, from a file or from the user.',
     'The host writes AI_GATEWAY_BASE_URL already shaped for OpenAI-compatible clients. Use that value through the generated env helper; never probe, enumerate, or retry alternate gateway paths, and never concatenate /v1/chat/completions onto the base.',
   ];
@@ -255,13 +253,13 @@ function buildNewProjectWorkflow(appDir: string) {
     // nothing runnable. ensure_project_scaffold now answers the right question.
     `4. Install dependencies inside ${appDir} only when the project has a package.json with dependencies and ensure_project_scaffold reported dependenciesInstalled=false (cd ${appDir} && npm install by default; Python packages are declared in the project's requirements file and installed by the platform). Do not invent nested ${appDir}/${appDir} paths.`,
     'Take every dependency name and version range from the reference you loaded for that framework, and copy its dependency block as written. Versions recalled from memory are the usual cause of peer-dependency conflicts and engine mismatches, and each one costs a rewrite plus a reinstall. If a reference pins a version or caps a range, keep the pin instead of widening it to latest.',
-    '5. Check gateway credentials as the preview section requires, then run edgeone makers dev through commands, with the flags the sandbox preview section gives. When the command result reports a successful preview URL, stop — do not curl/fetch/code_interpreter the public URL and do not start a second preview server. For a CLI failure, quote and act on its actual error; fix generated source when appropriate, then rerun the same preview command once.',
+    '5. Check gateway credentials as the preview section requires, then stop. The host starts the sandbox preview. Do not curl/fetch/code_interpreter the public URL and do not start a preview server.',
   ];
 }
 
 const EXISTING_PROJECT_WORKFLOW = [
   'When ensure_project_scaffold returns created=false, load only the specific Makers references required by the change with load_makers_skill, inspect only the project files directly related to the request, then make the smallest complete change needed.',
-  'For bug reports, do not investigate platform internals, generated .edgeone files, running processes, ports, or external AI gateway behavior. Use at most one focused reproduction command before editing; after the edit, use at most one focused verification command, then check gateway credentials as the preview section requires and run edgeone makers dev once through commands.',
+  'For bug reports, do not investigate platform internals, generated .edgeone files, running processes, ports, or external AI gateway behavior. Use at most one focused reproduction command before editing; after the edit, use at most one focused verification command, then check gateway credentials as the preview section requires. The host starts the sandbox preview.',
 ];
 
 const CODE_QUALITY = [
@@ -325,7 +323,7 @@ const FINAL_REPLY = [
   // page back every time, and reported the feature working. An HTML body from a
   // POST to a streaming endpoint is the static site answering in its place.
   'An HTML document is not a verified endpoint. When a probe of a project API answers with a page instead of the response that endpoint defines, the request never reached the handler at all — that is a failure to report, not a result to read a meaning into, and never grounds for saying the feature works.',
-  'After code changes, check gateway credentials as the preview section requires, then run edgeone makers dev through commands so the user can see the sandbox preview. Do not synthesize preview URLs. Run edgeone makers deploy only when the user explicitly asks to publish a live Makers URL.',
+  'After code changes, check gateway credentials as the preview section requires. The host starts the sandbox preview. Do not synthesize preview URLs. Run edgeone makers deploy only when the user explicitly asks to publish a live Makers URL.',
   'Do not include preview buttons, preview links, preview URLs, or sandboxDebugUrl in the final response. The sandbox preview is shown only in the right preview panel.',
   'A live deployment is the exception: when edgeone makers deploy succeeds, state that the site is live and write its complete URL, query string included, on its own line in the final response. That address is the deliverable and the user has to be able to copy it out of the conversation.',
   'Do not take screenshots.',
@@ -347,9 +345,16 @@ export function buildPrompt(
   modelLabel = '',
   // Fixed for the life of a deployment, so this stays a cacheable prompt.
   webSearchAvailable = false,
+  replyLocale: 'zh' | 'en' | '' = '',
 ) {
+  const languageRule = replyLocale === 'zh'
+    ? 'Write all user-facing narration and the final reply in Chinese.'
+    : replyLocale === 'en'
+      ? 'Write all user-facing narration and the final reply in English.'
+      : 'Write all user-facing narration and the final reply in the language of the user request.';
   return [
     section('Who you are', buildIdentity(modelLabel)),
+    section('Language', [languageRule]),
     section('What you take on', SCOPE),
     section('Where platform knowledge comes from', buildKnowledgeSourcing(webSearchAvailable)),
     section('What is not a source, and when to stop looking', buildSearchDiscipline(webSearchAvailable)),

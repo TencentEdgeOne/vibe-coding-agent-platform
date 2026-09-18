@@ -8,7 +8,6 @@ import {
   PREVIEW_ASSET_PREFIX_ENV,
   PREVIEW_PATH_PREFIX,
   PREVIEW_PUBLIC_PORT,
-  PREVIEW_SERVER_PORT,
 } from '../agents/_lib/constants.ts';
 import { MAKERS_REFERENCE_SKILL_NAMES } from '../agents/_lib/tools/makers-skills.ts';
 import { projectState } from './helpers/fixtures.ts';
@@ -128,12 +127,12 @@ test('the prompt keeps the sandbox corrections the skills cannot know about', ()
   const prompt = renderPrompt();
   assert.match(prompt, /target sandbox image is expected to provide the EdgeOne CLI/);
   assert.match(prompt, /Run it directly with the commands tool/);
-  assert.match(
+  assert.match(prompt, /The host starts the right-hand development preview/);
+  assert.doesNotMatch(
     prompt,
     new RegExp(`edgeone makers dev --port ${MAKERS_DEV_PORT} --skip-env-sync --skip-ai-gateway-sync`),
   );
   assert.match(prompt, /--area global/);
-  assert.match(prompt, new RegExp(`path adapter on port ${PREVIEW_SERVER_PORT}`));
   assert.match(
     prompt,
     new RegExp(`sandbox\\.getHost\\(${PREVIEW_PUBLIC_PORT}\\).*${PREVIEW_PATH_PREFIX}`),
@@ -218,7 +217,7 @@ test('the prompt keeps its tool contracts and workspace boundary', () => {
   assert.ok(prompt.includes(state.appDir), 'prompt must name the writable project directory');
   assert.match(prompt, /ensure_project_scaffold as the first tool/);
   assert.match(prompt, /write_project_file accepts exactly one file per call/);
-  assert.match(prompt, /When the command result reports a successful preview URL, stop/);
+  assert.match(prompt, /The host starts the sandbox preview/);
   assert.match(prompt, /Run edgeone makers deploy only when the user explicitly asks/);
   assert.doesNotMatch(prompt, /publish_preview|deploy_to_makers|get_preview_link/);
   assert.match(prompt, /I can only help create or modify web projects/);
@@ -318,9 +317,8 @@ test('the prompt closes the three ways a run can talk itself into a false finish
 
   // There is no restart primitive to reach for: the host restarts the server
   // when its own route probe finds an endpoint unmounted.
-  assert.match(prompt, /only restart mechanism/);
-  assert.match(prompt, /restarts the server when one is not mounted/);
-  assert.match(prompt, /Do not kill processes or free ports/);
+  assert.match(prompt, /The host restarts the preview when generated endpoints are missing/);
+  assert.match(prompt, /Do not kill processes, free ports, or launch a preview server yourself/);
 
   // The static site answers a POST to an unmounted route with 200 and a page,
   // so an HTML body is the one reply that must never read as a success.
@@ -504,11 +502,11 @@ test('an install or a build is described as taking the preview down', () => {
   const prompt = renderPrompt();
 
   assert.match(prompt, /A build or an install cannot run beside the preview/);
-  assert.match(prompt, /down until you launch it again/);
+  assert.match(prompt, /down until the host starts it again/);
   // The restart rule has to stay consistent with it: the host frees the port,
   // which is what makes relaunching work rather than repeat.
-  assert.match(prompt, /terminates the previous server itself before every launch/);
-  assert.match(prompt, /Do not kill processes or free ports/);
+  assert.match(prompt, /terminates the previous server before every launch/);
+  assert.match(prompt, /Do not kill processes, free ports/);
 });
 
 // When the key is absent the tool is withheld from the tool list, and a rule

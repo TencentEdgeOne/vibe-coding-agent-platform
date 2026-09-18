@@ -30,6 +30,7 @@ import { gzipSync } from 'node:zlib';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { PREVIEW_ASSET_PREFIX_ENV } from '../constants.ts';
+import { requireSandbox, type AgentContext } from '../runtime/context.ts';
 import type { ProjectState, ScaffoldLog } from '../types.ts';
 import { safeSegment } from '../utils/paths.ts';
 import { buildNpmWarmupCommand } from '../makers/npm-install.ts';
@@ -375,7 +376,7 @@ export type ApplyTemplateOptions = {
  * the same install, the same handoff, and the same single-npm-process rule.
  */
 export async function applyProjectTemplate(
-  context: any,
+  context: AgentContext,
   state: ProjectState,
   template: ProjectTemplate,
   options: ApplyTemplateOptions = {},
@@ -410,7 +411,7 @@ export async function applyProjectTemplate(
     content: `Writing the ${template.id} project template into ${state.appDir}`,
   });
 
-  await context.sandbox.files.write(scriptPath, script);
+  await requireSandbox(context).files.write(scriptPath, script);
 
   // set -e so a failed extraction never reaches the warmup: the warmup's first
   // act is to disable it again, and an install started over a half-written tree

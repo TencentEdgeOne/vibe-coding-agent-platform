@@ -68,6 +68,7 @@ const AGENT_ROUTE_FILES = new Set([
   'agents/file.ts',
   'agents/download.ts',
   'agents/transcript.ts',
+  'agents/workspace.ts',
 ]);
 
 test('agent routes stay at agents/ and implementation lives in agents/_lib/', async () => {

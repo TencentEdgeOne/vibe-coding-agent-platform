@@ -278,7 +278,8 @@ test('the conversation card asks for API Key and submits a masked chat turn', as
     live.indexOf('const applyResponse'),
   );
   assert.doesNotMatch(finalize, /setGatewayNeeded\(false\)/);
-  assert.match(live, /if \(data\.gatewayNeeded\) \{\s*workspace\.setGatewayNeeded\(true\);/);
+  assert.match(live, /event\.type === 'gateway_credentials'/);
+  assert.match(live, /workspace\.setGatewayNeeded\(true\)/);
 });
 
 test('the API key card waits until the assistant turn has finished', async () => {
@@ -308,7 +309,8 @@ test('a turn waiting for the API key is completed, not a red error', async () =>
 
   assert.match(helpers, /GATEWAY_CREDENTIALS_USER_REPLY/);
   assert.match(pause, /GATEWAY_CREDENTIALS_USER_REPLY\[replyLocale\]/);
-  assert.match(pause, /gatewayNeeded: true/);
+  assert.match(pause, /type: 'gateway_credentials'/);
+  assert.match(pause, /status: 'needed'/);
   assert.match(pause, /ok: true,\s*\n\s*reply: pauseReply/);
   // The card is gated on result/loading, so a Blob snapshot that hangs or
   // fails must not sit in front of that event. Persist after it, unawaited.

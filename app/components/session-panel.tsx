@@ -4,7 +4,7 @@ import { memo, useEffect, useState } from 'react';
 import type { SessionCopy } from '../i18n';
 import { consumeEventStream } from '../features/workspace/sse';
 import { openTranscriptStream } from '../features/workspace/workspace-api';
-import type { TranscriptData, TranscriptStreamEvent } from '../../../shared/protocol';
+import type { TranscriptData, TranscriptStreamEvent } from '../../shared/protocol';
 import { Spinner } from './spinner';
 
 type SessionState =
