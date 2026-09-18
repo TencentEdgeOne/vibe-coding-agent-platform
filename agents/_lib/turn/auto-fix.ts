@@ -7,7 +7,6 @@ import type {
   DeploymentInfo,
   PreviewKind,
   ProjectState,
-  ScaffoldLog,
   StreamSend,
 } from '../types.ts';
 import { buildAutoFixPrompt } from '../utils/build-errors.ts';
@@ -20,7 +19,6 @@ export type AutoFixTurnInput = {
   state: ProjectState;
   assistantReply: string;
   build: BuildResult;
-  onScaffoldLog: (log: ScaffoldLog) => void;
   onProgress: (event: AgentProgressEvent) => void;
   onProjectFilesChanged: (file?: { path: string; content: string }) => Promise<void>;
   onPreviewReady: (preview: {
@@ -51,7 +49,6 @@ export async function runAutoFixTurn(input: AutoFixTurnInput): Promise<{
     userMessage: prompt,
     state: input.state,
     isNewProject: false,
-    onScaffoldLog: input.onScaffoldLog,
     onProgress: input.onProgress,
     onProjectFilesChanged: input.onProjectFilesChanged,
     onPreviewReady: input.onPreviewReady,

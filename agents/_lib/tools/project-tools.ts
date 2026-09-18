@@ -1,15 +1,13 @@
 import { requireSandbox, type AgentContext } from '../runtime/context.ts';
 import { tool as defineClaudeTool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
-import { ensureProjectScaffold } from '../project/scaffold.ts';
 import { markCreated } from '../project/workspace-store.ts';
 import { buildNpmWarmupCommand } from '../makers/npm-install.ts';
 import {
   ensureMakersAgentDeclarations,
   ensureMakersFrameworkAdapter,
 } from '../makers/declarations.ts';
-import type { ScaffoldOutcome } from '../project/scaffold.ts';
-import type { ClaudeMcpTool, ProjectState, ScaffoldLog } from '../types.ts';
+import type { ClaudeMcpTool, ProjectState } from '../types.ts';
 import { getBlockedProjectWriteReason, toAppRelPath } from '../utils/paths.ts';
 import { stringifyToolResult } from '../utils/text.ts';
 
@@ -20,121 +18,6 @@ const writeProjectFileInputSchema = {
   content: z.string().describe('Complete UTF-8 contents for that one file.'),
 };
 
-const scaffoldInputSchema = {
-  framework: z
-    .string()
-    .optional()
-    .describe(
-      'The web framework the user asked for, if the request named one — for example "Next.js", "Vite", "Nuxt", "Astro", "SvelteKit". Omit it for a plain HTML/CSS/JS page or when no framework was named. When a baked template exists for it, the workspace comes back already holding that framework\'s project files with the install running, and no scaffolder needs to be run.',
-    ),
-};
-
-/**
- * What the model is told about the workspace it just asked for.
- *
- * One function rather than a literal with two conditional spreads in it,
- * because both of them wanted to set installHint and the second silently won.
- * There is only ever one right answer to "should I install", and the order it
- * is decided in here is the order the cases actually rank: a populated
- * node_modules settles it whatever else happened, then an install this call
- * started, then nothing to say.
- */
-export function describeScaffold(
-  state: ProjectState,
-  outcome: ScaffoldOutcome,
-): Record<string, unknown> {
-  const { created, dependenciesInstalled, template, available } = outcome;
-  return {
-    created,
-    appDir: state.appDir,
-    dependenciesInstalled,
-    // The scaffolder step, reported as already done. The model has no listing
-    // of the workspace, so without this it reaches step 2 of the workflow and
-    // runs a scaffolder into a directory that is no longer empty.
-    ...(template
-      ? {
-        templateApplied: template.id,
-        templateFiles: template.files,
-        scaffolderHint: [
-          `The ${template.id} scaffolder has already been run for you and its ${template.files} files are in ${state.appDir}. Do not run a scaffold command. Adapt what is there — the platform declarations and the entry route — rather than rewriting files it already got right. The preview asset-prefix option is already in the framework config; do not set it again.`,
-          ...(template.id === 'deepagents' || template.id === 'langgraph'
-            ? ['The chat endpoint is agents/chat.ts. Edit that file; do not create agents/chat/index.ts — both mount POST /chat.']
-            : []),
-        ].join(' '),
-        ...(template.adapted
-          ? {
-            adapterHint: 'This framework\'s platform adapter was added to package.json before the install started, so the dependency is already on its way. Wiring it into the framework config is still yours to do; makers-frameworks says where it goes.',
-          }
-          : {}),
-      }
-      // The trees that were there and went unused, named so the miss is
-      // recoverable. A status log is not enough — only this result reaches the
-      // model, so a gap here reads to it as "there is no template for this"
-      // rather than "you did not ask for one", and it goes on to write the tree
-      // by hand beside a baked one.
-      : available?.length
-        ? {
-          templatesAvailable: available,
-          templatesHint: `No baked template was applied, because the framework argument matched none. These are baked and ready: ${available.join(', ')}. If one of them fits what you are about to build, call ensure_project_scaffold again with that id as framework — the workspace is still empty, so it will be filled from the baked tree, install and all. Prefer that over writing package.json and an entry file by hand. If none fits, carry on and generate the project yourself.`,
-        }
-        : {}),
-    // Said outright, because the listing above cannot show it and the model's
-    // default reading of a project it did not install is that it needs
-    // installing. The disk is the reason it must not: the cache npm fills to
-    // install is about as large as the tree it installs, and only one of them
-    // fits beside the other here.
-    ...(dependenciesInstalled
-      ? {
-        installHint: 'node_modules is already populated and its executables work. Do not run npm install — the download cache would not fit beside the existing tree, and a failed install leaves the tree unusable. Install only when you add a dependency, and then name it (npm install <pkg>).',
-      }
-      : template
-        ? {
-          installHint: 'The install for this template is already running against this package.json. Run npm install only after you add a package to it.',
-        }
-        : {}),
-    writePathHint: 'write_project_file path is relative to appDir (e.g. package.json, src/App.tsx), never prefix with appDir',
-  };
-}
-
-export function buildProjectScaffoldTool(
-  context: AgentContext,
-  state: ProjectState,
-  onLog?: (log: ScaffoldLog) => void,
-  onResult?: (result: { created: boolean }) => void,
-) {
-  return defineClaudeTool(
-    'ensure_project_scaffold',
-    'Prepare or reuse the project workspace in the EdgeOne sandbox before any project file reads or writes. Always pass framework: the framework the request names, or, when it names none, the kind of app being built (chat, agent, react). Baked templates are matched from it, and a workspace prepared from one arrives with its files and its install already started; omitting it is what leaves the workspace empty.',
-    scaffoldInputSchema,
-    async (input) => {
-      try {
-        const requested = input as { framework?: unknown };
-        const { created, dependenciesInstalled, template } = await ensureProjectScaffold(
-          context,
-          state,
-          onLog,
-          { framework: typeof requested.framework === 'string' ? requested.framework : undefined },
-        );
-        markCreated(state);
-        onResult?.({ created });
-        return {
-          content: [{
-            type: 'text' as const,
-            text: stringifyToolResult(
-              describeScaffold(state, { created, dependenciesInstalled, template }),
-            ),
-          }],
-        };
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        return {
-          content: [{ type: 'text' as const, text: message }],
-          isError: true,
-        };
-      }
-    },
-  ) as ClaudeMcpTool;
-}
 export function buildWriteProjectFileTool(
   context: AgentContext,
   state: ProjectState,
@@ -168,6 +51,7 @@ export function buildWriteProjectFileTool(
           await requireSandbox(context).files.makeDir(`${state.appDir}/${parent}`);
         }
         await requireSandbox(context).files.write(`${state.appDir}/${relPath}`, file.content);
+        markCreated(state);
         await onResult?.({ written: relPath, content: file.content });
         // An agents/ project needs agents.framework and .env.example declared,
         // and meeting that at the preview gate instead costs the user a failed

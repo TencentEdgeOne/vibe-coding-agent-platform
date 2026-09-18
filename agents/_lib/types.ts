@@ -81,9 +81,7 @@ export type CodingAgentResult = {
   projectTouched: boolean;
   /**
    * Whether this turn wrote a project file, as opposed to merely reaching the
-   * project. Scaffolding sets projectTouched and the workflow asks for it on
-   * every turn, so that flag cannot tell a build apart from a turn that only
-   * answered a question — and answering one is not a build that failed.
+   * project. Answering a question is not a build that failed.
    */
   filesWritten?: boolean;
   previewTouched?: boolean;

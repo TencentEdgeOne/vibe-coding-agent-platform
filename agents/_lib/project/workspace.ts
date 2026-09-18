@@ -11,7 +11,7 @@ import { withTimeout } from '../turn/checkpoint.ts';
 const SANDBOX_PROBE_MS = 15_000;
 const RESTORE_BUDGET_MS = 45_000;
 
-async function ensureWorkspaceDirectories(context: AgentContext, state: ProjectState) {
+export async function ensureWorkspaceDirectories(context: AgentContext, state: ProjectState) {
   const files = requireSandbox(context).files;
   await files.makeDir(state.sessionDir);
   await files.makeDir(state.appDir);

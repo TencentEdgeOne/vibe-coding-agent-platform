@@ -1,8 +1,5 @@
 import { createSdkMcpServer } from '@anthropic-ai/claude-agent-sdk';
-import {
-  MAKERS_SKILL_NAMES,
-  SANDBOX_MCP_SERVER_NAME,
-} from '../constants.ts';
+import { SANDBOX_MCP_SERVER_NAME } from '../constants.ts';
 import {
   buildRequestGatewayCredentialsTool,
   REQUEST_GATEWAY_CREDENTIALS_TOOL,
@@ -14,7 +11,6 @@ import type {
   DeploymentInfo,
   PreviewKind,
   ProjectState,
-  ScaffoldLog,
   StreamSend,
 } from '../types.ts';
 import { wrapSandboxTools, type MakersCommandLifecycle } from './commands-wrap.ts';
@@ -25,18 +21,12 @@ import {
   isWebSearchToolName,
 } from '../../../shared/web-search.ts';
 import { buildLoadMakersSkillTool } from './makers-skills.ts';
-import {
-  buildProjectScaffoldTool,
-  buildWriteProjectFileTool,
-} from './project-tools.ts';
+import { buildWriteProjectFileTool } from './project-tools.ts';
 
 export type LiveTurnCallbacks = {
-  onScaffoldLog?: (log: ScaffoldLog) => void;
   onProjectFilesChanged?: (file?: { path: string; content: string }) => void | Promise<void>;
   onPreviewReady?: (preview: { url?: string; sandboxDebugUrl?: string; kind?: PreviewKind }) => void;
   onDeploymentStatus?: (deployment: DeploymentInfo) => void;
-  /** Project files exist in this sandbox; the host can start dest. */
-  onWorkspaceReady?: () => void;
   send?: StreamSend;
   abortSignal?: AbortSignal;
 };
@@ -51,7 +41,6 @@ export type LiveSessionHandle = {
     filesWritten: boolean;
     previewTouched: boolean;
     deploymentTouched: boolean;
-    wasCreated: boolean;
   };
 };
 
@@ -88,16 +77,6 @@ export function assembleAgentTools(session: LiveSessionHandle) {
     && !isGenericProjectWriteToolName(name)
     && (webSearchAvailable || !isWebSearchToolName(name));
 
-  const scaffoldTool = buildProjectScaffoldTool(
-    context,
-    session.getState(),
-    (log) => session.getCallbacks().onScaffoldLog?.(log),
-    ({ created }) => {
-      session.flags.projectTouched = true;
-      session.flags.wasCreated = created;
-      session.getCallbacks().onWorkspaceReady?.();
-    },
-  );
   const writeProjectFileTool = buildWriteProjectFileTool(
     context,
     session.getState(),
@@ -133,7 +112,6 @@ export function assembleAgentTools(session: LiveSessionHandle) {
   ));
   const mcpTools = [
     ...sandboxTools,
-    scaffoldTool,
     buildLoadMakersSkillTool(),
     writeProjectFileTool,
     buildRequestGatewayCredentialsTool({
@@ -149,7 +127,6 @@ export function assembleAgentTools(session: LiveSessionHandle) {
   ];
   const mcpAllowedTools = [
     ...edgeoneMcp.allowedTools.filter(offerSandboxTool),
-    `mcp__${mcpServerName}__ensure_project_scaffold`,
     `mcp__${mcpServerName}__load_makers_skill`,
     `mcp__${mcpServerName}__write_project_file`,
     `mcp__${mcpServerName}__${REQUEST_GATEWAY_CREDENTIALS_TOOL}`,

@@ -32,7 +32,7 @@ test('session is GET restore; turns go through /prompt and /deploy', async () =>
   assert.match(deploy, /onRequestPost/);
   assert.match(deploy, /kind: 'deploy'/);
   assert.match(tasks, /export async function\* iterateLiveChatTaskEvents/);
-  assert.match(client, /fetch\('\/session',[\s\S]*?method: 'GET'/);
+  assert.match(client, /fetch\(`\/session/);
   assert.match(client, /fetch\('\/prompt',[\s\S]*?method: 'POST'/);
   assert.match(client, /fetch\('\/deploy',[\s\S]*?method: 'POST'/);
   assert.doesNotMatch(client, /fetch\('\/session-model'/);
@@ -60,9 +60,10 @@ test('initial session restore is one progressive SSE request that can attach a l
   assert.match(route, /createProjectResumeStreamResponse/);
   assert.match(pipeline, /type: 'resume_history'/);
   assert.match(pipeline, /type: 'resume_workspace'/);
+  assert.match(pipeline, /sessionPrepSse/);
   assert.match(pipeline, /iterateLiveChatTaskEvents/);
   assert.doesNotMatch(pipeline, /streamUrl: `\/chat\?runId=/);
-  assert.match(client, /fetch\('\/session',[\s\S]*?method: 'GET'/);
+  assert.match(client, /fetch\(`\/session/);
 });
 
 test('the session tab reads the raw JSONL transcript and does not project it', async () => {

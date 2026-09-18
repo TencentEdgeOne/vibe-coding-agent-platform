@@ -39,7 +39,6 @@ import { getConversationRecord, getLanguagePreference, patchConversationRecord }
 import { downloadTranscript, resolveClaudeTranscriptPath, uploadTranscript } from './transcript.ts';
 import { PromptQueue } from './prompt-queue.ts';
 import {
-  SCAFFOLD_TOOL_NAME,
   createProgressEmitter,
   describeSdkMessage,
   extractVisibleNarrationDelta,
@@ -68,24 +67,31 @@ type LiveQuerySession = LiveSessionHandle & {
   turn?: TurnWaiter;
   state: ProjectState;
   pump: Promise<void>;
+  idleTimer?: ReturnType<typeof setTimeout>;
 };
+
+/** Give up waiting for the CLI's SessionStart hook and let /prompt reuse the process. */
+export const WARM_LIVE_QUERY_BUDGET_MS = 20_000;
+/** Close a warmed process that never received a turn, so abandoned visits do not leak one. */
+export const LIVE_QUERY_IDLE_MS = 5 * 60 * 1000;
 
 const liveQueries = new Map<string, LiveQuerySession>();
 
-export type RunCodingAgentOptions = {
+export type StartLiveQueryOptions = {
   context: AgentContext;
   conversationId: string;
-  userMessage: string;
   state: ProjectState;
   isNewProject: boolean;
-  onScaffoldLog?: LiveTurnCallbacks['onScaffoldLog'];
+  abortSignal?: AbortSignal;
+  model?: string;
+};
+
+export type RunCodingAgentOptions = StartLiveQueryOptions & {
+  userMessage: string;
   onProgress?: (event: AgentProgressEvent) => void;
   onProjectFilesChanged?: LiveTurnCallbacks['onProjectFilesChanged'];
   onPreviewReady?: LiveTurnCallbacks['onPreviewReady'];
   onDeploymentStatus?: LiveTurnCallbacks['onDeploymentStatus'];
-  onWorkspaceReady?: LiveTurnCallbacks['onWorkspaceReady'];
-  abortSignal?: AbortSignal;
-  model?: string;
   send?: LiveTurnCallbacks['send'];
 };
 
@@ -127,8 +133,56 @@ function flagsFrom(session: LiveQuerySession): Pick<
     filesWritten: session.flags.filesWritten,
     previewTouched: session.flags.previewTouched,
     deploymentTouched: session.flags.deploymentTouched,
-    wasCreated: session.flags.wasCreated,
+    wasCreated: false,
   };
+}
+
+function clearIdleTimer(session: LiveQuerySession) {
+  if (!session.idleTimer) return;
+  clearTimeout(session.idleTimer);
+  session.idleTimer = undefined;
+}
+
+function scheduleIdleClose(session: LiveQuerySession) {
+  clearIdleTimer(session);
+  session.idleTimer = setTimeout(() => {
+    if (session.turn) return;
+    void disposeLiveQuery(session.conversationId);
+  }, LIVE_QUERY_IDLE_MS);
+}
+
+function disposeLiveQuery(conversationId: string) {
+  const session = liveQueries.get(conversationId);
+  if (!session || session.turn) return false;
+  clearIdleTimer(session);
+  liveQueries.delete(conversationId);
+  try {
+    session.query.close();
+  } catch (error) {
+    console.warn('[agent] failed to close the idle SDK query', error);
+  }
+  session.queue.close();
+  return true;
+}
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function waitForLiveSessionId(
+  session: LiveQuerySession,
+  budgetMs: number,
+  signal?: AbortSignal,
+) {
+  const startedAt = Date.now();
+  while (!session.sessionId && Date.now() - startedAt < budgetMs) {
+    if (signal?.aborted) return false;
+    if (liveQueries.get(session.conversationId) !== session) return false;
+    await sleep(50);
+  }
+  return Boolean(session.sessionId);
 }
 
 async function persistTranscript(session: LiveQuerySession) {
@@ -148,7 +202,6 @@ async function pumpSession(session: LiveQuerySession) {
     appDir: session.getState().appDir,
     onProgress: (event) => session.turn?.onProgress?.(event),
   });
-  let scaffoldHandled = false;
   let fatalError: string | null = null;
 
   const finishTurn = async (result: CodingAgentResult) => {
@@ -299,14 +352,6 @@ async function pumpSession(session: LiveQuerySession) {
                 endedAt: Date.now(),
               },
             });
-            if (!scaffoldHandled && toolName === SCAFFOLD_TOOL_NAME && record.is_error !== true) {
-              scaffoldHandled = true;
-              try {
-                await session.getCallbacks().onProjectFilesChanged?.();
-              } catch (error) {
-                console.warn('[scaffold-done] onProjectFilesChanged failed', error);
-              }
-            }
             if (record.is_error === true && !fatalError) {
               const fatal = detectFatalToolError(text);
               if (fatal) {
@@ -376,7 +421,6 @@ async function pumpSession(session: LiveQuerySession) {
         }
         pendingToolUseBlocks.clear();
         progress.resetTurn();
-        scaffoldHandled = false;
         fatalError = null;
         continue;
       }
@@ -402,6 +446,7 @@ async function pumpSession(session: LiveQuerySession) {
       }));
     }
     liveQueries.delete(session.conversationId);
+    clearIdleTimer(session);
     try {
       session.query.close();
     } catch (error) {
@@ -411,7 +456,7 @@ async function pumpSession(session: LiveQuerySession) {
   }
 }
 
-async function startLiveQuery(options: RunCodingAgentOptions): Promise<LiveQuerySession | CodingAgentResult> {
+async function startLiveQuery(options: StartLiveQueryOptions): Promise<LiveQuerySession | CodingAgentResult> {
   const { context, conversationId } = options;
   const apiKey = pickEnvValue(context, 'AI_GATEWAY_API_KEY')
     || pickEnvValue(context, 'ANTHROPIC_API_KEY')
@@ -448,7 +493,6 @@ async function startLiveQuery(options: RunCodingAgentOptions): Promise<LiveQuery
       filesWritten: false,
       previewTouched: false,
       deploymentTouched: false,
-      wasCreated: false,
     },
     queue: new PromptQueue(),
     query: null as unknown as Query,
@@ -557,6 +601,42 @@ export function getLiveQuery(conversationId: string) {
   return liveQueries.get(conversationId) || null;
 }
 
+export type WarmLiveQueryResult = {
+  ok: boolean;
+  reused: boolean;
+  error?: string;
+};
+
+export async function warmLiveQuery(options: StartLiveQueryOptions): Promise<WarmLiveQueryResult> {
+  if (options.abortSignal?.aborted) {
+    return { ok: false, reused: false, error: 'aborted' };
+  }
+
+  let session = liveQueries.get(options.conversationId);
+  const reused = Boolean(session);
+  if (!session) {
+    const started = await startLiveQuery(options);
+    if (!('queue' in started)) {
+      return {
+        ok: false,
+        reused: false,
+        error: started.error || 'The coding agent could not start.',
+      };
+    }
+    session = started;
+  } else {
+    session.context = options.context;
+    session.state = options.state;
+  }
+
+  if (!session.turn) scheduleIdleClose(session);
+  await waitForLiveSessionId(session, WARM_LIVE_QUERY_BUDGET_MS, options.abortSignal);
+  if (options.abortSignal?.aborted) {
+    return { ok: false, reused, error: 'aborted' };
+  }
+  return { ok: true, reused };
+}
+
 export async function interruptLiveQuery(conversationId: string) {
   const live = liveQueries.get(conversationId);
   if (!live) return false;
@@ -605,7 +685,7 @@ export async function runCodingAgent(options: RunCodingAgentOptions): Promise<Co
   session.flags.filesWritten = false;
   session.flags.previewTouched = false;
   session.flags.deploymentTouched = false;
-  session.flags.wasCreated = false;
+  clearIdleTimer(session);
 
   const abort = () => {
     void interruptLiveQuery(options.conversationId);
@@ -616,11 +696,9 @@ export async function runCodingAgent(options: RunCodingAgentOptions): Promise<Co
     const result = await new Promise<CodingAgentResult>((resolve) => {
       session!.turn = {
         callbacks: {
-          onScaffoldLog: options.onScaffoldLog,
           onProjectFilesChanged: options.onProjectFilesChanged,
           onPreviewReady: options.onPreviewReady,
           onDeploymentStatus: options.onDeploymentStatus,
-          onWorkspaceReady: options.onWorkspaceReady,
           send: options.send,
           abortSignal: options.abortSignal,
         },

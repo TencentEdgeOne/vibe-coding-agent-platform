@@ -20,6 +20,9 @@ import type {
   ChatMessage,
   ChatResponse,
   ChatStreamEvent,
+  SessionPrepData,
+  SessionPrepStage,
+  SessionStreamEvent,
 } from '@/app/types/workspace';
 import { consumeEventStream } from '../sse';
 import {
@@ -41,10 +44,61 @@ type LiveCopy = {
   agentFlowEnded: string;
 };
 
+type PrepStageCopy = Record<SessionPrepStage, string>;
+
+function sessionPrepToChatEvents(
+  data: SessionPrepData,
+  labels: PrepStageCopy,
+): ChatStreamEvent[] {
+  if (data.stage === 'ready') {
+    return (['conversation', 'sandbox', 'agent'] as const).map((stage) => ({
+      type: 'tool_result' as const,
+      data: {
+        id: `session-prep-${stage}`,
+        ok: true,
+        status: 'completed' as const,
+        endedAt: Date.now(),
+      },
+    }));
+  }
+
+  const id = `session-prep-${data.stage}`;
+  const label = labels[data.stage] || data.stage;
+  if (data.status === 'running') {
+    return [{
+      type: 'tool_use',
+      data: {
+        id,
+        name: 'environment',
+        inputSummary: label,
+        startedAt: Date.now(),
+      },
+    }];
+  }
+
+  return [{
+    type: 'tool_result',
+    data: {
+      id,
+      ok: data.status === 'done',
+      status: data.status === 'failed' ? 'failed' : 'completed',
+      endedAt: Date.now(),
+    },
+  }];
+}
+
 export function useLiveTurn(options: {
   language: Locale;
   model: string;
-  t: { response: LiveCopy; workspace: { deployRequest: string; gatewayPromptApiKey: string; gatewayPromptSkip: string } };
+  t: {
+    response: LiveCopy;
+    workspace: {
+      deployRequest: string;
+      gatewayPromptApiKey: string;
+      gatewayPromptSkip: string;
+      prepStages: PrepStageCopy;
+    };
+  };
   workspace: WorkspaceStateApi;
   preview: PreviewSurfaceApi;
   snapshot: WorkspaceSnapshotApi;
@@ -409,24 +463,50 @@ export function useLiveTurn(options: {
       const requestAbortController = new AbortController();
       chatAbortControllerRef.current = requestAbortController;
       stoppingRef.current = false;
-      if (isStartingFromHome) {
-        try {
-          const resumeResponse = await openSessionStream(
-            requestConversationId,
-            requestAbortController.signal,
-          );
-          const resumeType = resumeResponse.headers.get('content-type') || '';
-          if (
-            resumeResponse.ok
-            && resumeResponse.body
-            && resumeType.includes('text/event-stream')
-          ) {
-            await consumeEventStream(resumeResponse, () => {});
+        if (isStartingFromHome) {
+          try {
+            const resumeResponse = await openSessionStream(
+              requestConversationId,
+              requestAbortController.signal,
+              {
+                model: modelRef.current,
+                language,
+                mode: 'create',
+              },
+            );
+            const resumeType = resumeResponse.headers.get('content-type') || '';
+            if (
+              resumeResponse.ok
+              && resumeResponse.body
+              && resumeType.includes('text/event-stream')
+            ) {
+              await consumeEventStream<SessionStreamEvent>(resumeResponse, (event) => {
+                if (event.type !== 'session_prep' || !event.data) return;
+                const prepEvents = sessionPrepToChatEvents(event.data, t.workspace.prepStages);
+                setMessages((current) =>
+                  current.map((item) => {
+                    if (item.id !== assistantMessageId) return item;
+                    let activities = item.activities ?? [];
+                    for (const prepEvent of prepEvents) {
+                      const folded = applyStreamEvent({
+                        id: item.id,
+                        user: '',
+                        assistant: item.content,
+                        status: 'completed',
+                        createdAt: 0,
+                        activities,
+                      } satisfies PersistedActivityTurn, prepEvent);
+                      activities = folded.activities;
+                    }
+                    return { ...item, activities };
+                  }),
+                );
+              });
+            }
+          } catch (error) {
+            if (error instanceof Error && error.name === 'AbortError') throw error;
           }
-        } catch (error) {
-          if (error instanceof Error && error.name === 'AbortError') throw error;
         }
-      }
       const response = isDeploy
         ? await startDeployTurn({
             conversationId: requestConversationId,

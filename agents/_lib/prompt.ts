@@ -208,59 +208,24 @@ function buildToolContracts(appDir: string) {
 
 function buildNewProjectWorkflow(appDir: string) {
   return [
-    'When ensure_project_scaffold returns created=true, work through these steps in order.',
-    '1. Load the references this request needs with load_makers_skill and follow them for layout, routing, handler signatures, configuration files, and storage. Prefer static HTML/CSS/JS or Vite static output for ordinary UI. Do not put styles, scripts, and markup into one large index.html unless the user explicitly asks for a single-file page.',
-    // Eight commands went into excavating one framework's "official template":
-    // npm view, then tarballs downloaded and unpacked in /tmp, then a package's
-    // own source read to find where it fetches templates from, then the same
-    // again for its replacement. Every step was reasonable and the sequence had
-    // no bottom, because each answer was only ever "the template is elsewhere".
-    // The scaffolder is where it ends: it holds both the structure and the
-    // version set, and running it costs one command.
-    //
-    // Which command that is, though, is the reference's to say. The two copies
-    // this step used to carry had already drifted from it: the Next.js one was
-    // down to `. --yes` while the document specifies four more flags, and the
-    // flags are the whole difference between a scaffolder and a prompt nobody
-    // is there to answer.
-    // The scaffolder was run at build time for the frameworks with a baked
-    // template, so for those this step is already done before the model reads
-    // it. Saying so here rather than only in the tool result, because the
-    // instruction it contradicts is this one: a run that reaches step 2 with
-    // its workspace already populated would otherwise put a scaffolder into a
-    // directory that is no longer empty, which every one of them refuses.
-    // A measured Next.js turn still loaded the frameworks index and nextjs.md
-    // after the template landed, then rewrote next.config just to add the
-    // prefix line the host now writes. Both loads exist to answer Scaffold and
-    // assetPrefix; neither is a question once the template is applied.
-    'A templateApplied in the ensure_project_scaffold result means that framework\'s scaffolder has already been run for you and its files are in place. Skip the rest of this step and go to step 3 — do not run a scaffold command, and do not re-create files that are already there. Do not load makers-frameworks just to read the Scaffold command or the asset-prefix snippet: both are already done, and the prefix option is already in the framework config. Load it only for an adapter location, a 404 convention, or an unsupported-feature rule you are about to use. Load makers-storage, makers-agents, or makers-cloud-functions only when the request actually needs those.',
-    `2. When the request names a framework and no template was applied, the reference loaded in step 1 gives its scaffold command under Scaffold. Copy that command exactly and run it once through commands with cwd=${appDir}, into the current directory. Do not compose one from memory and do not drop or add a flag — the flags documented there are what keep it non-interactive, and a scaffolder that stops to ask a question in a sandbox hangs the turn. ${appDir} is empty here, which those tools require, and a generous timeout is needed because it installs as it goes. This is the one case where a command may create project source files.`,
+    `The host has already prepared an empty project directory at ${appDir} and started the coding agent. The workspace has no files yet. Work through these steps in order.`,
+    '1. Load the references this request needs with load_makers_skill and follow them for layout, routing, handler signatures, configuration files, and storage. Prefer static HTML/CSS/JS or Vite static output for ordinary UI. Do not put styles, scripts, and markup into one large index.html unless the user explicitly asks for a single-file page. load_makers_skill is the first tool of a new project — do not write files or run commands before the required references are loaded.',
+    `2. When the request names a framework, the reference loaded in step 1 gives its scaffold command under Scaffold. Copy that command exactly and run it once through commands with cwd=${appDir}, into the current directory. Do not compose one from memory and do not drop or add a flag — the flags documented there are what keep it non-interactive, and a scaffolder that stops to ask a question in a sandbox hangs the turn. ${appDir} is empty here, which those tools require, and a generous timeout is needed because it installs as it goes. This is the one case where a command may create project source files.`,
     'A framework whose reference lists no scaffold command has none worth running: write its files yourself from the values that document gives. If the scaffolder prompts, hangs, or fails, that is one attempt and it is over: write the files yourself and let the build report what is wrong. Do not try a second scaffolder, a different package name, or a flag variation.',
-    // Sourcing the command from the references must not read as an allowlist of
-    // framework names. What the platform bounds is the output shape, not the
-    // name: it runs any build and uploads any output directory, so static is
-    // unbounded, while a server bundle needs an adapter that exists.
     'A framework the references do not cover is still one this platform builds, so never decline a request for not finding it listed. Derive what it needs the way makers-frameworks describes — an adapter only if it emits a server bundle, its build command and output directory declared in edgeone.json, its own asset-prefix option — then build it and report what happened.',
-    // The tool's own mechanics — one file per call, paths relative to appDir,
-    // one call per message — are stated once in the tool contracts above. What
-    // belongs here is only the order, which is what this workflow decides.
     '3. After the required references are loaded, write the project with write_project_file, one complete file per call and in dependency order. When a scaffolder ran, keep what it produced and use these calls to adapt it — the platform declarations and the entry route — rather than rewriting files it already got right. If agents/chat.ts is already in the workspace, edit that file; do not also write agents/chat/index.ts — both mount POST /chat. Otherwise write configuration and dependencies first, then styles and small modules, then the entry HTML, then any platform function or agent directories. Dependencies come before agent code specifically: the platform declarations an agent project needs are derived from the packages it declares, so a dependency file that arrives later cannot inform them.',
-    // "a scaffolder has not already installed them" asked the wrong question.
-    // A workspace can arrive with its dependencies installed by something that
-    // is not a scaffolder, and then this rule reads as permission to install
-    // over a tree that is already there — which is how a turn spent four
-    // minutes filling the disk, breaking the tree it had, and ending with
-    // nothing runnable. ensure_project_scaffold now answers the right question.
-    `4. Install dependencies inside ${appDir} only when the project has a package.json with dependencies and ensure_project_scaffold reported dependenciesInstalled=false (cd ${appDir} && npm install by default; Python packages are declared in the project's requirements file and installed by the platform). Do not invent nested ${appDir}/${appDir} paths.`,
+    `4. The host starts npm install in the background the moment package.json is written. When you run npm install yourself, that command waits for the background install and reports its result — it does not install twice. Run npm install inside ${appDir} only when the project has a package.json with dependencies that are not yet on disk (cd ${appDir} && npm install by default; Python packages are declared in the project's requirements file and installed by the platform). Do not invent nested ${appDir}/${appDir} paths.`,
     'Take every dependency name and version range from the reference you loaded for that framework, and copy its dependency block as written. Versions recalled from memory are the usual cause of peer-dependency conflicts and engine mismatches, and each one costs a rewrite plus a reinstall. If a reference pins a version or caps a range, keep the pin instead of widening it to latest.',
     '5. Check gateway credentials as the preview section requires, then stop. The host starts the sandbox preview. Do not curl/fetch/code_interpreter the public URL and do not start a preview server.',
   ];
 }
 
-const EXISTING_PROJECT_WORKFLOW = [
-  'When ensure_project_scaffold returns created=false, load only the specific Makers references required by the change with load_makers_skill, inspect only the project files directly related to the request, then make the smallest complete change needed.',
-  'For bug reports, do not investigate platform internals, generated .edgeone files, running processes, ports, or external AI gateway behavior. Use at most one focused reproduction command before editing; after the edit, use at most one focused verification command, then check gateway credentials as the preview section requires. The host starts the sandbox preview.',
-];
+function buildExistingProjectWorkflow(appDir: string) {
+  return [
+    `When ${appDir} already contains project files, load only the specific Makers references required by the change with load_makers_skill, inspect only the project files directly related to the request, then make the smallest complete change needed.`,
+    'For bug reports, do not investigate platform internals, generated .edgeone files, running processes, ports, or external AI gateway behavior. Use at most one focused reproduction command before editing; after the edit, use at most one focused verification command, then check gateway credentials as the preview section requires. The host starts the sandbox preview.',
+  ];
+}
 
 const CODE_QUALITY = [
   // Three deliverable classes, not two: an AI agent endpoint is what most of
@@ -288,9 +253,7 @@ const CODE_QUALITY = [
   'If you generate a package.json, include scripts.build. For a static HTML/CSS/JS site use "scripts": { "build": "echo skip" }. Vite/Next must use their real build script.',
   // The config file's extension used to be pinned to .js/.mjs here, and that
   // cost a delete and a rewrite on every Next.js project: create-next-app
-  // writes next.config.ts, so the baked template ships one, and the rule sent
-  // the model to replace a typed config it had just been given with one
-  // recalled from memory. Nothing needed it — Next has read a TypeScript config
+  // writes next.config.ts. Nothing needed it — Next has read a TypeScript config
   // since 15, and this repo deploys to the same platform with one.
   `If you generate a Next.js project, use the App Router and do not set basePath to ${PREVIEW_PATH_PREFIX}.`,
   `If you generate a Vite React project, install @vitejs/plugin-react and configure plugins: [react()]. Set base from process.env.${PREVIEW_ASSET_PREFIX_ENV} as described above, never to a literal.`,
@@ -299,18 +262,9 @@ const CODE_QUALITY = [
 
 function buildNarration(appDir: string) {
   return [
-    'If the user request requires creating or modifying a project, first respond with one brief natural-language sentence that you are starting, then call ensure_project_scaffold as the first tool to prepare the workspace. Do not call any other tool before ensure_project_scaffold — including Skill, load_makers_skill, files_list, files_make_dir, files_write, commands, or write_project_file.',
-    // The whole saving rides on this argument arriving in the first call. It is
-    // the only point at which the host can still put the files down and start
-    // the install before the model spends a turn on anything else, and the name
-    // is in the user's message — nothing has to be loaded to know it.
-    'Pass framework to that call whenever the request names one, in whatever spelling the user used. Omit it for a plain HTML/CSS/JS page and when no framework was named — it is what the workspace is prepared from, not a decision to make on the user\'s behalf.',
-    `Before calling ensure_project_scaffold, do not read, write, or execute anything under ${appDir}.`,
-    'That first sentence must be concise, user-visible progress narration, not a plan. Use the user language when obvious. Example: 我先准备项目环境，然后开始实现。 / I will prepare the workspace first, then start building.',
+    `The host has already prepared an empty workspace at ${appDir} and started the coding agent. If the user request requires creating or modifying a project, first respond with one brief natural-language sentence that you are starting, then call load_makers_skill as the first tool. Do not call write_project_file, files_write, files_list, files_make_dir, or commands before the references this request needs are loaded.`,
+    'That first sentence must be concise, user-visible progress narration, not a plan. Use the user language when obvious. Example: 我先查一下这个框架的官方用法，然后开始实现。 / I will look up the framework guide first, then start building.',
     'Keep narrating as you work: before each tool call or parallel group of tool calls, write one short sentence saying what you are about to do and, when you just read an error, what you think is wrong. This narration is shown to the user, so always write it in the user language, never as internal English notes, raw logs, status codes, or command lines. Example: 我先修好前端请求地址，再刷新预览。 One sentence per step — do not restate the plan or repeat what you already said.',
-    // The user is here for EdgeOne; Makers, its CLI and its reference documents are
-    // machinery they never asked about, and a sentence that names them reads as the
-    // agent talking about itself instead of about their project.
     'Narration and the final reply are product copy. Never write the words Makers, load_makers_skill, or a makers-* document id in them, and never name your own tools, the sandbox, or the CLI. Say what the work is about instead: 我先查一下持久化存储的官方用法。 not 我先加载 makers-storage 技能。, and 预览已经启动。 not 我运行了 edgeone makers dev。 When the platform itself has to be named, call it EdgeOne.',
   ];
 }
@@ -369,13 +323,13 @@ export function buildPrompt(
     section('Sandbox: browser calls and visitor context', buildSandboxDataPlane()),
     section('Tool contracts', buildToolContracts(state.appDir)),
     section('Workflow: a new project', buildNewProjectWorkflow(state.appDir), true),
-    section('Workflow: an existing project', EXISTING_PROJECT_WORKFLOW),
+    section('Workflow: an existing project', buildExistingProjectWorkflow(state.appDir)),
     section('Code quality', CODE_QUALITY),
     section('Narration', buildNarration(state.appDir)),
     section('Final reply', FINAL_REPLY),
     isNewProject
-      ? 'The project workspace may not have been prepared yet.'
-      : 'This conversation has already prepared a project workspace.',
+      ? 'The project workspace is empty and ready for you to write files.'
+      : 'This conversation already has a project workspace with files in it.',
   ].join('\n\n');
 }
 

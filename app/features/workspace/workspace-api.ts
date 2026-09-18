@@ -1,10 +1,11 @@
+import type { Locale } from '@/app/i18n';
+import type { ModelOption } from '../../../shared/models';
 import type {
   PersistedActivityTurn,
   ResumeData,
+  SessionPrepMode,
   WorkspaceSnapshot,
 } from '../../../shared/protocol';
-import type { ModelOption } from '../../../shared/models';
-import type { Locale } from '@/app/i18n';
 
 function conversationHeaders(conversationId: string): HeadersInit {
   return {
@@ -18,8 +19,21 @@ async function readJson<T>(response: Response): Promise<T | null> {
   return response.json().catch(() => null) as Promise<T | null>;
 }
 
-export function openSessionStream(conversationId: string, signal?: AbortSignal) {
-  return fetch('/session', {
+export function openSessionStream(
+  conversationId: string,
+  signal?: AbortSignal,
+  options: {
+    model?: string;
+    language?: Locale;
+    mode?: SessionPrepMode;
+  } = {},
+) {
+  const params = new URLSearchParams();
+  if (options.model) params.set('model', options.model);
+  if (options.language) params.set('language', options.language);
+  if (options.mode) params.set('mode', options.mode);
+  const query = params.toString();
+  return fetch(`/session${query ? `?${query}` : ''}`, {
     method: 'GET',
     headers: conversationHeaders(conversationId),
     signal,

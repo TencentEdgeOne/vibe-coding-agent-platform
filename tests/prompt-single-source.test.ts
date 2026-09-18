@@ -215,7 +215,7 @@ test('the prompt keeps the sandbox corrections the skills cannot know about', ()
 test('the prompt keeps its tool contracts and workspace boundary', () => {
   const prompt = renderPrompt();
   assert.ok(prompt.includes(state.appDir), 'prompt must name the writable project directory');
-  assert.match(prompt, /ensure_project_scaffold as the first tool/);
+  assert.match(prompt, /load_makers_skill as the first tool/);
   assert.match(prompt, /write_project_file accepts exactly one file per call/);
   assert.match(prompt, /The host starts the sandbox preview/);
   assert.match(prompt, /Run edgeone makers deploy only when the user explicitly asks/);
@@ -224,8 +224,8 @@ test('the prompt keeps its tool contracts and workspace boundary', () => {
 });
 
 test('the prompt reflects whether the workspace already exists', () => {
-  assert.match(renderPrompt(true), /workspace may not have been prepared yet/);
-  assert.match(renderPrompt(false), /already prepared a project workspace/);
+  assert.match(renderPrompt(true), /workspace is empty and ready for you to write files/);
+  assert.match(renderPrompt(false), /already has a project workspace with files in it/);
 });
 
 test('the system prompt is the same on every turn of a conversation', () => {
@@ -395,23 +395,15 @@ test('the official scaffolder replaces the search for an official template', () 
 // survive that: the one that gets the framework name into the first tool call,
 // which is the only moment the host can still act on it, and the one that stops
 // the run putting a scaffolder into a directory no longer empty enough for it.
-test('a workspace prepared from a template is not scaffolded a second time', () => {
+test('the host already prepared an empty workspace, so the first tool is a reference load', () => {
   const prompt = renderPrompt();
 
-  assert.match(prompt, /Pass framework to that call whenever the request names one/);
-  assert.match(prompt, /Omit it for a plain HTML\/CSS\/JS page/);
-  assert.match(prompt, /A templateApplied in the ensure_project_scaffold result/);
-  assert.match(prompt, /Skip the rest of this step and go to step 3/);
-  // The step it exempts still has to read as conditional, or the two contradict.
-  assert.match(prompt, /When the request names a framework and no template was applied/);
-  // Scaffold and assetPrefix are why the frameworks skill was loaded after a
-  // template landed. Both are already done, so the load has to be optional.
-  assert.match(prompt, /[Dd]o not load makers-frameworks just to read the Scaffold command/);
-  assert.match(prompt, /the prefix option is already in the framework config/);
-  assert.match(prompt, /Load makers-storage, makers-agents, or makers-cloud-functions only when/);
-  // And naming a framework here would put the choice of template in the prompt
-  // rather than in the manifest, which is the drift this file exists to catch.
-  assert.doesNotMatch(prompt, /templateApplied[^.]*(?:Next|Vite|Nuxt|Astro)/);
+  assert.match(prompt, /host has already prepared an empty project directory/);
+  assert.match(prompt, /The workspace has no files yet/);
+  assert.match(prompt, /load_makers_skill is the first tool of a new project/);
+  assert.doesNotMatch(prompt, /ensure_project_scaffold/);
+  assert.doesNotMatch(prompt, /templateApplied/);
+  assert.match(prompt, /When the request names a framework, the reference loaded in step 1 gives its scaffold command under Scaffold/);
 });
 
 // The failure mode of sourcing the command from the references: read as a list

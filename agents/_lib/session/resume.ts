@@ -23,8 +23,14 @@ import { createSSEResponse, sseEvent } from '../runtime/sse.ts';
 import { mergeSseGenerators } from '../runtime/merge.ts';
 import { isMakersDeployUrl } from '../../../shared/makers-url.ts';
 import { isMakersDeployCommand, isMakersDevCommand } from '../makers/tool-phase.ts';
-import { resolveConversationId } from '../runtime/request.ts';
+import { resolveConversationId, getRequestQueryParam } from '../runtime/request.ts';
 import { ensureProjectDependencies, withTimeout } from '../turn/checkpoint.ts';
+import {
+  iterateConversationPrep,
+  iterateSandboxAndAgentPrep,
+  resolveSessionPrepMode,
+  sessionPrepSse,
+} from './prepare.ts';
 
 function isMakersPreviewState(state: ProjectState) {
   return state.previewKind === 'makers' || isMakersDeployUrl(state.previewUrl);
@@ -32,14 +38,13 @@ function isMakersPreviewState(state: ProjectState) {
 
 function toolNameImpliesProject(name: string) {
   return name.includes('write_project_file')
-    || name.includes('ensure_project_scaffold')
     || name.includes('write_files')
     || /__files_write$/.test(name);
 }
 
 function activityIsMakersCli(activity: PersistedActivity) {
   if (activity.kind !== 'tool' || !activity.name.includes('commands')) return false;
-  const command = activity.command || activity.inputSummary || '';
+  const command = activity.inputSummary || '';
   return isMakersDevCommand(command) || isMakersDeployCommand(command);
 }
 
@@ -337,8 +342,10 @@ export async function runProjectResumePreviewPipeline(context: AgentContext): Pr
 async function* iterateWorkspaceResumeEvents(
   context: AgentContext,
   conversationId: string,
+  mode: ReturnType<typeof resolveSessionPrepMode>,
   signal?: AbortSignal,
 ): AsyncGenerator<string> {
+  yield sessionPrepSse(mode, 'workspace', 'running');
   try {
     const workspace = await withTimeout(
       runWorkspaceRestoreBody(context, conversationId),
@@ -347,6 +354,10 @@ async function* iterateWorkspaceResumeEvents(
     );
     if (signal?.aborted) return;
     yield sseEvent({ type: 'resume_workspace', data: workspace });
+    yield sessionPrepSse(mode, 'workspace', 'done');
+    if (workspace.preview && 'url' in workspace.preview && workspace.preview.url) {
+      yield sessionPrepSse(mode, 'preview', 'done');
+    }
 
     const fileItems = workspace.files?.items || [];
     const paths = fileItems.filter((item) => item.type === 'file').map((item) => item.path);
@@ -357,6 +368,7 @@ async function* iterateWorkspaceResumeEvents(
     const message = error instanceof Error ? error.message : 'Workspace resume failed.';
     console.warn('[resume:stream]', message);
     if (!signal?.aborted) {
+      yield sessionPrepSse(mode, 'workspace', 'failed');
       yield sseEvent({
         type: 'resume_workspace',
         data: {
@@ -378,24 +390,54 @@ export async function createProjectResumeStreamResponse(context: AgentContext): 
     return jsonResponse({ ok: false, error: 'missing conversation_id' }, 400);
   }
 
+  const mode = resolveSessionPrepMode(context);
+  const model = getRequestQueryParam(context, 'model').value;
+  const language = getRequestQueryParam(context, 'language').value;
+
   return createSSEResponse(async function* (signal) {
+    yield* iterateConversationPrep(context, conversationId, {
+      mode,
+      model,
+      language,
+      signal,
+    });
+    if (signal?.aborted) return;
+
+    if (mode === 'create') {
+      yield* iterateSandboxAndAgentPrep(context, conversationId, {
+        mode,
+        isNewProject: true,
+        model,
+        signal,
+      });
+      if (!signal?.aborted) yield sessionPrepSse(mode, 'ready', 'done');
+      return;
+    }
+
     const history = await loadProjectResumeHistory(context, conversationId);
     yield sseEvent({ type: 'resume_history', data: history });
-
     if (signal?.aborted) return;
 
     const storedTask = await getChatTask(context, conversationId);
     const liveTask = isChatTaskActive(storedTask) && hasLiveChatTask(conversationId, storedTask.id)
       ? storedTask
       : null;
-    const generators: Array<AsyncGenerator<string>> = [];
+    const generators: Array<AsyncGenerator<string>> = [
+      iterateSandboxAndAgentPrep(context, conversationId, {
+        mode,
+        isNewProject: !history.hasProject,
+        model: model || history.model,
+        signal,
+      }),
+    ];
     if (history.needsWorkspace) {
-      generators.push(iterateWorkspaceResumeEvents(context, conversationId, signal));
+      generators.push(iterateWorkspaceResumeEvents(context, conversationId, mode, signal));
     }
-    if (liveTask) {
-      generators.push(iterateLiveChatTaskEvents(context, conversationId, liveTask, undefined, signal));
-    }
-    if (generators.length === 0) return;
     yield* mergeSseGenerators(generators, signal);
+    if (!signal?.aborted) yield sessionPrepSse(mode, 'ready', 'done');
+
+    if (liveTask && !signal?.aborted) {
+      yield* iterateLiveChatTaskEvents(context, conversationId, liveTask, undefined, signal);
+    }
   }, context?.request?.signal);
 }

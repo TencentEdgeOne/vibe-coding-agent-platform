@@ -13,7 +13,6 @@ import {
 import type {
   AgentProgressEvent,
   DeploymentInfo,
-  ScaffoldLog,
   StreamSend,
 } from '../types.ts';
 import { toAppRelPath } from '../utils/paths.ts';
@@ -111,8 +110,7 @@ export async function runChatPipeline(
       send,
     );
   }
-  const isInitialProjectTurn = !state.created;
-  const hiddenScaffoldToolUseIds = new Set<string>();
+  const hiddenToolUseIds = new Set<string>();
   const activityTurnId = options.turnId
     || String(context?.run_id || `${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
@@ -130,18 +128,15 @@ export async function runChatPipeline(
   const recordProgress = turn.recordProgress;
   const finalizeTurn = turn.finalize;
 
-  const handleScaffoldLog = (_log: ScaffoldLog) => {};
   const forwardProgress = (event: AgentProgressEvent) => {
     if (event.type === 'tool_use') {
       const name = event.data?.name || '';
-      const hideScaffold = !isInitialProjectTurn
-        && (name === 'ensure_project_scaffold' || name.endsWith('__ensure_project_scaffold'));
-      if (hideScaffold || isRequestGatewayCredentialsTool(name)) {
-        hiddenScaffoldToolUseIds.add(event.data?.id || '');
+      if (isRequestGatewayCredentialsTool(name)) {
+        hiddenToolUseIds.add(event.data?.id || '');
         return;
       }
     }
-    if (event.type === 'tool_result' && hiddenScaffoldToolUseIds.has(event.data?.id || '')) {
+    if (event.type === 'tool_result' && hiddenToolUseIds.has(event.data?.id || '')) {
       return;
     }
     if (event.type === 'text_segment') {
@@ -238,14 +233,10 @@ export async function runChatPipeline(
     userMessage: message,
     state,
     isNewProject: !state.created,
-    onScaffoldLog: handleScaffoldLog,
     onProgress: forwardProgress,
     onProjectFilesChanged: handleProjectFilesChanged,
     onPreviewReady: handlePreviewReady,
     onDeploymentStatus: handleDeploymentStatus,
-    onWorkspaceReady: () => {
-      void startHostPreview('[preview] after scaffold:');
-    },
     abortSignal,
     model: options.model,
     send,
@@ -404,7 +395,6 @@ export async function runChatPipeline(
       state,
       assistantReply,
       build,
-      onScaffoldLog: handleScaffoldLog,
       onProgress: forwardProgress,
       onProjectFilesChanged: handleProjectFilesChanged,
       onPreviewReady: handlePreviewReady,

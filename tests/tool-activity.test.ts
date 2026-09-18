@@ -23,6 +23,15 @@ test('direct Makers CLI dev and deploy commands have distinct actions', () => {
   assert.equal(dev.action, 'Create preview');
 });
 
+test('environment prep rows keep the stage as the target', () => {
+  const presentation = presentToolActivity({
+    name: 'environment',
+    inputSummary: '正在启动沙箱…',
+  });
+  assert.equal(presentation.action, 'Environment Preparing');
+  assert.equal(presentation.target, '正在启动沙箱…');
+});
+
 test('npm run build is a run command', () => {
   const build = presentToolActivity({
     name: 'mcp__edgeone-sandbox__commands',

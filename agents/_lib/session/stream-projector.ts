@@ -1,5 +1,4 @@
 import type { SDKMessage, SDKResultMessage } from '@anthropic-ai/claude-agent-sdk';
-import { SANDBOX_MCP_SERVER_NAME } from '../constants.ts';
 import type { AgentProgressEvent } from '../types.ts';
 import type { SystemInfoType } from '../../../shared/protocol.ts';
 import {
@@ -285,7 +284,6 @@ export function inferToolProgress(name: string, input: unknown): {
   fileCount?: number;
 } {
   const toolName = shortenToolName(name);
-  if (toolName === 'ensure_project_scaffold') return { phaseHint: 'scaffold' };
   if (toolName === 'files_write' || toolName === 'write_files' || toolName === 'files_make_dir' || toolName === 'files_remove') {
     return { phaseHint: 'code' };
   }
@@ -297,8 +295,6 @@ export function inferToolProgress(name: string, input: unknown): {
   }
   return {};
 }
-
-export const SCAFFOLD_TOOL_NAME = `mcp__${SANDBOX_MCP_SERVER_NAME}__ensure_project_scaffold`;
 
 export function createProgressEmitter(options: {
   appDir: string;

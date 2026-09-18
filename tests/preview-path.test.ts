@@ -547,7 +547,7 @@ test('the host starts dest with the workspace and keeps it watching files', asyn
 
   assert.match(chat, /const startHostPreview = async/);
   assert.match(chat, /if \(state\.created\) \{\s*\n\s*void startHostPreview\('\[preview\] workspace ready:'\)/);
-  assert.match(chat, /onWorkspaceReady: \(\) => \{\s*\n\s*void startHostPreview\('\[preview\] after scaffold:'\)/);
+  assert.doesNotMatch(chat, /onWorkspaceReady/);
   assert.match(chat, /state\.created && !state\.previewUrl/);
   assert.match(chat, /await persistWorkspace\(context, conversationId, state\)/);
   assert.match(chat, /let previewVerified = Boolean\(state\.previewUrl\)/);
@@ -557,7 +557,7 @@ test('the host starts dest with the workspace and keeps it watching files', asyn
     /previewTouched && Boolean\(state\.previewUrl\)/,
     'host preview must not wait for the model to have launched dest',
   );
-  assert.match(assemble, /onWorkspaceReady\?\.\(\)/);
+  assert.doesNotMatch(assemble, /onWorkspaceReady/);
   assert.match(resume, /const shouldStartPreview = !generationActive && hasFileItems/);
   assert.doesNotMatch(resume, /&& hadPreview/);
   assert.match(preview, /revision === undefined \|\| nextPreview\.restarted/);

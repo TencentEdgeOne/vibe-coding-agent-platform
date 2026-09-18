@@ -8,7 +8,6 @@
     "build": "next build --turbopack",
     "start": "next start",
     "sync:skills": "node scripts/sync-skills.mjs",
-    "bake:templates": "node scripts/bake-templates.mjs",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.agents.json"
   },

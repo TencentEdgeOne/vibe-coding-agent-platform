@@ -13,6 +13,7 @@ import type {
   ChatMessage,
   ChatStreamEvent,
   ResumeData,
+  SessionPrepStage,
   SessionStreamEvent,
 } from '@/app/types/workspace';
 import { consumeEventStream } from '../sse';
@@ -46,6 +47,7 @@ export function useSessionResume(options: {
 
   const [resumeChecked, setResumeChecked] = useState(true);
   const [workspaceRestoring, setWorkspaceRestoring] = useState(false);
+  const [prepStage, setPrepStage] = useState<SessionPrepStage | null>(null);
   const resumeAbortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -194,7 +196,9 @@ export function useSessionResume(options: {
         } | null,
       };
       try {
-        const response = await openSessionStream(existing, resumeController.signal);
+        const response = await openSessionStream(existing, resumeController.signal, {
+          mode: 'restore',
+        });
         const contentType = response.headers.get('content-type') || '';
         if (!response.ok || !response.body || !contentType.includes('text/event-stream')) {
           return;
@@ -202,6 +206,11 @@ export function useSessionResume(options: {
 
         await consumeEventStream<SessionStreamEvent>(response, (event) => {
           if (cancelled || workspaceEpoch !== workspaceEpochRef.current || event.type === 'ping') return;
+
+          if (event.type === 'session_prep' && event.data?.stage) {
+            setPrepStage(event.data.stage);
+            return;
+          }
 
           if (event.type === 'resume_history' && event.data?.ok) {
             const historyData = event.data;
@@ -244,6 +253,7 @@ export function useSessionResume(options: {
       } finally {
         if (!cancelled) {
           setResumeChecked(true);
+          setPrepStage(null);
           if (workspaceEpoch === workspaceEpochRef.current) {
             setWorkspaceRestoring(false);
             liveAttach.session?.finish();
@@ -267,6 +277,7 @@ export function useSessionResume(options: {
     setResumeChecked,
     workspaceRestoring,
     setWorkspaceRestoring,
+    prepStage,
     resumeAbortControllerRef,
   };
 }
