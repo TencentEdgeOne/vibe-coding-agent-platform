@@ -1,6 +1,6 @@
 /* ============================================================
    Workspace — the split canvas: chat column on the left, the
-   preview/code result panel on the right.
+   preview/code/session result panel on the right.
 
    These rules are intentionally unlayered. Tailwind v4 emits its
    utilities inside @layer utilities, and unlayered CSS outranks
@@ -10,6 +10,7 @@
 
 .workspace-shell {
   display: flex;
+  position: relative;
   width: 100%;
   min-width: 0;
   min-height: 0;
@@ -98,6 +99,7 @@
 }
 
 .workspace-topbar-tabs,
+.workspace-topbar-tablist,
 .workspace-topbar-center,
 .workspace-topbar-actions,
 .workspace-tabs {
@@ -108,8 +110,13 @@
 
 .workspace-topbar-tabs {
   flex-direction: row;
-  gap: 0;
+  gap: 8px;
   justify-self: start;
+}
+
+.workspace-topbar-tablist {
+  flex-direction: row;
+  gap: 0;
 }
 
 .workspace-topbar-center {
@@ -347,6 +354,16 @@
 .workspace-icon-button[data-tooltip]:focus-visible::after {
   opacity: 1;
   transform: translateY(0);
+}
+
+/* Stays on the canvas whether the result panel is open or not, so opening
+   preview/code/session is always a user action rather than a side effect of
+   the stream. */
+.workspace-panel-toggle {
+  position: absolute;
+  top: 7px;
+  right: 10px;
+  z-index: 15;
 }
 
 /* ---- Panel body -------------------------------------------------------- */

@@ -8,6 +8,8 @@ import {
   Copy,
   Download,
   Eye,
+  PanelRight,
+  PanelRightClose,
   Rocket,
 } from 'lucide-react';
 import { Button } from '@/app/components/ui/button';
@@ -49,7 +51,34 @@ import { fetchModelCatalog } from './workspace-api';
 import { useLiveTurn } from './hooks/use-live-turn';
 import { usePreviewSurface } from './hooks/use-preview-surface';
 import { useSessionResume } from './hooks/use-session-resume';
-import { useWorkspaceState } from './hooks/use-workspace-state';
+import { useWorkspaceState, type SandboxTab } from './hooks/use-workspace-state';
+
+function ResultPanelToggle({
+  open,
+  showLabel,
+  hideLabel,
+  onToggle,
+}: {
+  open: boolean;
+  showLabel: string;
+  hideLabel: string;
+  onToggle: () => void;
+}) {
+  const label = open ? hideLabel : showLabel;
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className="workspace-icon-button"
+      aria-expanded={open}
+      aria-controls="workspace-result-panel"
+      aria-label={label}
+      data-tooltip={label}
+    >
+      {open ? <PanelRightClose /> : <PanelRight />}
+    </button>
+  );
+}
 
 function PanelLoading() {
   return (
@@ -396,25 +425,44 @@ export function WorkspaceScreen() {
           }}
         />}
 
-        {workspace.resultPanelOpen && <div className="workspace-result-panel">
+        {hasWorkspace && !workspace.resultPanelOpen && (
+          <div className="workspace-panel-toggle">
+            <ResultPanelToggle
+              open={false}
+              showLabel={t.workspace.showPanel}
+              hideLabel={t.workspace.hidePanel}
+              onToggle={() => workspace.setResultPanelOpen(true)}
+            />
+          </div>
+        )}
+
+        {workspace.resultPanelOpen && <div id="workspace-result-panel" className="workspace-result-panel">
           <div className="workspace-topbar">
-            <Tabs
-              value={workspace.sandboxTab}
-              onValueChange={(value) => workspace.setSandboxTab(value as 'preview' | 'files')}
-              className="workspace-topbar-tabs"
-            >
-              <TabsList className="workspace-tabs">
-                <TabsTrigger value="preview" className="workspace-tab">
-                  <Eye />
-                  {t.workspace.preview}
-                </TabsTrigger>
-                <TabsTrigger value="files" className="workspace-tab">
-                  <Code2 />
-                  {t.workspace.code}
-                  {workspace.filesRefreshing && <span className="workspace-tab-refreshing">{t.files.refreshing}</span>}
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
+            <div className="workspace-topbar-tabs">
+              <ResultPanelToggle
+                open
+                showLabel={t.workspace.showPanel}
+                hideLabel={t.workspace.hidePanel}
+                onToggle={() => workspace.setResultPanelOpen(false)}
+              />
+              <Tabs
+                value={workspace.sandboxTab ?? ''}
+                onValueChange={(value) => workspace.setSandboxTab(value as SandboxTab)}
+                className="workspace-topbar-tablist"
+              >
+                <TabsList className="workspace-tabs">
+                  <TabsTrigger value="preview" className="workspace-tab">
+                    <Eye />
+                    {t.workspace.preview}
+                  </TabsTrigger>
+                  <TabsTrigger value="files" className="workspace-tab">
+                    <Code2 />
+                    {t.workspace.code}
+                    {workspace.filesRefreshing && <span className="workspace-tab-refreshing">{t.files.refreshing}</span>}
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </div>
 
             <div className="workspace-topbar-center">
               {workspace.sandboxTab === 'preview' && preview.shareablePreviewUrl && !preview.previewRefreshing && !preview.previewRefreshFailed && (
@@ -469,6 +517,11 @@ export function WorkspaceScreen() {
           </div>
 
           <div className="workspace-panel-content">
+            {!workspace.sandboxTab && (
+              <div className="workspace-empty-state">
+                <p>{t.workspace.choosePanel}</p>
+              </div>
+            )}
             <div className={`workspace-panel-pane ${workspace.sandboxTab === 'preview' ? '' : 'is-hidden'}`}>
               {preview.preview?.url ? (
                 <PreviewFrame

@@ -124,8 +124,6 @@ export function useLiveTurn(options: {
       openedFirstFile = true;
       pendingFirstFilePath = null;
       workspace.setFilesFocusPath(path);
-      workspace.setSandboxTab('files');
-      workspace.setResultPanelOpen(true);
     };
 
     const patchAssistant = (patch: Partial<ChatMessage>) => {
@@ -219,12 +217,9 @@ export function useLiveTurn(options: {
       }
       if (data.preview) {
         preview.activatePreview(data.preview, activatedPreviewRevisions);
-        workspace.setSandboxTab('preview');
-        workspace.setResultPanelOpen(true);
       }
       if (data.deployment) {
         workspace.setDeployment(data.deployment);
-        workspace.setResultPanelOpen(true);
       }
       if (data.download) {
         workspace.setDownload(data.download);
@@ -234,9 +229,6 @@ export function useLiveTurn(options: {
       }
       if (data.files) {
         workspace.setFileTree(data.files);
-        if (data.files.items.some((item) => item.type === 'file')) {
-          workspace.setResultPanelOpen(true);
-        }
       }
       if (data.gatewayNeeded) {
         workspace.setGatewayNeeded(true);
@@ -333,15 +325,12 @@ export function useLiveTurn(options: {
       if (event.type === 'deployment_status' && event.data) {
         sawProjectActivity = true;
         workspace.setDeployment(event.data);
-        workspace.setResultPanelOpen(true);
         return;
       }
       if (event.type === 'preview_ready' && event.data) {
         sawProjectActivity = true;
         if (event.data.preview) {
           preview.activatePreview(event.data.preview, activatedPreviewRevisions);
-          workspace.setSandboxTab('preview');
-          workspace.setResultPanelOpen(true);
         }
         if (event.data.download) {
           workspace.setDownload(event.data.download);

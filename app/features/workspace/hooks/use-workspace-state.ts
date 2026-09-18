@@ -13,12 +13,14 @@ import type {
 } from '@/app/types/workspace';
 import { fetchProjectArchive } from '../workspace-api';
 
+export type SandboxTab = 'preview' | 'files';
+
 export function useWorkspaceState() {
   const [deployment, setDeployment] = useState<DeploymentInfo | null>(null);
   const [download, setDownload] = useState<LinkInfo | null>(null);
   const [downloadBusy, setDownloadBusy] = useState(false);
   const [build, setBuild] = useState<BuildInfo | null>(null);
-  const [sandboxTab, setSandboxTab] = useState<'preview' | 'files'>('preview');
+  const [sandboxTab, setSandboxTab] = useState<SandboxTab | null>(null);
   const [fileTree, setFileTree] = useState<FileTree | null>(null);
   const [filesRefreshing, setFilesRefreshing] = useState(false);
   const [filesFocusPath, setFilesFocusPath] = useState<string | null>(null);
@@ -38,7 +40,7 @@ export function useWorkspaceState() {
     setDismissedDeployTurnId('');
     setGatewayNeeded(false);
     setGatewayBusy(false);
-    setSandboxTab('preview');
+    setSandboxTab(null);
   }, []);
 
   async function handleDownload(conversationId: string | null, failedMessage: string) {

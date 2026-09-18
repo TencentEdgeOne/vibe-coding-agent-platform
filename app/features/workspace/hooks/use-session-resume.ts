@@ -163,15 +163,10 @@ export function useSessionResume(options: {
       live.setMessages(nextMessages);
       workspace.setGatewayNeeded(Boolean(data.gatewayNeeded));
       workspace.setDeployment(data.deployment ?? null);
-      if (data.deployment) {
-        workspace.setResultPanelOpen(true);
-      }
       if (data.hasProject || data.needsWorkspace || activeTask) {
         if (data.hasProject || data.needsWorkspace) {
-          workspace.setSandboxTab(data.hasPreview ? 'preview' : 'files');
           setWorkspaceRestoring(true);
           workspace.setFilesRefreshing(true);
-          workspace.setResultPanelOpen(true);
         }
       }
       const liveTaskId = activeTask?.id
@@ -183,26 +178,16 @@ export function useSessionResume(options: {
 
     const applyWorkspace = (data: ResumeData) => {
       if (data.gatewayNeeded) workspace.setGatewayNeeded(true);
-      const hasFiles = Boolean(data.files?.items.some((item) => item.type === 'file'));
       if (data.files) {
         workspace.setFileTree(data.files);
-      }
-      if (hasFiles || data.preview?.url) {
-        workspace.setResultPanelOpen(true);
       }
       if (data.download?.url) {
         workspace.setDownload(data.download);
       }
       if (data.deployment) {
         workspace.setDeployment(data.deployment);
-        workspace.setResultPanelOpen(true);
       }
       preview.applyResumedPreview(data.preview);
-      if (data.preview?.url) {
-        workspace.setSandboxTab('preview');
-      } else if (hasFiles) {
-        workspace.setSandboxTab('files');
-      }
     };
 
     const resumeController = new AbortController();

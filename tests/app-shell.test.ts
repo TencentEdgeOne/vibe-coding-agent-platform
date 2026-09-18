@@ -163,3 +163,24 @@ test('the topbar overlays the preview from its own layer, and never through opac
   );
   assert.match(disabled, /:disabled svg,\s*\.workspace-icon-button:disabled \.workspace-icon-spinner \{\s*opacity: 0\.45/);
 });
+
+// Preview, code and session stay behind a control the user keeps on the
+// canvas. The stream used to open that column and pick a tab for them.
+test('the result panel only opens from its toggle, and never picks a tab by itself', async () => {
+  const [screen, live, resume, state] = await Promise.all([
+    readFile('app/features/workspace/workspace-screen.tsx', 'utf8'),
+    readFile('app/features/workspace/hooks/use-live-turn.ts', 'utf8'),
+    readFile('app/features/workspace/hooks/use-session-resume.ts', 'utf8'),
+    readFile('app/features/workspace/hooks/use-workspace-state.ts', 'utf8'),
+  ]);
+
+  assert.match(screen, /function ResultPanelToggle\(/);
+  assert.match(screen, /workspace\.setResultPanelOpen\(true\)/);
+  assert.match(screen, /workspace\.setResultPanelOpen\(false\)/);
+  assert.match(screen, /onValueChange=\{\(value\) => workspace\.setSandboxTab\(value as SandboxTab\)\}/);
+  assert.match(state, /useState<SandboxTab \| null>\(null\)/);
+  assert.doesNotMatch(live, /setResultPanelOpen\(/);
+  assert.doesNotMatch(live, /setSandboxTab\(/);
+  assert.doesNotMatch(resume, /setResultPanelOpen\(/);
+  assert.doesNotMatch(resume, /setSandboxTab\(/);
+});
