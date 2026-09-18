@@ -45,7 +45,7 @@ import { PreviewControls } from './components/preview-controls';
 import { PreviewFrame } from './components/preview-frame';
 import { SiteHeader } from './components/site-header';
 import { WorkspaceErrorBar } from './components/workspace-error-bar';
-import { fetchModelCatalog, setSessionModel } from './workspace-api';
+import { fetchModelCatalog } from './workspace-api';
 import { useLiveTurn } from './hooks/use-live-turn';
 import { usePreviewSurface } from './hooks/use-preview-surface';
 import { useSessionResume } from './hooks/use-session-resume';
@@ -247,11 +247,6 @@ export function WorkspaceScreen() {
     await live.sendMessage(live.input);
   }
 
-  function handleModelChange(next: string) {
-    setModel(next);
-    if (conversationId) void setSessionModel(conversationId, next);
-  }
-
   function handleDeployProject() {
     if (!canDeployProject) return;
     if (deployOfferTurnId) {
@@ -349,7 +344,7 @@ export function WorkspaceScreen() {
           loading={live.loading}
           models={models}
           model={model}
-          onModelChange={handleModelChange}
+          onModelChange={setModel}
           onInputChange={live.setInput}
           onSubmit={handleSubmit}
           onSend={() => void live.sendMessage(live.input)}
@@ -371,7 +366,7 @@ export function WorkspaceScreen() {
           compact
           models={models}
           model={model}
-          onModelChange={handleModelChange}
+          onModelChange={setModel}
           copy={conversationCopy}
           onInputChange={live.setInput}
           onSubmit={() => void live.sendMessage(live.input)}

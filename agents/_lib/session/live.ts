@@ -674,6 +674,7 @@ export async function runCodingAgent(options: RunCodingAgentOptions): Promise<Co
     return emptyCodingResult({ stopped: true });
   }
 
+  const model = (options.model || '').trim() || resolveConfiguredModel(options.context);
   let session = liveQueries.get(options.conversationId);
   if (!session) {
     const started = await startLiveQuery(options);
@@ -682,8 +683,8 @@ export async function runCodingAgent(options: RunCodingAgentOptions): Promise<Co
   } else {
     session.context = options.context;
     session.state = options.state;
-    if ((options.model || '').trim() && options.model !== session.model) {
-      await setLiveQueryModel(options.conversationId, options.model!.trim());
+    if (model !== session.model) {
+      await setLiveQueryModel(options.conversationId, model);
     }
   }
 

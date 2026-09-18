@@ -63,7 +63,6 @@ const AGENT_ROUTE_FILES = new Set([
   'agents/session.ts',
   'agents/prompt.ts',
   'agents/deploy.ts',
-  'agents/session-model.ts',
   'agents/preview.ts',
   'agents/stop.ts',
   'agents/file.ts',
@@ -110,6 +109,7 @@ test('retired session-truth modules stay gone', async () => {
     'agents/_lib/chat-tasks.ts',
     'agents/_lib/shared.ts',
     'agents/_lib/pipelines',
+    'agents/session-model.ts',
     'shared/makers-dev.ts',
     'shared/makers-deploy.ts',
     'shared/npm-install.ts',
@@ -133,7 +133,6 @@ test('session kernel and makers CLI live under agents/_lib', async () => {
     'shared/protocol.ts',
     'agents/prompt.ts',
     'agents/deploy.ts',
-    'agents/session-model.ts',
   ]) {
     await access(target);
   }

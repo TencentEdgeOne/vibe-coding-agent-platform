@@ -2,7 +2,6 @@ import { runChatPipeline } from '../turn/chat.ts';
 import { runDeployPipeline } from '../turn/deploy.ts';
 import {
   getChatTask,
-  getModelPreference,
   saveChatTask,
   saveModelPreference,
 } from './store.ts';
@@ -200,14 +199,13 @@ async function createChatTask(
   }
 
   const requestedModel = (options.model || '').trim();
-  const model = requestedModel || await getModelPreference(context, conversationId);
   const siteDomain = (options.siteDomain || '').trim();
   const task: ChatTask = {
     id: taskId,
     message,
     ...(options.kind === 'deploy' ? { kind: 'deploy' as const } : { kind: 'prompt' as const }),
     ...(siteDomain ? { siteDomain } : {}),
-    ...(model ? { model } : {}),
+    ...(requestedModel ? { model: requestedModel } : {}),
     status: 'queued',
     createdAt: Date.now(),
   };

@@ -74,9 +74,12 @@ export function useLiveTurn(options: {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const messagesRef = useRef<ChatMessage[]>([]);
+  const modelRef = useRef(model);
   const chatAbortControllerRef = useRef<AbortController | null>(null);
   const activeTurnIdRef = useRef('');
   const stoppingRef = useRef(false);
+
+  modelRef.current = model;
 
   useEffect(() => {
     loadingRef.current = loading;
@@ -510,9 +513,9 @@ export function useLiveTurn(options: {
             conversationId: requestConversationId,
             message: displayMessage,
             turnId: assistantMessageId,
+            model: modelRef.current,
             ...(inboundApiKey ? { apiKey: inboundApiKey } : {}),
             ...(sendOptions.gatewaySkip ? { gatewaySkip: true } : {}),
-            ...(model ? { model } : {}),
             siteDomain: extractProjectName().domain,
             signal: requestAbortController.signal,
           });

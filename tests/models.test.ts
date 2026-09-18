@@ -213,3 +213,40 @@ test('the model picker keeps what the native select gave it for free', async () 
   assert.ok(guard > 0 && picker.lastIndexOf('useEffect(', guard) < guard);
   assert.equal(picker.slice(guard).includes('useEffect('), false);
 });
+
+// The picker is the user's choice for the next turn. Persisting it through a
+// dedicated /session-model route would write a preference before they asked
+// for anything; /prompt is when a model is actually needed, so that is where
+// the choice travels. Omitting it is valid: the runtime then uses the
+// deployment default rather than a previously stored preference.
+test('the composer model travels on /prompt, not a session-model route', async () => {
+  const [
+    screen,
+    client,
+    live,
+    prompt,
+    task,
+    agent,
+  ] = await Promise.all([
+    readFile('app/features/workspace/workspace-screen.tsx', 'utf8'),
+    readFile('app/features/workspace/workspace-api.ts', 'utf8'),
+    readFile('app/features/workspace/hooks/use-live-turn.ts', 'utf8'),
+    readFile('agents/prompt.ts', 'utf8'),
+    readFile('agents/_lib/session/task.ts', 'utf8'),
+    readFile('agents/_lib/session/live.ts', 'utf8'),
+  ]);
+
+  assert.match(screen, /onModelChange=\{setModel\}/);
+  assert.doesNotMatch(screen, /setSessionModel/);
+  assert.doesNotMatch(client, /\/session-model/);
+  assert.match(client, /\.\.\.\(options\.model \? \{ model: options\.model \} : \{\}\)/);
+  assert.match(live, /model: modelRef\.current/);
+  assert.match(prompt, /resolveRequestedModel\(context, body\?\.model\)/);
+  assert.doesNotMatch(task, /getModelPreference/);
+  assert.match(task, /requestedModel \? \{ model: requestedModel \}/);
+  assert.match(task, /saveModelPreference\(context, conversationId, requestedModel\)/);
+  assert.match(
+    agent,
+    /\(options\.model \|\| ''\)\.trim\(\) \|\| resolveConfiguredModel\(options\.context\)/,
+  );
+});

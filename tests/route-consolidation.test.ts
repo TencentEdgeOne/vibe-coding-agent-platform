@@ -20,7 +20,6 @@ test('session is GET restore; turns go through /prompt and /deploy', async () =>
   const session = await readFile('agents/session.ts', 'utf8');
   const prompt = await readFile('agents/prompt.ts', 'utf8');
   const deploy = await readFile('agents/deploy.ts', 'utf8');
-  const model = await readFile('agents/session-model.ts', 'utf8');
   const preview = await readFile('agents/preview.ts', 'utf8');
   const tasks = await readFile('agents/_lib/session/task.ts', 'utf8');
   const client = await readFile('app/features/workspace/workspace-api.ts', 'utf8');
@@ -32,14 +31,11 @@ test('session is GET restore; turns go through /prompt and /deploy', async () =>
   assert.match(prompt, /kind: 'prompt'/);
   assert.match(deploy, /onRequestPost/);
   assert.match(deploy, /kind: 'deploy'/);
-  assert.match(model, /onRequestPost/);
-  assert.match(model, /saveModelPreference/);
-  assert.match(model, /setLiveQueryModel/);
   assert.match(tasks, /export async function\* iterateLiveChatTaskEvents/);
   assert.match(client, /fetch\('\/session',[\s\S]*?method: 'GET'/);
   assert.match(client, /fetch\('\/prompt',[\s\S]*?method: 'POST'/);
   assert.match(client, /fetch\('\/deploy',[\s\S]*?method: 'POST'/);
-  assert.match(client, /fetch\('\/session-model',[\s\S]*?method: 'POST'/);
+  assert.doesNotMatch(client, /fetch\('\/session-model'/);
   assert.doesNotMatch(client, /fetch\('\/chat'/);
   assert.doesNotMatch(client, /fetch\('\/resume'/);
   assert.doesNotMatch(client, /intent:/);
@@ -50,6 +46,7 @@ test('session is GET restore; turns go through /prompt and /deploy', async () =>
   assert.match(client, /fetch\('\/preview',[\s\S]*?method: 'POST'/);
   await assert.rejects(access('agents/chat.ts'));
   await assert.rejects(access('agents/resume.ts'));
+  await assert.rejects(access('agents/session-model.ts'));
   await assert.rejects(access('agents/session/index.ts'));
 });
 

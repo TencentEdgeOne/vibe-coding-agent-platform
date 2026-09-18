@@ -99,14 +99,6 @@ export function startDeployTurn(options: {
   });
 }
 
-export function setSessionModel(conversationId: string, model: string) {
-  return fetch('/session-model', {
-    method: 'POST',
-    headers: conversationHeaders(conversationId),
-    body: JSON.stringify({ model }),
-  }).then((response) => readJson<{ ok?: boolean; model?: string }>(response));
-}
-
 export async function stopChatTask(
   conversationId: string,
   turn: PersistedActivityTurn,
