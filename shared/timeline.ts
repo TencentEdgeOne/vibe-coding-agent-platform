@@ -4,7 +4,12 @@
  * cannot disagree about a turn.
  */
 
-import type { AssistantActivity, ChatStreamEvent, PersistedActivityTurn } from './protocol.ts';
+import type {
+  ActivityStatus,
+  AssistantActivity,
+  ChatStreamEvent,
+  PersistedActivityTurn,
+} from './protocol.ts';
 import { WEB_SEARCH_TOOL_NAME } from './web-search.ts';
 
 export function sanitizeAssistantText(input: string): string {
@@ -301,11 +306,12 @@ export function appendNarrationChunk(
 export function appendThinkingChunk(
   activities: readonly AssistantActivity[],
   text: string,
+  at = Date.now(),
 ): AssistantActivity[] {
   const list = [...activities];
   const last = list.at(-1);
   if (last?.kind !== 'thinking') {
-    list.push({ kind: 'thinking', content: text });
+    list.push({ kind: 'thinking', content: text, startedAt: at });
     return list;
   }
   const trimmed = text.trim();
@@ -313,6 +319,19 @@ export function appendThinkingChunk(
     return list;
   }
   list[list.length - 1] = { ...last, content: `${last.content}${text}` };
+  return list;
+}
+
+/** A thought is over once the turn does something else, or the turn itself
+ *  lands. Without an end time the row cannot say how long the agent sat there. */
+export function sealOpenThinking(
+  activities: readonly AssistantActivity[],
+  endedAt = Date.now(),
+): AssistantActivity[] {
+  const last = activities.at(-1);
+  if (!last || last.kind !== 'thinking' || last.endedAt) return [...activities];
+  const list = [...activities];
+  list[list.length - 1] = { ...last, endedAt };
   return list;
 }
 
@@ -344,6 +363,11 @@ function shortToolName(name: string) {
   return name.replace(/^mcp__[^_]+__/, '').replaceAll('_', ' ');
 }
 
+function looksLikeJson(value: string) {
+  const trimmed = value.trim();
+  return trimmed.startsWith('{') || trimmed.startsWith('[');
+}
+
 function cleanSummaryTarget(summary = '') {
   const firstLine = summary.trim().split('\n')[0] || '';
   return firstLine
@@ -354,13 +378,28 @@ function cleanSummaryTarget(summary = '') {
 
 function readStructuredTarget(summary = '') {
   const trimmed = summary.trim();
-  if (!trimmed.startsWith('{')) return '';
+  if (!looksLikeJson(trimmed)) return '';
   try {
     const input = JSON.parse(trimmed) as Record<string, unknown>;
-    for (const key of ['path', 'file_path', 'pattern', 'glob', 'query', 'command', 'cmd', 'skill']) {
-      if (typeof input[key] === 'string') return cleanSummaryTarget(input[key]);
+    for (const key of [
+      'pattern',
+      'glob',
+      'glob_pattern',
+      'query',
+      'command',
+      'cmd',
+      'skill',
+      'path',
+      'file_path',
+      'directory',
+      'dir',
+    ]) {
+      if (typeof input[key] === 'string' && input[key].trim()) {
+        return cleanSummaryTarget(input[key]);
+      }
     }
   } catch {
+    // Still arriving — a lone `{` is not a path the agent touched.
     return '';
   }
   return '';
@@ -368,7 +407,7 @@ function readStructuredTarget(summary = '') {
 
 function readReferenceRequest(summary = '') {
   const trimmed = summary.trim();
-  if (!trimmed.startsWith('{')) {
+  if (!looksLikeJson(trimmed)) {
     return { skill: cleanSummaryTarget(trimmed), ref: '' };
   }
   try {
@@ -388,7 +427,12 @@ export function presentToolActivity(
 ): ToolPresentation {
   const name = shortToolName(activity.name).toLowerCase();
   const structuredTarget = readStructuredTarget(activity.inputSummary);
-  const target = structuredTarget || cleanSummaryTarget(activity.inputSummary);
+  // Pretty-printed JSON starts with `{`, which is not a file. Until the object
+  // parses, the row has no target rather than a brace.
+  const fallback = looksLikeJson(activity.inputSummary || '')
+    ? ''
+    : cleanSummaryTarget(activity.inputSummary);
+  const target = structuredTarget || fallback;
 
   if (name.includes('environment')) {
     return { action: 'Environment Preparing', target };
@@ -505,6 +549,8 @@ export type AssistantTimelineThinkingBlock = {
   kind: 'thinking';
   index: number;
   content: string;
+  startedAt?: number;
+  endedAt?: number;
 };
 
 export type AssistantTimelineInfoBlock = {
@@ -541,7 +587,13 @@ export function buildAssistantTimeline(activities: AssistantActivity[]): Assista
     }
     if (activity.kind === 'thinking') {
       if (!activity.content.trim()) continue;
-      blocks.push({ kind: 'thinking', index, content: activity.content });
+      blocks.push({
+        kind: 'thinking',
+        index,
+        content: activity.content,
+        startedAt: activity.startedAt,
+        endedAt: activity.endedAt,
+      });
       continue;
     }
     if (activity.kind === 'info') {
@@ -560,6 +612,89 @@ export function lastTimelineText(blocks: AssistantTimelineBlock[]) {
     if (block.kind === 'text') return block;
   }
   return undefined;
+}
+
+/** SDK status pings are the agent's plumbing, not a step the user asked about.
+ *  Classic keeps them; the reading view does not. */
+export function visibleRefinedBlocks(blocks: AssistantTimelineBlock[]): AssistantTimelineBlock[] {
+  return blocks.filter((block) => !(block.kind === 'info' && block.activity.infoType === 'status'));
+}
+
+export type AssistantTimelineGroupBlock = {
+  kind: 'group';
+  index: number;
+  blocks: AssistantTimelineToolBlock[];
+};
+
+export type GroupedTimelineBlock = AssistantTimelineBlock | AssistantTimelineGroupBlock;
+
+/** Below this a group saves no room, and hiding two rows behind one reads as a
+ *  step the agent is keeping from the reader. */
+const MIN_GROUP_SIZE = 3;
+
+function isFileTierTool(block: AssistantTimelineBlock): block is AssistantTimelineToolBlock {
+  if (block.kind !== 'tool') return false;
+  return toolActionTier(presentToolActivity(block.activity).action) === 'file';
+}
+
+/**
+ * Folds runs of routine file work into one row. Platform-tier steps — a deploy,
+ * a preview, a document the agent went and read — are the ones a user is
+ * waiting on, so they always keep a row of their own.
+ */
+export function groupTimelineBlocks(blocks: AssistantTimelineBlock[]): GroupedTimelineBlock[] {
+  const grouped: GroupedTimelineBlock[] = [];
+  let run: AssistantTimelineToolBlock[] = [];
+
+  const flushRun = () => {
+    if (run.length >= MIN_GROUP_SIZE) {
+      grouped.push({ kind: 'group', index: run[0].index, blocks: run });
+    } else {
+      grouped.push(...run);
+    }
+    run = [];
+  };
+
+  for (const block of blocks) {
+    if (isFileTierTool(block)) {
+      run.push(block);
+      continue;
+    }
+    flushRun();
+    grouped.push(block);
+  }
+  flushRun();
+
+  return grouped;
+}
+
+export type ToolGroupSummary = {
+  status: ActivityStatus;
+  action: ToolAction;
+  target?: string;
+  count: number;
+};
+
+/**
+ * What the collapsed group row says. It speaks for whatever still needs
+ * attention before it speaks for whatever merely finished, so a failure inside
+ * a folded run cannot hide behind the step that came after it.
+ */
+export function summarizeToolGroup(blocks: readonly AssistantTimelineToolBlock[]): ToolGroupSummary {
+  const activities = blocks.map((block) => block.activity);
+  const byUrgency = (status: ActivityStatus) => activities.find((activity) => activity.status === status);
+  const lead = byUrgency('running')
+    || byUrgency('failed')
+    || byUrgency('stopped')
+    || activities[activities.length - 1];
+  const presentation = presentToolActivity(lead);
+
+  return {
+    status: lead.status,
+    action: presentation.action,
+    target: presentation.target,
+    count: activities.length,
+  };
 }
 
 export function trailingTimelineContent(
@@ -584,7 +719,7 @@ export function applyStreamEvent(
   if (event.type === 'text_segment' && event.data?.text) {
     return {
       ...turn,
-      activities: appendNarrationChunk(turn.activities, event.data.text),
+      activities: appendNarrationChunk(sealOpenThinking(turn.activities), event.data.text),
     };
   }
   if (event.type === 'thinking_segment' && event.data?.text) {
@@ -597,7 +732,7 @@ export function applyStreamEvent(
     return {
       ...turn,
       activities: [
-        ...turn.activities,
+        ...sealOpenThinking(turn.activities),
         {
           kind: 'info',
           infoType: event.data.infoType || 'sdk',
@@ -624,7 +759,7 @@ export function applyStreamEvent(
     return {
       ...turn,
       activities: [
-        ...turn.activities,
+        ...sealOpenThinking(turn.activities),
         {
           kind: 'tool',
           toolUseId: event.data.id,

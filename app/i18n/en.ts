@@ -99,8 +99,19 @@ export const en = {
       framework: 'Framework setup',
     },
     referenceDetail: 'in depth',
+    // Stands for a run of routine file work folded into one row. {count} is the
+    // number of steps behind it.
+    activitySteps: '{count} steps',
+    // Development-only switch between the reading view and the raw projection
+    // the stream arrives as.
+    activityStyleLabel: 'Activity display',
+    activityStyleRefined: 'Refined',
+    activityStyleClassic: 'Raw',
     copyLink: 'Copy link',
     linkCopied: 'Copied',
+    copyMessage: 'Copy message',
+    messageCopied: 'Copied',
+    scrollToLatest: 'Jump to latest',
     deployRequest: 'Deploy this project to production',
     deployNeedsProject: 'Deploy becomes available once a project is generated',
     deployNeedsIdle: 'Deploy becomes available once the current task finishes',

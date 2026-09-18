@@ -58,6 +58,23 @@ test('files_make_dir is create folder, not a command', () => {
   assert.equal(mkdir.target, 'src/lib');
 });
 
+// Glob arrives as pretty-printed JSON. The first line of that dump is `{`,
+// which is not a path, and a pattern still streaming in is not a path yet.
+test('a glob names the pattern, not the brace the JSON opened with', () => {
+  const glob = presentToolActivity({
+    name: 'Glob',
+    inputSummary: JSON.stringify({ pattern: 'src/**/*.tsx', path: 'src' }, null, 2),
+  });
+  assert.equal(glob.action, 'Glob');
+  assert.equal(glob.target, 'src/**/*.tsx');
+
+  const pending = presentToolActivity({
+    name: 'Glob',
+    inputSummary: '{\n',
+  });
+  assert.equal(pending.target, '**/*');
+});
+
 // A document id is internal on two counts: it carries the platform tier, and it
 // names a file the user cannot open. The row says what the agent is reading up
 // on instead, and it must do so for an id nobody has mapped yet — falling back

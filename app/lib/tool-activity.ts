@@ -1,11 +1,13 @@
 export {
   REFERENCE_TOPICS,
   appendNarrationChunk,
+  appendThinkingChunk,
   dropTrailingSummaryEcho,
   isDeployProjectActivity,
   lastFinishedAssistant,
   presentToolActivity,
   resolveDeployOffer,
+  sealOpenThinking,
   toolActionTier,
   type DeployOfferMessage,
   type ReferenceTopic,

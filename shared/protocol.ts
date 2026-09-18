@@ -20,6 +20,8 @@ export type AssistantActivity =
   | {
       kind: 'thinking';
       content: string;
+      startedAt?: number;
+      endedAt?: number;
     }
   | {
       kind: 'info';

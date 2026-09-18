@@ -1,6 +1,7 @@
 import {
   applyStreamEvent,
   dropTrailingSummaryEcho,
+  sealOpenThinking,
 } from '../../../../../shared/timeline.ts';
 import type { PersistedActivityTurn } from '../../../../../shared/protocol.ts';
 import type {
@@ -49,10 +50,10 @@ export function finalizeAssistant(
       ? {
           ...item,
           content: finalContent,
-          activities: dropTrailingSummaryEcho(
+          activities: sealOpenThinking(dropTrailingSummaryEcho(
             item.activities ?? [],
             finalContent,
-          ).map((activity) =>
+          )).map((activity) =>
             activity.kind === 'tool' && activity.status === 'running'
               ? {
                   ...activity,

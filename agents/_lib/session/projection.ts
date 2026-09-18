@@ -4,6 +4,7 @@ import {
   appendThinkingChunk,
   sanitizeAssistantText,
   sanitizeThinkingContent,
+  sealOpenThinking,
   summarizeToolInput,
   summarizeToolOutput,
 } from '../../../shared/timeline.ts';
@@ -135,23 +136,33 @@ export function projectTranscript(jsonl: string, projectDir = ''): PersistedActi
               ? record.thinking
               : typeof record.text === 'string' ? record.text : '';
             if (thinking) {
-              turn.activities = appendThinkingChunk(turn.activities, sanitizeThinkingContent(thinking));
+              turn.activities = appendThinkingChunk(
+                turn.activities,
+                sanitizeThinkingContent(thinking),
+                createdAt,
+              );
             }
             continue;
           }
           if (record.type === 'redacted_thinking') {
-            turn.activities = appendThinkingChunk(turn.activities, '(redacted)');
+            turn.activities = appendThinkingChunk(turn.activities, '(redacted)', createdAt);
             continue;
           }
           if (record.type === 'text' && typeof record.text === 'string') {
             const narration = sanitizeAssistantText(record.text);
-            if (narration) turn.activities = appendNarrationChunk(turn.activities, narration);
+            if (narration) {
+              turn.activities = appendNarrationChunk(
+                sealOpenThinking(turn.activities, createdAt),
+                narration,
+              );
+            }
             continue;
           }
           if (record.type !== 'tool_use' && record.type !== 'mcp_tool_use') continue;
           const id = typeof record.id === 'string' ? record.id : '';
           const name = typeof record.name === 'string' ? record.name : 'tool';
           const command = commandFromInput(record.input);
+          turn.activities = sealOpenThinking(turn.activities, createdAt);
           turn.activities.push({
             kind: 'tool',
             toolUseId: id,
@@ -163,7 +174,7 @@ export function projectTranscript(jsonl: string, projectDir = ''): PersistedActi
           });
         }
       } else if (text) {
-        turn.activities = appendNarrationChunk(turn.activities, text);
+        turn.activities = appendNarrationChunk(sealOpenThinking(turn.activities, createdAt), text);
       }
     }
   }

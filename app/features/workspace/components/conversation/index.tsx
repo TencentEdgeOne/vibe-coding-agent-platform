@@ -1,10 +1,14 @@
 'use client';
 
-import { memo, useEffect, useMemo, useRef } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowDown } from 'lucide-react';
+import { SHOW_ACTIVITY_STYLE_TOGGLE, useActivityStyle } from '../../hooks/use-activity-style';
 import { AssistantTurn } from './assistant-turn';
 import { Composer } from './composer';
 import { DeployOffer } from './deploy-offer';
 import { GatewayPrompt } from './gateway-prompt';
+import { StyleToggle } from './style-toggle';
+import { UserTurn } from './user-turn';
 import type {
   ConversationCopy,
   ConversationMessage,
@@ -73,6 +77,8 @@ export const AgentConversation = memo(function AgentConversation({
 }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const followOutputRef = useRef(true);
+  const [following, setFollowing] = useState(true);
+  const { style, setStyle } = useActivityStyle();
   const signature = useMemo(() => {
     const last = messages[messages.length - 1];
     if (!last) return '0';
@@ -87,25 +93,51 @@ export const AgentConversation = memo(function AgentConversation({
     if (node && followOutputRef.current) node.scrollTop = node.scrollHeight;
   }, [signature]);
 
+  const scrollToLatest = useCallback(() => {
+    const node = scrollRef.current;
+    if (!node) return;
+    node.scrollTo({ top: node.scrollHeight, behavior: 'smooth' });
+    followOutputRef.current = true;
+    setFollowing(true);
+  }, []);
+
   return (
     <div className={`agent-conversation min-w-0 w-full overflow-hidden ${compact ? 'agent-conversation-compact' : ''}`}>
-      <div
-        ref={scrollRef}
-        className="conversation-scroll scroll-quiet"
-        onScroll={(event) => {
-          const node = event.currentTarget;
-          followOutputRef.current = node.scrollHeight - node.scrollTop - node.clientHeight < 72;
-        }}
-      >
-        <div className="conversation-stream">
-          {messages.map((message) => message.role === 'user' ? (
-            <section key={message.id} className="conversation-turn conversation-user-turn">
-              <div className="conversation-body whitespace-pre-wrap">{message.content}</div>
-            </section>
-          ) : (
-            <AssistantTurn key={message.id} message={message} copy={copy} />
-          ))}
+      {SHOW_ACTIVITY_STYLE_TOGGLE && (
+        <StyleToggle style={style} copy={copy} onStyleChange={setStyle} />
+      )}
+      {/* The button anchors to the bottom of the stream rather than to the
+          column, whose dock grows and shrinks with the offers above it. */}
+      <div className="conversation-viewport">
+        <div
+          ref={scrollRef}
+          className="conversation-scroll scroll-quiet"
+          onScroll={(event) => {
+            const node = event.currentTarget;
+            const nearBottom = node.scrollHeight - node.scrollTop - node.clientHeight < 72;
+            followOutputRef.current = nearBottom;
+            setFollowing((current) => (current === nearBottom ? current : nearBottom));
+          }}
+        >
+          <div className="conversation-stream">
+            {messages.map((message) => message.role === 'user' ? (
+              <UserTurn key={message.id} content={message.content} copy={copy} />
+            ) : (
+              <AssistantTurn key={message.id} message={message} style={style} copy={copy} />
+            ))}
+          </div>
         </div>
+        {!following && (
+          <button
+            type="button"
+            onClick={scrollToLatest}
+            className="conversation-scroll-latest"
+            aria-label={copy.scrollToLatest}
+          >
+            <ArrowDown aria-hidden="true" />
+            <span>{copy.scrollToLatest}</span>
+          </button>
+        )}
       </div>
       <div className="conversation-composer-dock">
         <GatewayPrompt

@@ -119,6 +119,17 @@ export const zh = {
     },
     /** Marks the row where the agent goes past the overview of a topic. */
     referenceDetail: '详细用法',
+    // Stands for a run of routine file work folded into one row. {count} is the
+    // number of steps behind it.
+    activitySteps: '{count} 步',
+    // Development-only switch between the reading view and the raw projection
+    // the stream arrives as.
+    activityStyleLabel: '活动显示',
+    activityStyleRefined: '精简',
+    activityStyleClassic: '原始',
+    copyMessage: '复制消息',
+    messageCopied: '已复制',
+    scrollToLatest: '回到最新',
     // An address the agent writes out in full — a live site, a preview — is
     // something the user takes elsewhere, so the reply offers to copy it.
     copyLink: '复制链接',
