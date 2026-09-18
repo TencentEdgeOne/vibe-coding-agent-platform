@@ -1,6 +1,8 @@
 /* ============================================================
    Workspace — the split canvas: chat column on the left, the
-   preview/code result panel on the right.
+   preview/code/session result panel on the right. The default
+   split is 3:7; a gutter between the columns updates
+   --workspace-chat-share.
 
    These rules are intentionally unlayered. Tailwind v4 emits its
    utilities inside @layer utilities, and unlayered CSS outranks
@@ -9,7 +11,9 @@
    ============================================================ */
 
 .workspace-shell {
+  --workspace-chat-share: 30%;
   display: flex;
+  position: relative;
   width: 100%;
   min-width: 0;
   min-height: 0;
@@ -19,16 +23,27 @@
 }
 
 .workspace-shell > .agent-conversation {
-  width: 400px;
-  min-width: 0;
+  width: auto;
+  min-width: 280px;
   min-height: 0;
-  flex: 0 0 400px;
+  flex: 0 0 var(--workspace-chat-share);
   overflow: hidden;
   border-right: 1px solid var(--n-150);
   background: var(--n-0);
-  transition:
-    flex-basis var(--t-slow) var(--ease),
-    width var(--t-slow) var(--ease);
+  transition: flex-basis var(--t-slow) var(--ease);
+}
+
+.workspace-shell.is-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.workspace-shell.is-resizing > .agent-conversation {
+  transition: none;
+}
+
+.workspace-shell.is-resizing iframe {
+  pointer-events: none;
 }
 
 .workspace-shell.is-chat-only > .agent-conversation {
@@ -41,14 +56,47 @@
 
 .workspace-result-panel {
   display: flex;
-  width: 100%;
-  min-width: 0;
+  width: auto;
+  min-width: 360px;
   min-height: 0;
-  flex: 1 1 auto;
+  flex: 1 1 0;
   flex-direction: column;
   overflow: hidden;
   background: var(--n-25);
   animation: workspace-panel-slide-in 420ms var(--ease) both;
+}
+
+.workspace-split-handle {
+  position: relative;
+  z-index: 16;
+  flex: 0 0 8px;
+  margin: 0 -4px;
+  cursor: col-resize;
+  touch-action: none;
+  background: transparent;
+  user-select: none;
+}
+
+.workspace-split-handle::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 2px;
+  border-radius: 1px;
+  background: transparent;
+  transition: background-color var(--t-fast) var(--ease);
+}
+
+.workspace-split-handle:hover::before,
+.workspace-split-handle:focus-visible::before,
+.workspace-shell.is-resizing .workspace-split-handle::before {
+  background: var(--brand);
+}
+
+.workspace-split-handle:focus-visible {
+  outline: none;
 }
 
 @keyframes workspace-panel-slide-in {
@@ -98,6 +146,7 @@
 }
 
 .workspace-topbar-tabs,
+.workspace-topbar-tablist,
 .workspace-topbar-center,
 .workspace-topbar-actions,
 .workspace-tabs {
@@ -108,8 +157,13 @@
 
 .workspace-topbar-tabs {
   flex-direction: row;
-  gap: 0;
+  gap: 8px;
   justify-self: start;
+}
+
+.workspace-topbar-tablist {
+  flex-direction: row;
+  gap: 0;
 }
 
 .workspace-topbar-center {
@@ -177,12 +231,6 @@
 
 .workspace-tab[data-state='active'] svg {
   color: var(--brand);
-}
-
-.workspace-tab-refreshing {
-  color: var(--n-500);
-  font-size: var(--fs-2xs);
-  font-weight: 500;
 }
 
 .workspace-url-chip {
@@ -347,6 +395,16 @@
 .workspace-icon-button[data-tooltip]:focus-visible::after {
   opacity: 1;
   transform: translateY(0);
+}
+
+/* Stays on the canvas whether the result panel is open or not, so opening
+   preview/code/session is always a user action rather than a side effect of
+   the stream. */
+.workspace-panel-toggle {
+  position: absolute;
+  top: 7px;
+  right: 10px;
+  z-index: 15;
 }
 
 /* ---- Panel body -------------------------------------------------------- */
@@ -539,6 +597,7 @@
 
   .workspace-shell > .agent-conversation {
     width: 100%;
+    min-width: 0;
     min-height: 0;
     flex: 1 1 45%;
     border-right: 0;
@@ -554,9 +613,14 @@
   }
 
   .workspace-result-panel {
+    min-width: 0;
     min-height: 0;
     flex: 1 1 55%;
     animation-name: workspace-panel-rise-in;
+  }
+
+  .workspace-split-handle {
+    display: none;
   }
 }
 
@@ -582,8 +646,7 @@
     padding: 0 8px;
   }
 
-  .workspace-url-chip,
-  .workspace-tab-refreshing {
+  .workspace-url-chip {
     display: none;
   }
 
@@ -613,5 +676,79 @@
     to {
       opacity: 1;
     }
+  }
+}
+
+/* Full-screen session warmup. A determinate bar replaces the spinner so a
+   multi-second CLI start still reads as progress, not a hang. */
+.session-prep {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--n-0);
+}
+
+.session-prep-card {
+  width: min(100% - 48px, 320px);
+  text-align: center;
+}
+
+.session-prep-title {
+  margin: 0;
+  color: var(--n-900);
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.session-prep-bar {
+  height: 6px;
+  margin: 18px 0 12px;
+  overflow: hidden;
+  border-radius: var(--r-full);
+  background: var(--n-150);
+}
+
+.session-prep-bar-fill {
+  display: block;
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  border-radius: inherit;
+  background: var(--brand);
+}
+
+.session-prep-bar-fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -40%;
+  width: 40%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, var(--n-0), transparent);
+  opacity: 0.35;
+  animation: session-prep-sheen 1.6s ease-in-out infinite;
+}
+
+.session-prep-stage {
+  margin: 0;
+  color: var(--n-500);
+  font-size: var(--fs-md);
+}
+
+@keyframes session-prep-sheen {
+  0% {
+    transform: translateX(0);
+  }
+
+  100% {
+    transform: translateX(350%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-prep-bar-fill::after {
+    animation: none;
   }
 }

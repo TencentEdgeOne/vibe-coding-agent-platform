@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
-import { resolveSandboxCommandOptions } from '../shared/sandbox-command.ts';
+import { resolveSandboxCommandOptions } from '../agents/_lib/project/sandbox-command.ts';
 
 test('timeout in seconds is also sent as timeoutMs', () => {
   assert.deepEqual(resolveSandboxCommandOptions({ cwd: '/app', timeout: 420 }), {
@@ -21,5 +21,5 @@ test('explicit timeoutMs is preserved', () => {
 test('runSandboxCommand forwards resolved timeoutMs to the sandbox API', async () => {
   const source = await readFile('agents/_lib/project/commands.ts', 'utf8');
   assert.match(source, /resolveSandboxCommandOptions\(options\)/);
-  assert.match(source, /context\.sandbox\.commands\.run\(command, resolved\)/);
+  assert.match(source, /requireSandbox\(context\)\.commands\.run\(command, resolved\)/);
 });

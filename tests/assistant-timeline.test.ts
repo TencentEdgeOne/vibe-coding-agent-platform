@@ -15,7 +15,7 @@ const writeFile = (id: string, path: string): AssistantActivity => ({
   inputSummary: path,
 });
 
-test('buildAssistantTimeline interleaves text with consecutive tool chains', () => {
+test('buildAssistantTimeline interleaves text with consecutive tool calls', () => {
   const blocks = buildAssistantTimeline([
     { kind: 'text', content: 'Starting the landing page.' },
     writeFile('t1', 'package.json'),
@@ -24,18 +24,14 @@ test('buildAssistantTimeline interleaves text with consecutive tool chains', () 
     writeFile('t3', 'styles.css'),
   ]);
 
-  assert.equal(blocks.length, 4);
+  assert.equal(blocks.length, 5);
   assert.equal(blocks[0].kind, 'text');
   assert.equal(blocks[0].kind === 'text' && blocks[0].content, 'Starting the landing page.');
-  assert.equal(blocks[1].kind, 'tools');
-  assert.deepEqual(
-    blocks[1].kind === 'tools' ? blocks[1].items.map((item) => item.activity.toolUseId) : [],
-    ['t1', 't2'],
-  );
-  assert.equal(blocks[2].kind, 'text');
-  assert.equal(blocks[2].kind === 'text' && blocks[2].content, 'Preview is ready.');
-  assert.equal(blocks[3].kind, 'tools');
-  assert.equal(blocks[3].kind === 'tools' && blocks[3].items[0]?.activity.toolUseId, 't3');
+  assert.equal(blocks[1].kind, 'tool');
+  assert.equal(blocks[1].kind === 'tool' && blocks[1].activity.toolUseId, 't1');
+  assert.equal(blocks[2].kind === 'tool' && blocks[2].activity.toolUseId, 't2');
+  assert.equal(blocks[3].kind, 'text');
+  assert.equal(blocks[4].kind === 'tool' && blocks[4].activity.toolUseId, 't3');
 });
 
 test('buildAssistantTimeline skips empty text and keeps tool order', () => {
@@ -45,16 +41,12 @@ test('buildAssistantTimeline skips empty text and keeps tool order', () => {
     { kind: 'text', content: 'Done.' },
   ]);
   assert.equal(blocks.length, 2);
-  assert.equal(blocks[0].kind, 'tools');
+  assert.equal(blocks[0].kind, 'tool');
   assert.equal(blocks[1].kind, 'text');
   assert.equal(lastTimelineText(blocks)?.content, 'Done.');
 });
 
-// Reading up on a subject takes an overview and then several documents beneath
-// it, and every one of those calls prints the same label — the run that
-// prompted this showed "AI endpoints, in depth" three times in a row, which
-// reads as a stuck timeline rather than as three steps of progress.
-test('reference loads of one topic collapse into a single row', () => {
+test('reference loads stay one block per call', () => {
   const load = (id: string, skill: string, ref?: string): AssistantActivity => ({
     kind: 'tool',
     toolUseId: id,
@@ -63,7 +55,7 @@ test('reference loads of one topic collapse into a single row', () => {
     inputSummary: ref ? JSON.stringify({ skill, ref }) : skill,
   });
 
-  const [chain] = buildAssistantTimeline([
+  const blocks = buildAssistantTimeline([
     load('s1', 'makers-agents'),
     load('s2', 'makers-agents', 'platform/node-entry.md'),
     load('s3', 'makers-agents', 'platform/sse-protocol.md'),
@@ -71,28 +63,21 @@ test('reference loads of one topic collapse into a single row', () => {
     writeFile('t1', 'app/page.tsx'),
   ]);
 
-  assert.equal(chain.kind, 'tools');
-  const items = chain.kind === 'tools' ? chain.items : [];
   assert.deepEqual(
-    items.map((item) => item.activity.toolUseId),
-    ['s1', 's2', 's4', 't1'],
-    'the overview, the documents under it, and a second topic are three rows',
+    blocks.map((block) => block.kind === 'tool' ? block.activity.toolUseId : block.kind),
+    ['s1', 's2', 's3', 's4', 't1'],
   );
-  // Nothing is dropped: the folded calls stay on the row that speaks for them,
-  // which is what lets the panel list every document it read.
-  assert.deepEqual(items[1].repeats.map((repeat) => repeat.toolUseId), ['s3']);
-  assert.deepEqual(items.map((item) => item.repeats.length), [0, 1, 0, 0]);
-  assert.deepEqual(items.map((item) => item.index), [0, 1, 3, 4]);
+  assert.equal(blocks[1].kind === 'tool' && blocks[1].activity.inputSummary, JSON.stringify({
+    skill: 'makers-agents',
+    ref: 'platform/node-entry.md',
+  }));
 
-  // Narration says what the agent turns to next, so a load after it is a new
-  // step even when it lands on a topic already read.
   const resumed = buildAssistantTimeline([
     load('s1', 'makers-agents', 'platform/node-entry.md'),
     { kind: 'text', content: 'Now the streaming protocol.' },
     load('s2', 'makers-agents', 'platform/sse-protocol.md'),
   ]);
-  assert.deepEqual(resumed.map((block) => block.kind), ['tools', 'text', 'tools']);
-  assert.equal(resumed[2].kind === 'tools' && resumed[2].items.length, 1);
+  assert.deepEqual(resumed.map((block) => block.kind), ['tool', 'text', 'tool']);
 });
 
 test('trailingTimelineContent keeps leftover reply after the last streamed text', () => {
@@ -122,4 +107,20 @@ test('trailingTimelineContent keeps leftover reply after the last streamed text'
   );
   assert.equal(trailingTimelineContent('Thinking', 'Boom', 'error'), 'Boom');
   assert.equal(trailingTimelineContent('Thinking', 'Thinking more', 'running'), '');
+});
+
+test('buildAssistantTimeline keeps thinking and system info as their own blocks', () => {
+  const blocks = buildAssistantTimeline([
+    { kind: 'thinking', content: 'Need a form first.' },
+    { kind: 'text', content: 'I will add the form.' },
+    {
+      kind: 'info',
+      infoType: 'usage',
+      title: 'Usage',
+      content: 'turns=2 cost=$0.01',
+    },
+  ]);
+  assert.deepEqual(blocks.map((block) => block.kind), ['thinking', 'text', 'info']);
+  assert.equal(blocks[0].kind === 'thinking' && blocks[0].content, 'Need a form first.');
+  assert.equal(lastTimelineText(blocks)?.content, 'I will add the form.');
 });

@@ -8,9 +8,25 @@ export type BuildStatus = 'success' | 'failed' | 'skipped';
 
 export type ActivityStatus = 'running' | 'completed' | 'failed' | 'stopped';
 
+export type ProgressPhase = 'scaffold' | 'modify' | 'code' | 'install' | 'preview' | 'link';
+
+export type SystemInfoType = 'compact' | 'usage' | 'status' | 'system' | 'sdk';
+
 export type AssistantActivity =
   | {
       kind: 'text';
+      content: string;
+    }
+  | {
+      kind: 'thinking';
+      content: string;
+      startedAt?: number;
+      endedAt?: number;
+    }
+  | {
+      kind: 'info';
+      infoType: SystemInfoType;
+      title: string;
       content: string;
     }
   | {
@@ -18,6 +34,9 @@ export type AssistantActivity =
       toolUseId: string;
       name: string;
       status: ActivityStatus;
+      command?: string;
+      phaseHint?: ProgressPhase;
+      fileCount?: number;
       inputSummary?: string;
       outputSummary?: string;
       startedAt?: number;
@@ -85,7 +104,6 @@ type ActiveChatTask = {
   id: string;
   message: string;
   status: 'queued' | 'running';
-  resetProject?: boolean;
   createdAt?: number;
   startedAt?: number;
 };
@@ -106,8 +124,35 @@ export type ResumeData = {
   activeTask?: ActiveChatTask | null;
   /** Model chosen for this conversation; '' or absent means the deployment default. */
   model?: string;
+  /** UI language chosen for this conversation. */
+  language?: 'zh' | 'en';
   /** Resume should show the Models API key card. */
   gatewayNeeded?: boolean;
+  /** User deferred the key; resume should show the reopen chip. */
+  gatewaySkipped?: boolean;
+  error?: string;
+};
+
+/** Workspace projection the frontend can fetch without the chat stream. */
+export type WorkspaceSnapshot = {
+  ok?: boolean;
+  conversation_id?: string;
+  files?: FileTree;
+  preview?: LinkInfo;
+  deployment?: DeploymentInfo;
+  download?: LinkInfo;
+  build?: BuildInfo;
+};
+
+/** Raw Claude JSONL for the Session tab. The file is the source of truth. */
+export type TranscriptData = {
+  ok?: boolean;
+  conversation_id?: string;
+  sessionId?: string;
+  transcriptPath?: string;
+  jsonl?: string;
+  /** The live query still has a turn in flight; more snapshots may follow. */
+  live?: boolean;
   error?: string;
 };
 
@@ -115,18 +160,9 @@ export type ChatResponse = {
   ok?: boolean;
   reply?: string;
   conversation_id?: string;
-  build?: BuildInfo;
-  files?: FileTree;
-  preview?: LinkInfo;
-  deployment?: DeploymentInfo;
-  download?: LinkInfo;
   error?: string;
   stopped?: boolean;
-  /** Keep the Models API key card up after this turn ends. */
-  gatewayNeeded?: boolean;
 };
-
-type ProgressPhase = 'scaffold' | 'modify' | 'code' | 'install' | 'preview' | 'link';
 
 export type ChatStreamEvent =
   | {
@@ -137,13 +173,13 @@ export type ChatStreamEvent =
         status?: 'queued' | 'running' | 'completed' | 'failed' | 'stopped';
       };
     }
-  | { type: 'status'; message?: string }
   | { type: 'result'; data?: ChatResponse }
   | { type: 'agent'; data?: Pick<ChatResponse, 'ok' | 'reply' | 'error'> }
+  | { type: 'workspace'; data?: WorkspaceSnapshot }
   | { type: 'file_tree'; data?: FileTree }
   | {
-      type: 'file_content';
-      data?: { path?: string; content?: string; size?: number };
+      type: 'file_changed';
+      data?: { paths?: string[] };
     }
   | {
       type: 'preview_ready';
@@ -174,7 +210,7 @@ export type ChatStreamEvent =
   | {
       type: 'tool_result';
       data?: {
-        tool_use_id?: string;
+        id?: string;
         toolName?: string;
         command?: string;
         ok?: boolean;
@@ -185,6 +221,15 @@ export type ChatStreamEvent =
       };
     }
   | { type: 'text_segment'; data?: { uuid?: string; text?: string } }
+  | { type: 'thinking_segment'; data?: { uuid?: string; text?: string } }
+  | {
+      type: 'system_info';
+      data?: {
+        infoType?: SystemInfoType;
+        title?: string;
+        content?: string;
+      };
+    }
   | {
       type: 'gateway_credentials';
       data?: {
@@ -194,28 +239,37 @@ export type ChatStreamEvent =
       };
     }
   | { type: 'error'; error?: string }
-  | {
-      type: 'log';
-      phase?: 'scaffold' | 'agent';
-      stream?: 'status' | 'stdout' | 'stderr';
-      message?: string;
-    }
   | { type: 'ping'; ts?: number };
 
+export type SessionPrepMode = 'create' | 'restore';
+
+export type SessionPrepStage =
+  | 'conversation'
+  | 'sandbox'
+  | 'agent'
+  | 'workspace'
+  | 'preview'
+  | 'ready';
+
+export type SessionPrepStatus = 'running' | 'done' | 'failed';
+
+export type SessionPrepData = {
+  mode: SessionPrepMode;
+  stage: SessionPrepStage;
+  status: SessionPrepStatus;
+};
+
 export type ResumeStreamEvent =
+  | { type: 'session_prep'; data?: SessionPrepData }
   | { type: 'resume_history'; data?: ResumeData }
   | { type: 'resume_workspace'; data?: ResumeData }
-  | {
-      type: 'resume_file_content';
-      data?: {
-        path?: string;
-        content?: string;
-        size?: number;
-        truncated?: boolean;
-        mtime?: number;
-      };
-    }
+  | { type: 'file_changed'; data?: { paths?: string[] } }
   | { type: 'error'; error?: string }
   | { type: 'ping'; ts?: number };
 
-export type SessionStreamEvent = ChatStreamEvent | ResumeStreamEvent;
+export type TranscriptStreamEvent =
+  | { type: 'transcript'; data?: TranscriptData }
+  | { type: 'error'; error?: string }
+  | { type: 'ping'; ts?: number };
+
+export type SessionStreamEvent = ChatStreamEvent | ResumeStreamEvent | TranscriptStreamEvent;

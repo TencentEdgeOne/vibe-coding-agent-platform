@@ -1,3 +1,4 @@
+import { requireSandbox, type AgentContext } from '../runtime/context.ts';
 import {
   MAKERS_DEV_PORT,
   PREVIEW_ASSET_PREFIX_ENV,
@@ -17,40 +18,33 @@ import {
   buildMakersDevBackgroundCommand,
   buildMakersDevLaunchCommand,
   parseMakersDevExitCode,
-} from '../../../shared/makers-dev.ts';
+} from '../makers/cli-dev.ts';
 import { makersFileSemantic } from '../../../shared/makers-file-semantics.ts';
-import { redactSecret } from '../../../shared/makers-deploy.ts';
-import { shellQuote } from '../../../shared/shell.ts';
+import { redactSecret } from '../makers/cli-deploy.ts';
+import { shellQuote } from '../utils/shell.ts';
 import {
   MAKERS_CLI_UNAVAILABLE_ERROR_CODE,
   MAKERS_CLI_UNAVAILABLE_MESSAGE,
   isEdgeoneCliUnavailable,
-} from '../../../shared/tool-phase.ts';
-import { resolveConversationId } from '../utils/request.ts';
-import { sandboxGatewayKeyIsSet } from './gateway-prompt.ts';
+} from '../makers/tool-phase.ts';
+import { resolveConversationId } from '../runtime/request.ts';
+import { sandboxGatewayKeyIsSet } from './gateway.ts';
 import { runCommandCapturingExit, runSandboxCommand } from './commands.ts';
-import { assertMakersProjectCompatible } from './makers-compat.ts';
-import {
-  ensureMakersPublishProject,
-  resolveConversationPublishArea,
-  resolveMakersProjectName,
-} from './makers-deploy.ts';
-import {
-  buildSandboxMakersEnv,
-  describeMissingMakersRuntimeToken,
-  prepareSandboxGatewayEnv,
-  resolveMakersMasterToken,
-  resolveSandboxMakersToken,
-} from './makers-token.ts';
+import { assertMakersProjectCompatible } from '../makers/compat/run.ts';
+import { prepareMakersSession } from '../makers/session.ts';
+import { resolveConversationPublishArea, resolveMakersProjectName } from '../makers/project.ts';
+import { describeMissingMakersRuntimeToken } from '../makers/token.ts';
+import { publishPreview } from './workspace-store.ts';
 
 // Where Makers mounts generated HTTP handlers; both are optional in a project.
 const CLOUD_FUNCTION_DIRECTORIES = ['cloud-functions', 'edge-functions'];
 
-export async function resolvePublicLinks(context: any) {
-  const previewHost = context.sandbox.getHost(PREVIEW_PUBLIC_PORT);
-  const accessToken = context.sandbox.envdAccessToken;
+export async function resolvePublicLinks(context: AgentContext) {
+  const sandbox = requireSandbox(context);
+  const previewHost = await Promise.resolve(sandbox.getHost?.(PREVIEW_PUBLIC_PORT));
+  const accessToken = sandbox.envdAccessToken;
   const previewBaseUrl = normalizePublicUrl(previewHost);
-  const sandboxDebugUrl = normalizePublicUrl(context.sandbox.browser?.liveUrl);
+  const sandboxDebugUrl = normalizePublicUrl(sandbox.browser?.liveUrl);
 
   const previewUrl = (previewBaseUrl && accessToken)
     ? buildPublicPreviewUrl(previewBaseUrl, accessToken)
@@ -119,49 +113,41 @@ export function rewritePreviewAccessToken(existingUrl: string, token: string) {
  * the restart, so re-running them buys a second opinion on the same code.
  */
 export async function startPreviewServer(
-  context: any,
+  context: AgentContext,
   state: ProjectState,
-  options: { verifyRoutes?: boolean } = {},
+  options: { verifyRoutes?: boolean; forceRestart?: boolean } = {},
 ) {
   const verifyRoutes = options.verifyRoutes !== false;
   await assertMakersProjectCompatible(context, state);
-  const masterToken = resolveMakersMasterToken(context);
   const projectName = resolveMakersProjectName(context, state);
   const area = resolveConversationPublishArea(state);
   const launchCommand = buildMakersDevLaunchCommand(MAKERS_DEV_PORT, projectName, { area });
-  let forceRestart = false;
+  let forceRestart = options.forceRestart === true;
 
   // makers-dev watches project files. On resume, keep a healthy process rather
   // than starting a second CLI instance on the same port.
-  const warm = await runCommandCapturingExit(
-    context,
-    probePreviewReadyCommand(),
-    { timeout: 5 },
-  );
-  if (warm.exitCode === 0) {
-    try {
-      if (verifyRoutes) {
-        await assertGeneratedRoutesReady(context, state);
+  if (!forceRestart) {
+    const warm = await runCommandCapturingExit(
+      context,
+      probePreviewReadyCommand(),
+      { timeout: 5 },
+    );
+    if (warm.exitCode === 0) {
+      try {
+        if (verifyRoutes) {
+          await assertGeneratedRoutesReady(context, state);
+        }
+        return previewServerInfo(launchCommand);
+      } catch (error) {
+        // A warm port that fails to answer is a stale server, not a preview. One
+        // that answers wrongly is a code bug the restart would only delay.
+        if (!previewFailureWarrantsRestart(error)) throw error;
+        forceRestart = true;
       }
-      return previewServerInfo(launchCommand);
-    } catch (error) {
-      // A warm port that fails to answer is a stale server, not a preview. One
-      // that answers wrongly is a code bug the restart would only delay.
-      if (!previewFailureWarrantsRestart(error)) throw error;
-      forceRestart = true;
     }
   }
 
-  // Scoped to this conversation, and redacted out of CLI output before the
-  // model or the UI sees it.
-  const sandboxToken = await resolveSandboxMakersToken(state, masterToken);
-  await ensureMakersPublishProject(
-    sandboxToken,
-    projectName,
-    area,
-    state.makersApiRegion,
-  );
-  await prepareSandboxGatewayEnv(context, state);
+  const makers = await prepareMakersSession(context, state);
 
   const startResult = await runSandboxCommand(
     context,
@@ -169,15 +155,15 @@ export async function startPreviewServer(
       makersPort: MAKERS_DEV_PORT,
       previewPort: PREVIEW_SERVER_PORT,
       previewPath: PREVIEW_PATH_PREFIX,
-      projectName,
+      projectName: makers.projectName,
       assetPrefixEnvName: PREVIEW_ASSET_PREFIX_ENV,
       forceRestart,
-      area,
+      area: makers.area,
     }),
     {
       cwd: state.appDir,
       timeout: MAKERS_DEV_LAUNCH_TIMEOUT_SECONDS,
-      env: buildSandboxMakersEnv(sandboxToken, state.makersApiRegion),
+      env: makers.env,
     },
   );
   const startOutput = [startResult.stdout, startResult.stderr].filter(Boolean).join('\n');
@@ -194,7 +180,7 @@ export async function startPreviewServer(
     throw new Error(
       redactSecret(
         failure,
-        sandboxToken,
+        makers.sandboxToken,
       ),
     );
   }
@@ -266,7 +252,7 @@ const ROUTE_LISTING_COMMAND = [
  * sites, and it is why neither gate needs a project-shape flag passed in from
  * outside — the routes a project declares are the shape.
  */
-async function assertGeneratedRoutesReady(context: any, state: ProjectState) {
+async function assertGeneratedRoutesReady(context: AgentContext, state: ProjectState) {
   const listing = await runSandboxCommand(
     context,
     ROUTE_LISTING_COMMAND,
@@ -328,7 +314,7 @@ function smokeFailure(exitCode: number | undefined, detail: string, guidance: st
  * request still publishes a preview that looks fine until the user clicks.
  */
 async function assertGeneratedApiRoutesReady(
-  context: any,
+  context: AgentContext,
   state: ProjectState,
   routes: string[],
 ) {
@@ -375,7 +361,7 @@ export function agentRoutesFromListing(stdout: string) {
 }
 
 async function assertGeneratedAgentChatReady(
-  context: any,
+  context: AgentContext,
   state: ProjectState,
   routes: Set<string>,
 ) {
@@ -431,7 +417,7 @@ async function assertGeneratedAgentChatReady(
  * of why — an import it cannot resolve, a framework that is not installed. At
  * the point the route gate fails, that account is the whole answer.
  */
-async function readMakersDevLog(context: any) {
+async function readMakersDevLog(context: AgentContext) {
   try {
     const result = await runSandboxCommand(
       context,
@@ -446,7 +432,7 @@ async function readMakersDevLog(context: any) {
 }
 
 export async function publishRunningPreview(
-  context: any,
+  context: AgentContext,
   state: ProjectState,
   options: { routesAlreadyVerified?: boolean } = {},
 ) {
@@ -460,10 +446,11 @@ export async function publishRunningPreview(
   if (!links.previewUrl) {
     throw new Error(`Makers dev is ready, but the sandbox did not return a public URL for port ${PREVIEW_PUBLIC_PORT}.`);
   }
-  state.previewUrl = links.previewUrl;
-  state.sandboxDebugUrl = links.sandboxDebugUrl;
-  state.previewKind = 'sandbox';
-  state.previewPublished = true;
+  publishPreview(state, {
+    url: links.previewUrl,
+    sandboxDebugUrl: links.sandboxDebugUrl,
+    kind: 'sandbox',
+  });
   return {
     url: links.previewUrl,
     sandboxDebugUrl: links.sandboxDebugUrl,
@@ -471,8 +458,20 @@ export async function publishRunningPreview(
   };
 }
 
+export async function isPreviewServerReady(
+  context: AgentContext,
+  readyPath = PREVIEW_PATH_PREFIX,
+) {
+  const result = await runCommandCapturingExit(
+    context,
+    probePreviewReadyCommand(readyPath),
+    { timeout: 5 },
+  );
+  return result.exitCode === 0;
+}
+
 export async function assertPreviewServerReady(
-  context: any,
+  context: AgentContext,
   readyPath = PREVIEW_PATH_PREFIX,
 ) {
   const result = await runCommandCapturingExit(

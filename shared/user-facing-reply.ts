@@ -10,12 +10,12 @@ const CJK_PATTERN = /[\u3400-\u9fff]/;
 export type ReplyLocale = 'zh' | 'en';
 
 /**
- * Which language a reply should be written in. There is no locale on the wire
- * for a turn — the agent runtime only ever sees the prompt — so the request
- * itself decides, and every reply built server-side has to ask the same way or
- * one turn answers in the wrong language.
+ * Which language a reply should be written in. An explicit locale from the
+ * conversation preference wins; the request text is only a fallback so a
+ * Chinese UI with an English prompt still gets Chinese replies.
  */
-export function replyLocaleFor(text: string): ReplyLocale {
+export function replyLocaleFor(text: string, explicit?: ReplyLocale | string): ReplyLocale {
+  if (explicit === 'zh' || explicit === 'en') return explicit;
   return CJK_PATTERN.test(text) ? 'zh' : 'en';
 }
 
@@ -27,16 +27,6 @@ export function replyLocaleFor(text: string): ReplyLocale {
 export const STOPPED_TURN_REPLY: Readonly<Record<ReplyLocale, string>> = {
   zh: '已停止本次生成，你可以继续描述下一步修改。',
   en: 'Generation stopped. You can continue with another change.',
-};
-
-/**
- * A turn that stopped so the user can type a Models API key. Same contract as
- * a question turn: the project may already be on disk, preview is intentionally
- * not up, and that must not read as a failed build.
- */
-export const GATEWAY_CREDENTIALS_USER_REPLY: Readonly<Record<ReplyLocale, string>> = {
-  zh: '项目已经写好。要调用大模型请在下方输入 Models API Key；跳过也可以先预览和部署。',
-  en: 'The project is ready. Enter a Models API key below to call models, or skip to preview and deploy first.',
 };
 
 export function compactUserFacingReply(text: string, fallback: string) {
@@ -85,8 +75,8 @@ export type FinishedTurn = {
   /** Whether verification failed. */
   buildFailed: boolean;
   /**
-   * The turn stopped to wait for the user (API key card, a clarifying
-   * question). A missing preview is then intentional, not a failed dest.
+   * The turn stopped to wait for the user (a clarifying question).
+   * A missing preview is then intentional, not a failed dest.
    */
   waitingForUser?: boolean;
   /** The model's own reply, empty when it produced nothing usable. */

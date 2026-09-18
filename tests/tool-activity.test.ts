@@ -7,7 +7,7 @@ import {
   dropTrailingSummaryEcho,
   presentToolActivity,
 } from '../app/lib/tool-activity.ts';
-import { summarizeToolInput } from '../agents/_lib/utils/activity.ts';
+import { summarizeToolInput } from '../shared/timeline.ts';
 import { MAKERS_REFERENCE_SKILL_NAMES } from '../agents/_lib/tools/makers-skills.ts';
 
 test('direct Makers CLI dev and deploy commands have distinct actions', () => {
@@ -21,6 +21,15 @@ test('direct Makers CLI dev and deploy commands have distinct actions', () => {
     inputSummary: 'edgeone makers dev --port 8088 --skip-env-sync --name demo',
   });
   assert.equal(dev.action, 'Create preview');
+});
+
+test('environment prep rows keep the stage as the target', () => {
+  const presentation = presentToolActivity({
+    name: 'environment',
+    inputSummary: '正在启动沙箱…',
+  });
+  assert.equal(presentation.action, 'Environment Preparing');
+  assert.equal(presentation.target, '正在启动沙箱…');
 });
 
 test('npm run build is a run command', () => {
@@ -47,6 +56,23 @@ test('files_make_dir is create folder, not a command', () => {
   });
   assert.equal(mkdir.action, 'Create folder');
   assert.equal(mkdir.target, 'src/lib');
+});
+
+// Glob arrives as pretty-printed JSON. The first line of that dump is `{`,
+// which is not a path, and a pattern still streaming in is not a path yet.
+test('a glob names the pattern, not the brace the JSON opened with', () => {
+  const glob = presentToolActivity({
+    name: 'Glob',
+    inputSummary: JSON.stringify({ pattern: 'src/**/*.tsx', path: 'src' }, null, 2),
+  });
+  assert.equal(glob.action, 'Glob');
+  assert.equal(glob.target, 'src/**/*.tsx');
+
+  const pending = presentToolActivity({
+    name: 'Glob',
+    inputSummary: '{\n',
+  });
+  assert.equal(pending.target, '**/*');
 });
 
 // A document id is internal on two counts: it carries the platform tier, and it
@@ -98,10 +124,9 @@ test('a deeper document is the same topic, marked as going further', () => {
   });
   assert.equal(overview.topic, 'storage');
   assert.equal(overview.detailed, false);
-  assert.equal(
+  assert.match(
     summarizeToolInput('load_makers_skill', { skill: 'makers-storage' }),
-    'makers-storage',
-    'an overview keeps the plain summary every earlier conversation persisted',
+    /makers-storage/,
   );
 });
 

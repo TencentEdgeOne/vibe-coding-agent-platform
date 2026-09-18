@@ -83,6 +83,7 @@
   --shadow-2: 0 4px 14px -6px rgba(17, 24, 39, 0.16);
   --shadow-3: 0 26px 70px rgba(17, 18, 22, 0.3);
   --shadow-device: 0 0 36px rgba(17, 18, 22, 0.12);
+  --shadow-card-stack: 0 -7px 18px -15px rgba(17, 24, 39, 0.22);
   --hairline-inset: inset 0 0 0 1px rgba(25, 28, 33, 0.08);
   --focus-ring: 0 0 0 3px var(--brand-ring);
 

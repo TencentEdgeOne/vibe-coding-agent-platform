@@ -1,12 +1,10 @@
 import {
-  MAKERS_DEV_PORT,
   PREVIEW_ASSET_PREFIX_ENV,
   PREVIEW_PATH_PREFIX,
   PREVIEW_PUBLIC_PORT,
-  PREVIEW_SERVER_PORT,
 } from './constants.ts';
-import type { ConversationMessage, ProjectState } from './types.ts';
-import { resolveConversationPublishArea } from './project/makers-deploy.ts';
+import type { ProjectState } from './types.ts';
+import { resolveConversationPublishArea } from './makers/project.ts';
 
 // The system prompt is split into named sections so each rule has an obvious
 // owner. The dividing line is deliberate: platform knowledge (handler
@@ -16,11 +14,10 @@ import { resolveConversationPublishArea } from './project/makers-deploy.ts';
 // the product's narration and reply style. Restating platform rules here would
 // create a second source of truth that silently drifts when the skills update.
 //
-// Nothing that changes between turns belongs in here. The request and the
-// history travel as the turn's own message (buildTurnPrompt), which keeps this
-// text identical for every turn of a conversation — a prefix that changes on
-// each turn can never be cached, and the request arriving twice leaves two
-// copies with no way to say which one is authoritative.
+// Nothing that changes between turns belongs in here. The request travels as
+// the SDK user message, and resume loads history from the transcript, which
+// keeps this text identical for every turn of a conversation — a prefix that
+// changes on each turn can never be cached.
 
 /** Headings, so a 40-rule prompt reads as sections rather than as a wall. */
 function section(title: string, body: readonly string[], spaced = false) {
@@ -116,7 +113,7 @@ function buildSandboxTools(appDir: string, mcpServerName: string) {
     // One place says what to do about a missing CLI. The same instruction used
     // to appear in the workflow and in the code-quality rules as well, and
     // three copies of a rule are three chances for one of them to go stale.
-    'A missing CLI is a platform-capability failure, not a project bug. If makers dev or deploy fails before returning a concrete CLI error, one read-only edgeone --version check is allowed. If any command returns errorCode=MAKERS_CLI_UNAVAILABLE, stop immediately and tell the user the sandbox image does not provide the CLI yet. Do not inspect PATH or installation directories, run command -v/which/npm ls, install packages, use npx, retry, or replace the prescribed command with ad-hoc shell diagnostics.',
+    'A missing CLI is a platform-capability failure, not a project bug. If makers deploy fails before returning a concrete CLI error, one read-only edgeone --version check is allowed. If any command returns errorCode=MAKERS_CLI_UNAVAILABLE, stop immediately and tell the user the sandbox image does not provide the CLI yet. Do not inspect PATH or installation directories, run command -v/which/npm ls, install packages, use npx, retry, or replace the prescribed command with ad-hoc shell diagnostics.',
     'Never probe or enumerate platform internals to explain a failure: no AI Gateway URLs, no model lists, no generated .edgeone output, no process or port state.',
   ];
 }
@@ -125,20 +122,20 @@ function buildSandboxPreview(appDir: string, makersProjectName: string, area: st
   const quotedProjectName = JSON.stringify(makersProjectName);
   const publishArea = area === 'overseas' ? 'overseas' : 'global';
   return [
-    `To publish the right-hand development preview, run edgeone makers dev --port ${MAKERS_DEV_PORT} --skip-env-sync --skip-ai-gateway-sync --name ${quotedProjectName} --area ${publishArea} once through commands with cwd=${appDir}. The commands tool keeps Makers dev running at its root, exposes it through the sandbox path adapter on port ${PREVIEW_SERVER_PORT}, and publishes sandbox.getHost(${PREVIEW_PUBLIC_PORT})${PREVIEW_PATH_PREFIX} to the preview panel. Do not add nohup, start another server, synthesize a public URL, or use a cloud deploy as the normal preview.`,
+    `The host starts the right-hand development preview as soon as the project workspace exists in this sandbox, and keeps that dest server watching files so later edits show up there. Do not run a preview server, add nohup, start another server, synthesize a public URL, or use a cloud deploy as the normal preview. The sandbox path adapter publishes sandbox.getHost(${PREVIEW_PUBLIC_PORT})${PREVIEW_PATH_PREFIX} to the preview panel.`,
     // The model has no restart primitive, and it went looking for one: a turn
     // that changed dependencies under a running server tried to kill it, free
     // its port, and relaunch it, none of which the host acts on.
-    'Rerunning that same command is your only restart mechanism, and whether a restart actually happens is the host\'s decision: it probes the generated endpoints first and restarts the server when one is not mounted. Do not kill processes or free ports to force one — the host terminates the previous server itself before every launch.',
+    'The host restarts the preview when generated endpoints are missing. Do not kill processes, free ports, or launch a preview server yourself — the host terminates the previous server before every launch.',
     // A run installed dependencies and built while the preview was up, and both
     // lost the race silently: the build reported a Pages Router page the project
     // does not have, and npm reported ENOTEMPTY on a package the server held.
-    'A build or an install cannot run beside the preview, so the host stops the dev server before either and says so in that command\'s output. The preview is then down until you launch it again. Do not report a preview as running across an install or a build you issued after it.',
-    `Only when the user explicitly asks for a live deployment, run edgeone makers deploy --json once through commands with cwd=${appDir}. The host supplies credentials, pins the project this conversation publishes to, allows the long timeout, parses the final JSON line, and renders the result in its own deployment card.`,
+    'A build or an install cannot run beside the preview, so the host stops the dev server before either and says so in that command\'s output. The preview is then down until the host starts it again. Do not report a preview as running across an install or a build you issued after it.',
+    `Only when the user explicitly asks for a live deployment, run edgeone makers deploy --json once through commands with cwd=${appDir}. This conversation publishes to ${quotedProjectName} with --area ${publishArea}. The host supplies credentials, pins the project this conversation publishes to, allows the long timeout, parses the final JSON line, and renders the result in its own deployment card.`,
     'Never pass -n, invent a project name, or retry a failed deploy under a different one: the name identifies the user\'s site, and a deploy under a name you chose publishes somewhere nobody can find again. A deployment never replaces the right-hand preview, so do not tell the user their live site opened there.',
     'Declare AI_GATEWAY_API_KEY= and AI_GATEWAY_BASE_URL= in .env.example when the project calls a model. Never write a .env file yourself, and never write an actual API key or gateway URL value into source. Generated agents read them from context.env.',
-    'Before preview or deploy of an AI project — one that declares those keys in .env.example, or that has an agents/ directory — call request_gateway_credentials. If the result says the key is already configured, not required, or previously skipped, continue. If it says the user has been asked, stop this turn: do not run edgeone makers dest or deploy, and do not call the tool again. The host shows the input card. Your last user-facing sentence must ask them to enter the key or skip; do not say the preview is ready.',
-    'The user may type a key in the composer in natural language, for example "我的 apikey 是 …，配置好并重新预览", or submit the input card. The host extracts it, writes .env, and the message you see is a masked API Key line — or a skip. After a provided key the host has written .env; after a skip, preview and deploy must still run — a missing key is not a preview or deploy failure. Chat in the generated app may not answer until a key is added later. Never write .env yourself and never quote an API key value, from a file or from the user.',
+    'The host collects a Models API key for generated AI projects as soon as it sees one. If you load makers-agents or write agents/ files, the host shows the input card while you keep working. Do not stop this turn, do not wait for the key, and do not say the preview is blocked. Continue writing files and let the host start preview. A missing key is not a preview or deploy failure — chat in the generated app may not answer until a key is added. Never write .env yourself and never quote an API key value, from a file or from the user.',
+    'The user may type a key in the composer in natural language, for example "我的 apikey 是 …，配置好并重新预览". The host extracts it, writes .env, and the message you see is a masked API Key line. Never write .env yourself and never quote an API key value.',
     'The host writes AI_GATEWAY_BASE_URL already shaped for OpenAI-compatible clients. Use that value through the generated env helper; never probe, enumerate, or retry alternate gateway paths, and never concatenate /v1/chat/completions onto the base.',
   ];
 }
@@ -211,59 +208,24 @@ function buildToolContracts(appDir: string) {
 
 function buildNewProjectWorkflow(appDir: string) {
   return [
-    'When ensure_project_scaffold returns created=true, work through these steps in order.',
-    '1. Load the references this request needs with load_makers_skill and follow them for layout, routing, handler signatures, configuration files, and storage. Prefer static HTML/CSS/JS or Vite static output for ordinary UI. Do not put styles, scripts, and markup into one large index.html unless the user explicitly asks for a single-file page.',
-    // Eight commands went into excavating one framework's "official template":
-    // npm view, then tarballs downloaded and unpacked in /tmp, then a package's
-    // own source read to find where it fetches templates from, then the same
-    // again for its replacement. Every step was reasonable and the sequence had
-    // no bottom, because each answer was only ever "the template is elsewhere".
-    // The scaffolder is where it ends: it holds both the structure and the
-    // version set, and running it costs one command.
-    //
-    // Which command that is, though, is the reference's to say. The two copies
-    // this step used to carry had already drifted from it: the Next.js one was
-    // down to `. --yes` while the document specifies four more flags, and the
-    // flags are the whole difference between a scaffolder and a prompt nobody
-    // is there to answer.
-    // The scaffolder was run at build time for the frameworks with a baked
-    // template, so for those this step is already done before the model reads
-    // it. Saying so here rather than only in the tool result, because the
-    // instruction it contradicts is this one: a run that reaches step 2 with
-    // its workspace already populated would otherwise put a scaffolder into a
-    // directory that is no longer empty, which every one of them refuses.
-    // A measured Next.js turn still loaded the frameworks index and nextjs.md
-    // after the template landed, then rewrote next.config just to add the
-    // prefix line the host now writes. Both loads exist to answer Scaffold and
-    // assetPrefix; neither is a question once the template is applied.
-    'A templateApplied in the ensure_project_scaffold result means that framework\'s scaffolder has already been run for you and its files are in place. Skip the rest of this step and go to step 3 — do not run a scaffold command, and do not re-create files that are already there. Do not load makers-frameworks just to read the Scaffold command or the asset-prefix snippet: both are already done, and the prefix option is already in the framework config. Load it only for an adapter location, a 404 convention, or an unsupported-feature rule you are about to use. Load makers-storage, makers-agents, or makers-cloud-functions only when the request actually needs those.',
-    `2. When the request names a framework and no template was applied, the reference loaded in step 1 gives its scaffold command under Scaffold. Copy that command exactly and run it once through commands with cwd=${appDir}, into the current directory. Do not compose one from memory and do not drop or add a flag — the flags documented there are what keep it non-interactive, and a scaffolder that stops to ask a question in a sandbox hangs the turn. ${appDir} is empty here, which those tools require, and a generous timeout is needed because it installs as it goes. This is the one case where a command may create project source files.`,
+    `The host has already prepared an empty project directory at ${appDir} and started the coding agent. The workspace has no files yet. Work through these steps in order.`,
+    '1. Load the references this request needs with load_makers_skill and follow them for layout, routing, handler signatures, configuration files, and storage. Prefer static HTML/CSS/JS or Vite static output for ordinary UI. Do not put styles, scripts, and markup into one large index.html unless the user explicitly asks for a single-file page. load_makers_skill is the first tool of a new project — do not write files or run commands before the required references are loaded.',
+    `2. When the request names a framework, the reference loaded in step 1 gives its scaffold command under Scaffold. Copy that command exactly and run it once through commands with cwd=${appDir}, into the current directory. Do not compose one from memory and do not drop or add a flag — the flags documented there are what keep it non-interactive, and a scaffolder that stops to ask a question in a sandbox hangs the turn. ${appDir} is empty here, which those tools require, and a generous timeout is needed because it installs as it goes. This is the one case where a command may create project source files.`,
     'A framework whose reference lists no scaffold command has none worth running: write its files yourself from the values that document gives. If the scaffolder prompts, hangs, or fails, that is one attempt and it is over: write the files yourself and let the build report what is wrong. Do not try a second scaffolder, a different package name, or a flag variation.',
-    // Sourcing the command from the references must not read as an allowlist of
-    // framework names. What the platform bounds is the output shape, not the
-    // name: it runs any build and uploads any output directory, so static is
-    // unbounded, while a server bundle needs an adapter that exists.
     'A framework the references do not cover is still one this platform builds, so never decline a request for not finding it listed. Derive what it needs the way makers-frameworks describes — an adapter only if it emits a server bundle, its build command and output directory declared in edgeone.json, its own asset-prefix option — then build it and report what happened.',
-    // The tool's own mechanics — one file per call, paths relative to appDir,
-    // one call per message — are stated once in the tool contracts above. What
-    // belongs here is only the order, which is what this workflow decides.
     '3. After the required references are loaded, write the project with write_project_file, one complete file per call and in dependency order. When a scaffolder ran, keep what it produced and use these calls to adapt it — the platform declarations and the entry route — rather than rewriting files it already got right. If agents/chat.ts is already in the workspace, edit that file; do not also write agents/chat/index.ts — both mount POST /chat. Otherwise write configuration and dependencies first, then styles and small modules, then the entry HTML, then any platform function or agent directories. Dependencies come before agent code specifically: the platform declarations an agent project needs are derived from the packages it declares, so a dependency file that arrives later cannot inform them.',
-    // "a scaffolder has not already installed them" asked the wrong question.
-    // A workspace can arrive with its dependencies installed by something that
-    // is not a scaffolder, and then this rule reads as permission to install
-    // over a tree that is already there — which is how a turn spent four
-    // minutes filling the disk, breaking the tree it had, and ending with
-    // nothing runnable. ensure_project_scaffold now answers the right question.
-    `4. Install dependencies inside ${appDir} only when the project has a package.json with dependencies and ensure_project_scaffold reported dependenciesInstalled=false (cd ${appDir} && npm install by default; Python packages are declared in the project's requirements file and installed by the platform). Do not invent nested ${appDir}/${appDir} paths.`,
+    `4. The host starts npm install in the background the moment package.json is written. When you run npm install yourself, that command waits for the background install and reports its result — it does not install twice. Run npm install inside ${appDir} only when the project has a package.json with dependencies that are not yet on disk (cd ${appDir} && npm install by default; Python packages are declared in the project's requirements file and installed by the platform). Do not invent nested ${appDir}/${appDir} paths.`,
     'Take every dependency name and version range from the reference you loaded for that framework, and copy its dependency block as written. Versions recalled from memory are the usual cause of peer-dependency conflicts and engine mismatches, and each one costs a rewrite plus a reinstall. If a reference pins a version or caps a range, keep the pin instead of widening it to latest.',
-    '5. Check gateway credentials as the preview section requires, then run edgeone makers dev through commands, with the flags the sandbox preview section gives. When the command result reports a successful preview URL, stop — do not curl/fetch/code_interpreter the public URL and do not start a second preview server. For a CLI failure, quote and act on its actual error; fix generated source when appropriate, then rerun the same preview command once.',
+    '5. The host starts the sandbox preview. Do not curl/fetch/code_interpreter the public URL and do not start a preview server.',
   ];
 }
 
-const EXISTING_PROJECT_WORKFLOW = [
-  'When ensure_project_scaffold returns created=false, load only the specific Makers references required by the change with load_makers_skill, inspect only the project files directly related to the request, then make the smallest complete change needed.',
-  'For bug reports, do not investigate platform internals, generated .edgeone files, running processes, ports, or external AI gateway behavior. Use at most one focused reproduction command before editing; after the edit, use at most one focused verification command, then check gateway credentials as the preview section requires and run edgeone makers dev once through commands.',
-];
+function buildExistingProjectWorkflow(appDir: string) {
+  return [
+    `When ${appDir} already contains project files, load only the specific Makers references required by the change with load_makers_skill, inspect only the project files directly related to the request, then make the smallest complete change needed.`,
+    'For bug reports, do not investigate platform internals, generated .edgeone files, running processes, ports, or external AI gateway behavior. Use at most one focused reproduction command before editing; after the edit, use at most one focused verification command. The host starts the sandbox preview.',
+  ];
+}
 
 const CODE_QUALITY = [
   // Three deliverable classes, not two: an AI agent endpoint is what most of
@@ -291,9 +253,7 @@ const CODE_QUALITY = [
   'If you generate a package.json, include scripts.build. For a static HTML/CSS/JS site use "scripts": { "build": "echo skip" }. Vite/Next must use their real build script.',
   // The config file's extension used to be pinned to .js/.mjs here, and that
   // cost a delete and a rewrite on every Next.js project: create-next-app
-  // writes next.config.ts, so the baked template ships one, and the rule sent
-  // the model to replace a typed config it had just been given with one
-  // recalled from memory. Nothing needed it — Next has read a TypeScript config
+  // writes next.config.ts. Nothing needed it — Next has read a TypeScript config
   // since 15, and this repo deploys to the same platform with one.
   `If you generate a Next.js project, use the App Router and do not set basePath to ${PREVIEW_PATH_PREFIX}.`,
   `If you generate a Vite React project, install @vitejs/plugin-react and configure plugins: [react()]. Set base from process.env.${PREVIEW_ASSET_PREFIX_ENV} as described above, never to a literal.`,
@@ -302,18 +262,9 @@ const CODE_QUALITY = [
 
 function buildNarration(appDir: string) {
   return [
-    'If the user request requires creating or modifying a project, first respond with one brief natural-language sentence that you are starting, then call ensure_project_scaffold as the first tool to prepare the workspace. Do not call any other tool before ensure_project_scaffold — including Skill, load_makers_skill, files_list, files_make_dir, files_write, commands, or write_project_file.',
-    // The whole saving rides on this argument arriving in the first call. It is
-    // the only point at which the host can still put the files down and start
-    // the install before the model spends a turn on anything else, and the name
-    // is in the user's message — nothing has to be loaded to know it.
-    'Pass framework to that call whenever the request names one, in whatever spelling the user used. Omit it for a plain HTML/CSS/JS page and when no framework was named — it is what the workspace is prepared from, not a decision to make on the user\'s behalf.',
-    `Before calling ensure_project_scaffold, do not read, write, or execute anything under ${appDir}.`,
-    'That first sentence must be concise, user-visible progress narration, not a plan. Use the user language when obvious. Example: 我先准备项目环境，然后开始实现。 / I will prepare the workspace first, then start building.',
+    `The host has already prepared an empty workspace at ${appDir} and started the coding agent. If the user request requires creating or modifying a project, first respond with one brief natural-language sentence that you are starting, then call load_makers_skill as the first tool. Do not call write_project_file, files_write, files_list, files_make_dir, or commands before the references this request needs are loaded.`,
+    'That first sentence must be concise, user-visible progress narration, not a plan. Use the user language when obvious. Example: 我先查一下这个框架的官方用法，然后开始实现。 / I will look up the framework guide first, then start building.',
     'Keep narrating as you work: before each tool call or parallel group of tool calls, write one short sentence saying what you are about to do and, when you just read an error, what you think is wrong. This narration is shown to the user, so always write it in the user language, never as internal English notes, raw logs, status codes, or command lines. Example: 我先修好前端请求地址，再刷新预览。 One sentence per step — do not restate the plan or repeat what you already said.',
-    // The user is here for EdgeOne; Makers, its CLI and its reference documents are
-    // machinery they never asked about, and a sentence that names them reads as the
-    // agent talking about itself instead of about their project.
     'Narration and the final reply are product copy. Never write the words Makers, load_makers_skill, or a makers-* document id in them, and never name your own tools, the sandbox, or the CLI. Say what the work is about instead: 我先查一下持久化存储的官方用法。 not 我先加载 makers-storage 技能。, and 预览已经启动。 not 我运行了 edgeone makers dev。 When the platform itself has to be named, call it EdgeOne.',
   ];
 }
@@ -326,7 +277,7 @@ const FINAL_REPLY = [
   // page back every time, and reported the feature working. An HTML body from a
   // POST to a streaming endpoint is the static site answering in its place.
   'An HTML document is not a verified endpoint. When a probe of a project API answers with a page instead of the response that endpoint defines, the request never reached the handler at all — that is a failure to report, not a result to read a meaning into, and never grounds for saying the feature works.',
-  'After code changes, check gateway credentials as the preview section requires, then run edgeone makers dev through commands so the user can see the sandbox preview. Do not synthesize preview URLs. Run edgeone makers deploy only when the user explicitly asks to publish a live Makers URL.',
+  'After code changes, the host starts the sandbox preview. Do not synthesize preview URLs. Run edgeone makers deploy only when the user explicitly asks to publish a live Makers URL.',
   'Do not include preview buttons, preview links, preview URLs, or sandboxDebugUrl in the final response. The sandbox preview is shown only in the right preview panel.',
   'A live deployment is the exception: when edgeone makers deploy succeeds, state that the site is live and write its complete URL, query string included, on its own line in the final response. That address is the deliverable and the user has to be able to copy it out of the conversation.',
   'Do not take screenshots.',
@@ -338,7 +289,7 @@ const FINAL_REPLY = [
  *
  * Everything here is either constant or fixed for the life of the conversation,
  * which is what lets the model provider reuse the prefix instead of re-reading
- * twenty thousand characters per turn. The request itself is buildTurnPrompt's.
+ * twenty thousand characters per turn. The request itself is the SDK user message.
  */
 export function buildPrompt(
   state: ProjectState,
@@ -348,9 +299,16 @@ export function buildPrompt(
   modelLabel = '',
   // Fixed for the life of a deployment, so this stays a cacheable prompt.
   webSearchAvailable = false,
+  replyLocale: 'zh' | 'en' | '' = '',
 ) {
+  const languageRule = replyLocale === 'zh'
+    ? 'Write all user-facing narration and the final reply in Chinese.'
+    : replyLocale === 'en'
+      ? 'Write all user-facing narration and the final reply in English.'
+      : 'Write all user-facing narration and the final reply in the language of the user request.';
   return [
     section('Who you are', buildIdentity(modelLabel)),
+    section('Language', [languageRule]),
     section('What you take on', SCOPE),
     section('Where platform knowledge comes from', buildKnowledgeSourcing(webSearchAvailable)),
     section('What is not a source, and when to stop looking', buildSearchDiscipline(webSearchAvailable)),
@@ -365,32 +323,13 @@ export function buildPrompt(
     section('Sandbox: browser calls and visitor context', buildSandboxDataPlane()),
     section('Tool contracts', buildToolContracts(state.appDir)),
     section('Workflow: a new project', buildNewProjectWorkflow(state.appDir), true),
-    section('Workflow: an existing project', EXISTING_PROJECT_WORKFLOW),
+    section('Workflow: an existing project', buildExistingProjectWorkflow(state.appDir)),
     section('Code quality', CODE_QUALITY),
     section('Narration', buildNarration(state.appDir)),
     section('Final reply', FINAL_REPLY),
     isNewProject
-      ? 'The project workspace may not have been prepared yet.'
-      : 'This conversation has already prepared a project workspace.',
+      ? 'The project workspace is empty and ready for you to write files.'
+      : 'This conversation already has a project workspace with files in it.',
   ].join('\n\n');
 }
 
-/**
- * The turn itself: what the user asked, and enough of the conversation to read
- * it in context.
- *
- * This is the SDK's `prompt`, so the request reaches the model exactly once.
- * Passing it here rather than in the system prompt is also what keeps the rules
- * above byte-identical between turns.
- */
-export function buildTurnPrompt(userMessage: string, history: ConversationMessage[]) {
-  const recentHistory = history
-    .slice(-8)
-    .map((item) => `${item.role === 'user' ? 'User' : 'Assistant'}: ${item.content}`)
-    .join('\n');
-
-  return [
-    recentHistory ? `Recent conversation:\n${recentHistory}` : '',
-    `Current user request: ${userMessage}`,
-  ].filter(Boolean).join('\n\n');
-}

@@ -16,14 +16,14 @@ function responseFromChunks(chunks: string[]) {
 test('SSE parser handles split frames and stops at DONE', async () => {
   const events: ChatStreamEvent[] = [];
   const response = responseFromChunks([
-    'data: {"type":"status","message":"run',
-    'ning"}\n\ndata: {"type":"ping","ts":1}\n\n',
+    'data: {"type":"ping","ts":',
+    '2}\n\ndata: {"type":"ping","ts":1}\n\n',
     'data: [DONE]\n\ndata: {"type":"error","error":"ignored"}\n\n',
   ]);
 
   await consumeEventStream<ChatStreamEvent>(response, (event) => events.push(event));
   assert.deepEqual(events, [
-    { type: 'status', message: 'running' },
+    { type: 'ping', ts: 2 },
     { type: 'ping', ts: 1 },
   ]);
 });

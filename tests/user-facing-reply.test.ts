@@ -3,7 +3,6 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import {
   compactUserFacingReply,
-  GATEWAY_CREDENTIALS_USER_REPLY,
   resolveFinishedTurn,
   withLiveDeploymentUrl,
 } from '../shared/user-facing-reply.ts';
@@ -11,7 +10,7 @@ import {
 const LIVE_URL = 'https://vibe-coding-playground.edgeone.app/?eo_token=abc123def456&eo_time=1787882262';
 
 test('Chinese fallback stays concise and localized', async () => {
-  const source = await readFile('agents/_lib/pipelines/helpers.ts', 'utf8');
+  const source = await readFile('agents/_lib/turn/checkpoint.ts', 'utf8');
   assert.match(source, /已按你的需求完成/);
   assert.match(source, /右侧预览已就绪/);
 });
@@ -31,11 +30,11 @@ test('successful replies keep only the user-facing outcome paragraph', () => {
 });
 
 test('step narration is streamed to the user while the summary stays compact', async () => {
-  const chat = await readFile('agents/_lib/pipelines/chat.ts', 'utf8');
+  const chat = await readFile('agents/_lib/turn/chat.ts', 'utf8');
   const prompt = await readFile('agents/_lib/prompt.ts', 'utf8');
   assert.match(chat, /if \(event\.type === 'text_segment'\)/);
   assert.match(chat, /recordProgress\(narration\)/);
-  assert.match(chat, /send\(narration as unknown as Record<string, unknown>\)/);
+  assert.match(chat, /send\(narration\)/);
   assert.match(prompt, /Keep narrating as you work/);
   assert.match(prompt, /always write it in the user language/);
 });
@@ -71,22 +70,14 @@ test('a turn that stopped to ask a question is not a preview that failed', () =>
   assert.equal(outcome.reply, QUESTION_TURN);
 });
 
-test('skipping a Models API key still offers preview and deploy', () => {
-  assert.equal(
-    GATEWAY_CREDENTIALS_USER_REPLY.zh,
-    '项目已经写好。要调用大模型请在下方输入 Models API Key；跳过也可以先预览和部署。',
-  );
-  assert.match(GATEWAY_CREDENTIALS_USER_REPLY.en, /skip to preview and deploy first/);
-});
-
-test('waiting for an API key is not a preview that failed', () => {
+test('waiting for a clarifying question is not a preview that failed', () => {
   const outcome = resolveFinishedTurn({
     filesWritten: true,
     previewUrl: '',
     buildFailed: false,
     waitingForUser: true,
     modelReply: 'AI 聊天助手已经做好了：支持流式输出、多轮对话。',
-    fallbackReply: GATEWAY_CREDENTIALS_USER_REPLY.zh,
+    fallbackReply: '已按你的需求完成。',
     failureReply: '项目已生成，但预览暂时不可用，请重试。',
   });
 
@@ -197,7 +188,7 @@ test('the live URL is guaranteed in the reply, in the reply language', () => {
 // state.deployment survives the turn that created it, so an unrelated later
 // reply must not pick up a stale address.
 test('only the deployment from the current turn reaches the reply', async () => {
-  const chat = await readFile('agents/_lib/pipelines/chat.ts', 'utf8');
+  const chat = await readFile('agents/_lib/turn/chat.ts', 'utf8');
   assert.match(chat, /modelResult\.deploymentTouched\s*\n?\s*&& state\.deployment\?\.status === 'success'/);
   assert.match(chat, /withLiveDeploymentUrl\(/);
 });

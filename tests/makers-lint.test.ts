@@ -5,13 +5,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import test from 'node:test';
-import {
-  assertMakersProjectCompatible,
-  buildMakersCompatibilityScript,
-  loadMakersFrameworkProfiles,
-  loadMakersValidationRules,
-  runMakersCompatibilityCheck,
-} from '../agents/_lib/project/makers-compat.ts';
+import { assertMakersProjectCompatible, runMakersCompatibilityCheck } from '../agents/_lib/makers/compat/run.ts';
+import { buildMakersCompatibilityScript } from '../agents/_lib/makers/compat/lint-script.ts';
+import { loadMakersFrameworkProfiles, loadMakersValidationRules } from '../agents/_lib/makers/compat/skill-rules.ts';
 import { projectState } from './helpers/fixtures.ts';
 
 const execFileAsync = promisify(execFile);

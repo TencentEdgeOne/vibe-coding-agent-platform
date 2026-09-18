@@ -16,6 +16,7 @@ import {
   resolveRequestedModel,
   resolveRunningModelLabel,
 } from '../agents/_lib/models.ts';
+import { LIVE_TURN, MODEL_PICKER, WORKSPACE, surface } from './helpers/source.ts';
 
 // The picker renders labels, never ids. The ids are scoped with the platform
 // tier, so a label falling back to its id would print the one word no
@@ -71,7 +72,7 @@ test('an extra model that repeats a built-in does not appear twice', () => {
   assert.equal(catalog.length, BUILT_IN_MODELS.length);
   assert.equal(
     catalog.find((option) => option.id === DEFAULT_MODEL)?.label,
-    'DeepSeek V4 Flash',
+    'DeepSeek V4.1 Flash',
   );
 });
 
@@ -184,7 +185,7 @@ test('a finished run reports the model it asked for against the one it billed', 
 // the mouse is a downgrade from the control it replaced, so the parts the
 // browser used to supply are asserted here.
 test('the model picker keeps what the native select gave it for free', async () => {
-  const picker = await readFile('app/components/model-picker.tsx', 'utf8');
+  const picker = await surface(MODEL_PICKER);
   // The comments explain why the native control is gone, so they name it.
   const code = picker.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
@@ -212,4 +213,41 @@ test('the model picker keeps what the native select gave it for free', async () 
   const guard = picker.indexOf('if (models.length < 2)');
   assert.ok(guard > 0 && picker.lastIndexOf('useEffect(', guard) < guard);
   assert.equal(picker.slice(guard).includes('useEffect('), false);
+});
+
+// The picker is the user's choice for the next turn. Persisting it through a
+// dedicated /session-model route would write a preference before they asked
+// for anything; /prompt is when a model is actually needed, so that is where
+// the choice travels. Omitting it is valid: the runtime then uses the
+// deployment default rather than a previously stored preference.
+test('the composer model travels on /prompt, not a session-model route', async () => {
+  const [
+    screen,
+    client,
+    live,
+    prompt,
+    task,
+    agent,
+  ] = await Promise.all([
+    surface(WORKSPACE),
+    surface('app/features/workspace/workspace-api.ts'),
+    surface(LIVE_TURN),
+    readFile('agents/prompt.ts', 'utf8'),
+    readFile('agents/_lib/session/task.ts', 'utf8'),
+    readFile('agents/_lib/session/live.ts', 'utf8'),
+  ]);
+
+  assert.match(screen, /onModelChange=\{setModel\}/);
+  assert.doesNotMatch(screen, /setSessionModel/);
+  assert.doesNotMatch(client, /\/session-model/);
+  assert.match(client, /\.\.\.\(options\.model \? \{ model: options\.model \} : \{\}\)/);
+  assert.match(live, /model: modelRef\.current/);
+  assert.match(prompt, /resolveRequestedModel\(context, body\.model\)/);
+  assert.doesNotMatch(task, /getModelPreference/);
+  assert.match(task, /requestedModel \? \{ model: requestedModel \}/);
+  assert.match(task, /saveModelPreference\(context, conversationId, requestedModel\)/);
+  assert.match(
+    agent,
+    /\(options\.model \|\| ''\)\.trim\(\) \|\| resolveConfiguredModel\(options\.context\)/,
+  );
 });

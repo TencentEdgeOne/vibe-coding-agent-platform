@@ -1,5 +1,5 @@
 import type { ClaudeMcpTool } from '../types.ts';
-import { shortenToolName } from '../../../shared/tool-phase.ts';
+import { shortenToolName } from '../makers/tool-phase.ts';
 import {
   WEB_SEARCH_API_KEY_ENV,
   WEB_SEARCH_TOOL_NAME,

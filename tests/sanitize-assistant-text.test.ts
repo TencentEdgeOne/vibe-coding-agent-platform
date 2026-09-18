@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { sanitizeAssistantText } from '../shared/sanitize-assistant-text.ts';
+import { sanitizeAssistantText } from '../shared/timeline.ts';
 
 // Every assistant reply is persisted and streamed through this function, so a
 // gap here reaches the user as terminal garbage, leaked reasoning, or raw tool

@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import type { ProjectState } from '../../agents/_lib/types.ts';
 
 /**
@@ -19,4 +20,18 @@ export function projectState(
     appDir: `${sessionDir}/app`,
     ...overrides,
   };
+}
+
+export const COMMANDS_WRAP_FILES = [
+  'agents/_lib/tools/commands-wrap.ts',
+  'agents/_lib/tools/makers-command.ts',
+  'agents/_lib/tools/preview-command-result.ts',
+  'agents/_lib/tools/deploy-command-result.ts',
+  'agents/_lib/tools/command-preprocess.ts',
+  'agents/_lib/tools/command-text.ts',
+  'agents/_lib/tools/makers-lifecycle.ts',
+] as const;
+
+export async function readCommandsWrapSource() {
+  return (await Promise.all(COMMANDS_WRAP_FILES.map((file) => readFile(file, 'utf8')))).join('\n');
 }

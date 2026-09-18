@@ -1,50 +1,7 @@
-import { createChatTaskAndStreamResponse } from './_lib/chat-tasks.ts';
-import { createProjectResumeStreamResponse, DEFAULT_DEPLOY_REQUEST } from './_lib/pipelines/index.ts';
-import { resolveRequestedModel } from './_lib/models.ts';
+import type { AgentContext } from './_lib/runtime/context.ts';
+import { createProjectResumeStreamResponse } from './_lib/session/resume.ts';
 
 /** Session entry: history, workspace, and an in-flight task's SSE on one GET. */
-export async function onRequestGet(context: any) {
+export async function onRequestGet(context: AgentContext) {
   return createProjectResumeStreamResponse(context);
-}
-
-/** Submit a turn. Only called when the user sends text (or publish). */
-export async function onRequestPost(context: any) {
-  const body = context?.request?.body || {};
-  // Publishing occupies the same task slot as a generation. Reconnect after
-  // refresh goes through GET /session, not this method.
-  const intent = body?.intent === 'deploy' ? 'deploy' as const : 'chat' as const;
-  const message = String(body?.message || '').trim()
-    || (intent === 'deploy' ? DEFAULT_DEPLOY_REQUEST : '');
-  if (!message) {
-    return new Response(JSON.stringify({
-      ok: false,
-      error: 'Please describe the page or feature you want to build first.',
-    }), {
-      status: 400,
-      headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
-    });
-  }
-
-  try {
-    const apiKey = String(body?.apiKey || '').trim();
-    return await createChatTaskAndStreamResponse(context, message, {
-      intent,
-      resetProject: body?.resetProject === true,
-      turnId: String(body?.turnId || '').trim() || undefined,
-      // Anything this deployment does not offer resolves to '', so a client
-      // cannot name an arbitrary model and have it billed through the gateway.
-      model: resolveRequestedModel(context, body?.model),
-      siteDomain: String(body?.siteDomain || '').trim() || undefined,
-      ...(apiKey ? { apiKey } : {}),
-      ...(body?.gatewaySkip === true ? { gatewaySkip: true } : {}),
-    });
-  } catch (error) {
-    return new Response(JSON.stringify({
-      ok: false,
-      error: error instanceof Error ? error.message : 'Failed to start the chat task.',
-    }), {
-      status: 500,
-      headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
-    });
-  }
 }

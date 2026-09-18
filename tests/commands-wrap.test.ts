@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { wrapSandboxTools } from '../agents/_lib/tools/commands-wrap.ts';
-import { resolveMakersProjectName } from '../agents/_lib/project/makers-deploy.ts';
+import { resolveMakersProjectName } from '../agents/_lib/makers/project.ts';
 import {
   MAKERS_DEV_PORT,
   PREVIEW_PATH_PREFIX,
   PREVIEW_PUBLIC_PORT,
   PREVIEW_SERVER_PORT,
 } from '../agents/_lib/constants.ts';
-import { MAKERS_DEV_LAUNCH_TIMEOUT_SECONDS } from '../shared/makers-dev.ts';
+import { MAKERS_DEV_LAUNCH_TIMEOUT_SECONDS } from '../agents/_lib/makers/cli-dev.ts';
 import type {
   ClaudeMcpTool,
   DeploymentInfo,

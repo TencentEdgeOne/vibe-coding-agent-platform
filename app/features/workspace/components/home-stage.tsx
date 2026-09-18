@@ -3,7 +3,7 @@
 import type { FormEvent, KeyboardEvent } from 'react';
 import { BookOpen, Server, Sparkles } from 'lucide-react';
 import type { HomeFeatureIcon, Locale, UiCopy } from '@/app/i18n';
-import { ModelPicker } from '@/app/components/model-picker';
+import { ModelPicker } from './model-picker';
 import type { ModelOption } from '../../../../shared/models';
 
 type HomeStageProps = {

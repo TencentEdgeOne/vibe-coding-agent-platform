@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
+import { LIVE_TURN, WORKSPACE, surface } from './helpers/source.ts';
 
 const STYLES_DIR = 'app/styles';
 
@@ -25,7 +26,7 @@ async function stylesheet(): Promise<string> {
 
 test('the page itself never scrolls, in any workspace state', async () => {
   const css = await stylesheet();
-  const screen = await readFile('app/features/workspace/workspace-screen.tsx', 'utf8');
+  const screen = await surface(WORKSPACE);
 
   assert.match(css, /html,\nbody \{[^}]*height: 100%;[^}]*overflow: hidden;/);
   assert.match(css, /\.app-shell \{[^}]*height: 100dvh;[^}]*overflow: hidden;/);
@@ -37,7 +38,7 @@ test('scroll containers are containing blocks, so sr-only labels cannot stretch 
   const css = await stylesheet();
 
   assert.match(css, /\.conversation-scroll \{[^}]*position: relative;/);
-  assert.match(css, /\.tool-activity-trigger \{[^}]*position: relative;/);
+  assert.match(css, /\.conversation-skeleton \{[^}]*position: relative;/);
 });
 
 test('the stacked workspace fits one viewport instead of scrolling past its panes', async () => {
@@ -52,7 +53,7 @@ test('the stacked workspace fits one viewport instead of scrolling past its pane
 });
 
 test('the landing hero centers without clipping its own top', async () => {
-  const stage = await readFile('app/features/workspace/components/home-stage.tsx', 'utf8');
+  const stage = await surface('app/features/workspace/components/home-stage.tsx');
 
   assert.doesNotMatch(stage, /home-stage[^"]*justify-center/);
   assert.match(stage, /className="home-inner my-auto"/);
@@ -63,27 +64,20 @@ test('the landing hero centers without clipping its own top', async () => {
 // workspace offers stays in the bar and explains itself when it cannot run.
 test('workspace actions stay in place and go quiet instead of disappearing', async () => {
   const [screen, header, css] = await Promise.all([
-    readFile('app/features/workspace/workspace-screen.tsx', 'utf8'),
-    readFile('app/features/workspace/components/site-header.tsx', 'utf8'),
+    surface(WORKSPACE),
+    surface('app/features/workspace/components/site-header.tsx'),
     readFile(path.join(STYLES_DIR, 'workspace.css'), 'utf8'),
   ]);
 
-  // Acting on the project belongs to the panel that shows the project. The
-  // cluster ends where the preview-only controls begin.
-  const actionsStart = screen.indexOf('workspace-topbar-actions');
-  const projectActions = screen.slice(
-    actionsStart,
-    screen.indexOf("sandboxTab === 'preview'", actionsStart),
-  );
-  assert.ok(projectActions.length > 0);
-  assert.match(projectActions, /disabled=\{downloadBusy \|\| !download\?\.url\}/);
-  assert.match(projectActions, /disabled=\{!canDeployProject\}/);
-  assert.doesNotMatch(projectActions, /\{download\?\.url && /);
+  // Acting on the project belongs to the panel that shows the project.
+  assert.match(screen, /disabled=\{workspace\.downloadBusy \|\| !workspace\.download\?\.url\}/);
+  assert.match(screen, /disabled=\{!canDeployProject\}/);
+  assert.doesNotMatch(screen, /\{download\?\.url && /);
   // A native title is dropped on a disabled control, so the tooltip is CSS on an
   // attribute. It only stays readable while disabled because the panel icon does
   // not suppress its own pointer events the way the header buttons do.
-  assert.match(projectActions, /data-tooltip=\{downloadHint\}/);
-  assert.doesNotMatch(projectActions, /title=\{(downloadHint|exportHint|deployHint)\}/);
+  assert.match(screen, /data-tooltip=\{downloadHint\}/);
+  assert.doesNotMatch(screen, /title=\{(downloadHint|exportHint|deployHint)\}/);
   const disabledIcon = css.slice(
     css.indexOf('.workspace-icon-button:disabled'),
     css.indexOf('.workspace-icon-spinner'),
@@ -112,12 +106,12 @@ test('surfaces consume design tokens instead of raw colour values', async () => 
   const entries = await readdir(STYLES_DIR);
   const surfaces = entries.filter((entry) => entry.endsWith('.css') && entry !== 'tokens.css');
 
-  for (const surface of surfaces) {
-    const css = withoutComments(await readFile(path.join(STYLES_DIR, surface), 'utf8'));
+  for (const surfaceName of surfaces) {
+    const css = withoutComments(await readFile(path.join(STYLES_DIR, surfaceName), 'utf8'));
     assert.doesNotMatch(
       css,
       /#[0-9a-fA-F]{3,8}\b|\brgba?\(/,
-      `${surface} hardcodes a colour; add it to tokens.css instead`,
+      `${surfaceName} hardcodes a colour; add it to tokens.css instead`,
     );
   }
 });
@@ -162,4 +156,67 @@ test('the topbar overlays the preview from its own layer, and never through opac
     /opacity/,
   );
   assert.match(disabled, /:disabled svg,\s*\.workspace-icon-button:disabled \.workspace-icon-spinner \{\s*opacity: 0\.45/);
+});
+
+// The canvas starts with the result column open, but the stream still must
+// not open it or pick a tab as a side effect of a tool call.
+test('the result panel only opens from its toggle, and never picks a tab by itself', async () => {
+  const [screen, live, resume, state] = await Promise.all([
+    surface(WORKSPACE),
+    surface(LIVE_TURN),
+    surface('app/features/workspace/hooks/use-session-resume.ts'),
+    surface('app/features/workspace/hooks/use-workspace-state.ts'),
+  ]);
+
+  assert.match(screen, /function ResultPanelToggle\(/);
+  assert.match(screen, /workspace\.setResultPanelOpen\(true\)/);
+  assert.match(screen, /workspace\.setResultPanelOpen\(false\)/);
+  assert.match(screen, /onValueChange=\{\(value\) => workspace\.setSandboxTab\(value as SandboxTab\)\}/);
+  assert.match(state, /\[resultPanelOpen, setResultPanelOpen\] = useState\(true\)/);
+  assert.match(state, /useState<SandboxTab \| null>\('preview'\)/);
+  assert.doesNotMatch(live, /setResultPanelOpen\(/);
+  assert.doesNotMatch(live, /setSandboxTab\(/);
+  assert.doesNotMatch(resume, /setResultPanelOpen\(/);
+  assert.doesNotMatch(resume, /setSandboxTab\(/);
+});
+
+test('the full-screen prep overlay drops on ready while files and preview keep local loading', async () => {
+  const [screen, resume, live] = await Promise.all([
+    surface(WORKSPACE),
+    surface('app/features/workspace/hooks/use-session-resume.ts'),
+    surface(LIVE_TURN),
+  ]);
+
+  assert.match(screen, /if \(!resume\.resumeChecked \|\| live\.sessionPreparing\)/);
+  assert.match(screen, /SessionPrepLoading/);
+  assert.match(screen, /restoring=\{resume\.workspaceRestoring\}/);
+  assert.doesNotMatch(
+    screen,
+    /if \([^)]*workspaceRestoring[^)]*\) \{\s*return \(/,
+    'workspace restore must not keep the full-screen overlay after ready',
+  );
+
+  assert.match(resume, /event\.data\.stage === 'ready'/);
+  assert.match(resume, /setResumeChecked\(true\);\s*setPrepStage\(null\)/);
+  assert.match(resume, /finally \{[\s\S]*setWorkspaceRestoring\(false\)/);
+  assert.match(resume, /finally \{[\s\S]*setFilesRefreshing\(false\)/);
+
+  assert.match(live, /onReady: \(\) => \{/);
+  assert.match(live, /setSessionPreparing\(false\)/);
+  assert.match(live, /options\.onReady\(\)/);
+});
+
+test('the split workspace defaults to a 3:7 chat-to-panel ratio and can be dragged', async () => {
+  const [css, screen] = await Promise.all([
+    readFile('app/styles/workspace.css', 'utf8'),
+    surface(WORKSPACE),
+  ]);
+  const stacked = css.slice(css.indexOf('@media (max-width: 900px)'));
+
+  assert.match(css, /--workspace-chat-share:\s*30%/);
+  assert.match(css, /flex: 0 0 var\(--workspace-chat-share\)/);
+  assert.match(screen, /function WorkspaceSplitHandle\(/);
+  assert.match(screen, /role="separator"/);
+  assert.match(screen, /clampWorkspaceChatShare/);
+  assert.match(stacked, /\.workspace-split-handle \{[^}]*display: none;/);
 });

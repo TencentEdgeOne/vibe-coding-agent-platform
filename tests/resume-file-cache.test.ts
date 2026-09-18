@@ -4,7 +4,7 @@ import {
   RESUME_FILE_CACHE_MAX_BYTES,
   RESUME_FILE_CACHE_MAX_FILES,
   selectResumeCacheFiles,
-} from '../shared/resume-file-cache.ts';
+} from '../agents/_lib/project/resume-file-cache.ts';
 import type { FileTreeItem } from '../shared/protocol.ts';
 
 function file(path: string, size: number): FileTreeItem {

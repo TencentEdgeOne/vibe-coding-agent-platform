@@ -1,13 +1,20 @@
+import { requireSandbox, type AgentContext } from '../runtime/context.ts';
 import {
   ARCHIVE_EXCLUDED_DIRECTORIES,
   ARCHIVE_EXCLUDED_FILENAMES,
   DOWNLOAD_ARCHIVE_MAX_BYTES,
 } from '../constants.ts';
-import type { LegacyProjectSnapshot, ProjectState } from '../types.ts';
+import type { ProjectState } from '../types.ts';
 import { safeSegment } from '../utils/paths.ts';
 import { runSandboxCommand } from './commands.ts';
 import { assertResettableProjectPath } from './state.ts';
-import { shellQuote } from '../../../shared/shell.ts';
+import { shellQuote } from '../utils/shell.ts';
+
+type LegacyProjectSnapshot = {
+  base64: string;
+  filename: string;
+  contentType?: string;
+};
 
 type ProjectArchiveResult =
   | {
@@ -49,10 +56,10 @@ function isArchiveBase64Valid(
 // Zip state.appDir inside the sandbox and return it base64-encoded. files.read
 // is UTF-8 only and corrupts binary, so the bytes are read out via `base64`.
 export async function createProjectArchive(
-  context: any,
+  context: AgentContext,
   state: ProjectState,
 ): Promise<ProjectArchiveResult> {
-  const sandbox = context.sandbox;
+  const sandbox = requireSandbox(context);
 
   const appDirExists = await sandbox.files.exists(state.appDir);
   if (!appDirExists) {
@@ -181,11 +188,11 @@ export async function createProjectArchive(
 // Inverse of createProjectArchive: restore a persisted base64 archive back into
 // the (empty/recycled) sandbox appDir, then reinstall dependencies. Used when the
 // sandbox no longer has the code but a snapshot exists in the store
-// (agents/_lib/memory.ts). Binary must be produced inside the sandbox via `base64 -d` — the
+// (agents/_lib/session/store.ts). Binary must be produced inside the sandbox via `base64 -d` — the
 // sandbox files.write API is UTF-8 only — so we write the base64 as text and
 // decode + extract with shell, mirroring createProjectArchive's packing path.
 export async function restoreProjectArchive(
-  context: any,
+  context: AgentContext,
   state: ProjectState,
   snapshot: LegacyProjectSnapshot,
   options: { installDependencies?: boolean } = {},
@@ -195,7 +202,7 @@ export async function restoreProjectArchive(
   }
   assertResettableProjectPath(state);
 
-  const sandbox = context.sandbox;
+  const sandbox = requireSandbox(context);
   await sandbox.files.makeDir(state.sessionDir);
   await sandbox.files.makeDir(state.appDir);
 

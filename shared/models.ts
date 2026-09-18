@@ -24,7 +24,7 @@ export type ModelOption = {
 };
 
 /** Runs when the deployment configures nothing and the user picks nothing. */
-export const DEFAULT_MODEL = '@makers/deepseek-v4-flash';
+export const DEFAULT_MODEL = '@makers/deepseek-v4.1-flash';
 
 /**
  * The models the platform serves without a vendor key. Free and rate limited,
@@ -35,6 +35,7 @@ export const DEFAULT_MODEL = '@makers/deepseek-v4-flash';
  * a deployment that has bound one adds it through EXTRA_MODELS_ENV_KEY.
  */
 export const BUILT_IN_MODELS: readonly ModelOption[] = [
+  { id: '@makers/deepseek-v4.1-flash', label: 'DeepSeek V4.1 Flash' },
   { id: '@makers/deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
   { id: '@makers/deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
   { id: '@makers/hy3', label: 'Hunyuan 3' },

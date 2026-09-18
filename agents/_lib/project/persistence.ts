@@ -1,16 +1,16 @@
-import { clearLegacyProjectSnapshot, getLegacyProjectSnapshot } from '../memory.ts';
+import { requireSandbox, type AgentContext } from '../runtime/context.ts';
 import type { ProjectState } from '../types.ts';
 import { restoreProjectArchive } from './archive.ts';
 import { runSandboxCommand } from './commands.ts';
 
 export async function restorePersistedProject(
-  context: any,
+  context: AgentContext,
   conversationId: string,
   state: ProjectState,
   options: { installDependencies?: boolean } = {},
-): Promise<{ restored: boolean; migratedLegacy?: boolean; error?: string }> {
+): Promise<{ restored: boolean; error?: string }> {
   try {
-    const restored = await context.sandbox.restore({ path: state.appDir });
+    const restored = await requireSandbox(context).restore?.({ path: state.appDir });
     if (restored?.restored) {
       if (options.installDependencies !== false) await installDependencies(context, state);
       return { restored: true };
@@ -18,26 +18,16 @@ export async function restorePersistedProject(
   } catch (error) {
     return { restored: false, error: error instanceof Error ? error.message : String(error) };
   }
-
-  const legacy = await getLegacyProjectSnapshot(context, conversationId);
-  if (!legacy) return { restored: false };
-  const restoredLegacy = await restoreProjectArchive(context, state, legacy, options);
-  if (!restoredLegacy.ok) return { restored: false, error: restoredLegacy.error };
-
-  try {
-    await context.sandbox.persist({ path: state.appDir });
-    await clearLegacyProjectSnapshot(context, conversationId);
-  } catch {
-    // Keep the legacy metadata until migration has durably completed.
-  }
-  return { restored: true, migratedLegacy: true };
+  return { restored: false };
 }
 
-async function installDependencies(context: any, state: ProjectState) {
-  if (!(await context.sandbox.files.exists(`${state.appDir}/package.json`))) return;
-  if (await context.sandbox.files.exists(`${state.appDir}/node_modules`)) return;
+async function installDependencies(context: AgentContext, state: ProjectState) {
+  if (!(await requireSandbox(context).files.exists(`${state.appDir}/package.json`))) return;
+  if (await requireSandbox(context).files.exists(`${state.appDir}/node_modules`)) return;
   await runSandboxCommand(context, 'npm install --no-audit --no-fund', {
     cwd: state.appDir,
     timeout: 300,
   });
 }
+
+export { restoreProjectArchive };

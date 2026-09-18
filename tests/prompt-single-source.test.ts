@@ -2,13 +2,12 @@ import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
-import { buildPrompt, buildTurnPrompt } from '../agents/_lib/prompt.ts';
+import { buildPrompt } from '../agents/_lib/prompt.ts';
 import {
   MAKERS_DEV_PORT,
   PREVIEW_ASSET_PREFIX_ENV,
   PREVIEW_PATH_PREFIX,
   PREVIEW_PUBLIC_PORT,
-  PREVIEW_SERVER_PORT,
 } from '../agents/_lib/constants.ts';
 import { MAKERS_REFERENCE_SKILL_NAMES } from '../agents/_lib/tools/makers-skills.ts';
 import { projectState } from './helpers/fixtures.ts';
@@ -128,12 +127,12 @@ test('the prompt keeps the sandbox corrections the skills cannot know about', ()
   const prompt = renderPrompt();
   assert.match(prompt, /target sandbox image is expected to provide the EdgeOne CLI/);
   assert.match(prompt, /Run it directly with the commands tool/);
-  assert.match(
+  assert.match(prompt, /The host starts the right-hand development preview/);
+  assert.doesNotMatch(
     prompt,
     new RegExp(`edgeone makers dev --port ${MAKERS_DEV_PORT} --skip-env-sync --skip-ai-gateway-sync`),
   );
   assert.match(prompt, /--area global/);
-  assert.match(prompt, new RegExp(`path adapter on port ${PREVIEW_SERVER_PORT}`));
   assert.match(
     prompt,
     new RegExp(`sandbox\\.getHost\\(${PREVIEW_PUBLIC_PORT}\\).*${PREVIEW_PATH_PREFIX}`),
@@ -149,9 +148,11 @@ test('the prompt keeps the sandbox corrections the skills cannot know about', ()
   assert.ok(prompt.includes(makersProjectName));
   assert.match(prompt, /Declare AI_GATEWAY_API_KEY= and AI_GATEWAY_BASE_URL=/);
   assert.match(prompt, /Never write a \.env file yourself/);
-  assert.match(prompt, /request_gateway_credentials/);
+  assert.doesNotMatch(prompt, /request_gateway_credentials/);
   assert.match(prompt, /masked API Key/);
+  assert.match(prompt, /Do not stop this turn/);
   assert.doesNotMatch(prompt, /The host asks the user/);
+  assert.doesNotMatch(prompt, /stop this turn: do not start a preview/);
   assert.match(prompt, /already shaped for OpenAI-compatible clients/);
   assert.match(prompt, /never concatenate \/v1\/chat\/completions/);
   assert.match(
@@ -216,34 +217,32 @@ test('the prompt keeps the sandbox corrections the skills cannot know about', ()
 test('the prompt keeps its tool contracts and workspace boundary', () => {
   const prompt = renderPrompt();
   assert.ok(prompt.includes(state.appDir), 'prompt must name the writable project directory');
-  assert.match(prompt, /ensure_project_scaffold as the first tool/);
+  assert.match(prompt, /load_makers_skill as the first tool/);
   assert.match(prompt, /write_project_file accepts exactly one file per call/);
-  assert.match(prompt, /When the command result reports a successful preview URL, stop/);
+  assert.match(prompt, /The host starts the sandbox preview/);
   assert.match(prompt, /Run edgeone makers deploy only when the user explicitly asks/);
   assert.doesNotMatch(prompt, /publish_preview|deploy_to_makers|get_preview_link/);
   assert.match(prompt, /I can only help create or modify web projects/);
 });
 
 test('the prompt reflects whether the workspace already exists', () => {
-  assert.match(renderPrompt(true), /workspace may not have been prepared yet/);
-  assert.match(renderPrompt(false), /already prepared a project workspace/);
+  assert.match(renderPrompt(true), /workspace is empty and ready for you to write files/);
+  assert.match(renderPrompt(false), /already has a project workspace with files in it/);
 });
 
-test('recent conversation history is included when present', () => {
-  const withHistory = buildTurnPrompt('再加一个深色模式', [
-    { role: 'user', content: '做一个待办列表' },
-    { role: 'assistant', content: '已完成，右侧可以预览。' },
-  ]);
-  assert.match(withHistory, /Recent conversation:/);
-  assert.match(withHistory, /User: 做一个待办列表/);
-  assert.match(withHistory, /Current user request: 再加一个深色模式/);
-  assert.doesNotMatch(buildTurnPrompt('再加一个深色模式', []), /Recent conversation:/);
+test('the system prompt is the same on every turn of a conversation', () => {
+  const request = '做一个带留言板的网站';
+  const prompt = renderPrompt();
+
+  assert.equal(prompt, renderPrompt(), 'the rules must not vary between two identical calls');
+  assert.ok(
+    !prompt.includes(request),
+    'the request belongs to the SDK user message; a copy here changes the cached prefix every turn',
+  );
+  assert.doesNotMatch(prompt, /Recent conversation:/);
+  assert.doesNotMatch(prompt, /Current user request:/);
 });
 
-// The rules are a ~20k-character prefix. Anything turn-specific in here makes
-// that prefix new on every turn, so the provider re-reads all of it instead of
-// reusing it, and the request would arrive twice with no way to say which copy
-// is authoritative.
 test('an international site tells the model to preview onto the overseas area', () => {
   const prompt = buildPrompt(
     projectState('projects/demo', { siteDomain: 'edgeone.dev' }),
@@ -254,19 +253,6 @@ test('an international site tells the model to preview onto the overseas area', 
   );
   assert.match(prompt, /--area overseas/);
   assert.doesNotMatch(prompt, /--area global/);
-});
-
-test('the system prompt is the same on every turn of a conversation', () => {
-  const request = '做一个带留言板的网站';
-  const prompt = renderPrompt();
-
-  assert.equal(prompt, renderPrompt(), 'the rules must not vary between two identical calls');
-  assert.ok(
-    !prompt.includes(request),
-    'the request belongs to buildTurnPrompt; a copy here changes the cached prefix every turn',
-  );
-  assert.doesNotMatch(prompt, /Recent conversation:/);
-  assert.doesNotMatch(prompt, /Current user request:/);
 });
 
 test('the prompt reads as sections rather than one wall of rules', () => {
@@ -333,9 +319,8 @@ test('the prompt closes the three ways a run can talk itself into a false finish
 
   // There is no restart primitive to reach for: the host restarts the server
   // when its own route probe finds an endpoint unmounted.
-  assert.match(prompt, /only restart mechanism/);
-  assert.match(prompt, /restarts the server when one is not mounted/);
-  assert.match(prompt, /Do not kill processes or free ports/);
+  assert.match(prompt, /The host restarts the preview when generated endpoints are missing/);
+  assert.match(prompt, /Do not kill processes, free ports, or launch a preview server yourself/);
 
   // The static site answers a POST to an unmounted route with 200 and a page,
   // so an HTML body is the one reply that must never read as a success.
@@ -412,23 +397,15 @@ test('the official scaffolder replaces the search for an official template', () 
 // survive that: the one that gets the framework name into the first tool call,
 // which is the only moment the host can still act on it, and the one that stops
 // the run putting a scaffolder into a directory no longer empty enough for it.
-test('a workspace prepared from a template is not scaffolded a second time', () => {
+test('the host already prepared an empty workspace, so the first tool is a reference load', () => {
   const prompt = renderPrompt();
 
-  assert.match(prompt, /Pass framework to that call whenever the request names one/);
-  assert.match(prompt, /Omit it for a plain HTML\/CSS\/JS page/);
-  assert.match(prompt, /A templateApplied in the ensure_project_scaffold result/);
-  assert.match(prompt, /Skip the rest of this step and go to step 3/);
-  // The step it exempts still has to read as conditional, or the two contradict.
-  assert.match(prompt, /When the request names a framework and no template was applied/);
-  // Scaffold and assetPrefix are why the frameworks skill was loaded after a
-  // template landed. Both are already done, so the load has to be optional.
-  assert.match(prompt, /[Dd]o not load makers-frameworks just to read the Scaffold command/);
-  assert.match(prompt, /the prefix option is already in the framework config/);
-  assert.match(prompt, /Load makers-storage, makers-agents, or makers-cloud-functions only when/);
-  // And naming a framework here would put the choice of template in the prompt
-  // rather than in the manifest, which is the drift this file exists to catch.
-  assert.doesNotMatch(prompt, /templateApplied[^.]*(?:Next|Vite|Nuxt|Astro)/);
+  assert.match(prompt, /host has already prepared an empty project directory/);
+  assert.match(prompt, /The workspace has no files yet/);
+  assert.match(prompt, /load_makers_skill is the first tool of a new project/);
+  assert.doesNotMatch(prompt, /ensure_project_scaffold/);
+  assert.doesNotMatch(prompt, /templateApplied/);
+  assert.match(prompt, /When the request names a framework, the reference loaded in step 1 gives its scaffold command under Scaffold/);
 });
 
 // The failure mode of sourcing the command from the references: read as a list
@@ -519,11 +496,11 @@ test('an install or a build is described as taking the preview down', () => {
   const prompt = renderPrompt();
 
   assert.match(prompt, /A build or an install cannot run beside the preview/);
-  assert.match(prompt, /down until you launch it again/);
+  assert.match(prompt, /down until the host starts it again/);
   // The restart rule has to stay consistent with it: the host frees the port,
   // which is what makes relaunching work rather than repeat.
-  assert.match(prompt, /terminates the previous server itself before every launch/);
-  assert.match(prompt, /Do not kill processes or free ports/);
+  assert.match(prompt, /terminates the previous server before every launch/);
+  assert.match(prompt, /Do not kill processes, free ports/);
 });
 
 // When the key is absent the tool is withheld from the tool list, and a rule

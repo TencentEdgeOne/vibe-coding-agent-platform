@@ -1,5 +1,6 @@
-import { resolveSandboxCommandOptions } from '../../../shared/sandbox-command.ts';
-import { parseEchoedExitCode, stripEchoedExit, withExitCodeEcho } from '../utils/tool-phase.ts';
+import { requireSandbox, type SandboxCapable } from '../runtime/context.ts';
+import { resolveSandboxCommandOptions } from '../project/sandbox-command.ts';
+import { parseEchoedExitCode, stripEchoedExit, withExitCodeEcho } from '../makers/tool-phase.ts';
 
 export { resolveSandboxCommandOptions };
 
@@ -18,13 +19,13 @@ type SandboxCommandResult = {
 };
 
 export async function runSandboxCommand(
-  context: any,
+  context: SandboxCapable,
   command: string,
   options: SandboxCommandOptions = {},
 ): Promise<SandboxCommandResult> {
   const resolved = resolveSandboxCommandOptions(options);
   try {
-    const result = await context.sandbox.commands.run(command, resolved) as SandboxCommandResult;
+    const result = await requireSandbox(context).commands.run(command, resolved) as SandboxCommandResult;
     const stdout = typeof result.stdout === 'string' ? result.stdout : '';
     const stderr = typeof result.stderr === 'string' ? result.stderr : '';
     if (result.exitCode !== 0 && !stdout.trim() && !stderr.trim()) {
@@ -45,7 +46,7 @@ export async function runSandboxCommand(
 }
 
 export async function runCommandCapturingExit(
-  context: any,
+  context: SandboxCapable,
   command: string,
   options: SandboxCommandOptions = {},
 ): Promise<SandboxCommandResult> {

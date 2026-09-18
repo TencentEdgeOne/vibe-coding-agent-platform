@@ -10,12 +10,14 @@ import {
   buildGeneratedApiSmokeScript,
   buildGeneratedChatSmokeScript,
   buildPreviewProxyScript,
-} from '../shared/makers-dev.ts';
+} from '../agents/_lib/makers/cli-dev.ts';
 import { agentRoutesFromListing, generatedRoutesFromListing } from '../agents/_lib/project/preview.ts';
 import { previewDisplayPathFromPath } from '../shared/preview-display-path.ts';
+import { readCommandsWrapSource } from './helpers/fixtures.ts';
+import { LIVE_TURN, PREVIEW_SURFACE, WORKSPACE, surface } from './helpers/source.ts';
 
 test('preview address bar shows the application route without the gateway prefix', async () => {
-  const screen = await readFile('app/features/workspace/workspace-screen.tsx', 'utf8');
+  const screen = await surface(WORKSPACE);
 
   // The address chip renders the mirrored route (previewDisplayPath) rather than
   // the raw shareablePreviewUrl host, so the sandbox domain is never shown.
@@ -51,9 +53,9 @@ test('preview address chip hides the gateway prefix and access_token', () => {
 // the route the preview opened with for as long as the tests stayed green. So
 // run the real proxy against a stub upstream and read what reaches the browser.
 test('the preview proxy feeds the route mirror the parent listens for', async () => {
-  const screen = await readFile('app/features/workspace/workspace-screen.tsx', 'utf8');
-  assert.match(screen, /__edgeonePreviewPath/);
-  assert.match(screen, /addEventListener\('message'/);
+  const preview = await surface(PREVIEW_SURFACE);
+  assert.match(preview, /__edgeonePreviewPath/);
+  assert.match(preview, /addEventListener\('message'/);
 
   const upstream = http.createServer((req, res) => {
     if ((req.url || '').startsWith('/asset.js')) {
@@ -160,16 +162,17 @@ async function waitForServer(url: string) {
 
 test('sandbox preview strips the public prefix before forwarding to makers-dev', async () => {
   const preview = await readFile('agents/_lib/project/preview.ts', 'utf8');
-  const makersDev = await readFile('shared/makers-dev.ts', 'utf8');
+  const makersDev = await readFile('agents/_lib/makers/cli-dev.ts', 'utf8');
+  const proxySource = await readFile('agents/_lib/makers/preview-proxy-source.ts', 'utf8');
   assert.match(preview, /makers-dev/);
   assert.match(preview, /buildMakersDevLaunchCommand/);
   assert.match(preview, /assertMakersProjectCompatible/);
-  assert.match(preview, /getHost\(PREVIEW_PUBLIC_PORT\)/);
+  assert.match(preview, /getHost\?\.\(PREVIEW_PUBLIC_PORT\)/);
   assert.match(makersDev, /edgeone makers dev/);
   assert.match(makersDev, /skip-env-sync/);
   assert.match(makersDev, /skip-ai-gateway-sync/);
   assert.match(makersDev, /buildPreviewProxyScript/);
-  assert.match(makersDev, /server\.on\('upgrade'/);
+  assert.match(proxySource, /server\.on\('upgrade'/);
   assert.match(preview, /PREVIEW_PATH_PREFIX/);
   assert.doesNotMatch(preview, /python3 -m http\.server/);
 });
@@ -177,7 +180,7 @@ test('sandbox preview strips the public prefix before forwarding to makers-dev',
 test('agent chat previews are smoke-tested before being published', async () => {
   const [preview, makersDev] = await Promise.all([
     readFile('agents/_lib/project/preview.ts', 'utf8'),
-    readFile('shared/makers-dev.ts', 'utf8'),
+    readFile('agents/_lib/makers/cli-dev.ts', 'utf8'),
   ]);
   assert.match(preview, /assertGeneratedAgentChatReady/);
   assert.match(preview, /buildGeneratedChatSmokeScript/);
@@ -438,7 +441,7 @@ test('an unmounted route is restarted, while a bad reply is reported as-is', asy
 test('a preview publish never probes the generated agent twice in a row', async () => {
   const [preview, wrap] = await Promise.all([
     readFile('agents/_lib/project/preview.ts', 'utf8'),
-    readFile('agents/_lib/tools/commands-wrap.ts', 'utf8'),
+    readCommandsWrapSource(),
   ]);
 
   // Each probe is a real model call against the generated agent, so the publish
@@ -472,19 +475,22 @@ test('cold preview probes do not throw on curl connection refused', async () => 
 });
 
 test('expired preview credentials never fall back to the stale iframe URL', async () => {
-  const screen = await readFile('app/features/workspace/workspace-screen.tsx', 'utf8');
+  const [screen, preview] = await Promise.all([
+    surface(WORKSPACE),
+    surface(PREVIEW_SURFACE),
+  ]);
 
-  assert.match(screen, /PREVIEW_CREDENTIAL_REFRESH_MS/);
-  assert.match(screen, /isMakersPreviewRef/);
-  assert.match(screen, /setPreviewRefreshFailed\(true\)/);
+  assert.match(preview, /PREVIEW_CREDENTIAL_REFRESH_MS/);
+  assert.match(preview, /isMakersPreviewRef/);
+  assert.match(preview, /setPreviewRefreshFailed\(true\)/);
   assert.match(screen, /previewUnavailable/);
   assert.doesNotMatch(
-    screen,
+    preview,
     /setActivePreviewUrl\(previousActiveUrl\)/,
     'a failed credential remint must not reveal the gateway auth response',
   );
   assert.doesNotMatch(
-    screen,
+    preview,
     /reload the current iframe src \(same token\)/,
     'manual refresh must not retry an expired access token',
   );
@@ -526,4 +532,41 @@ test('dynamic and catch-all routes stay out of the probe list', () => {
   ].join('\n'));
 
   assert.deepEqual(functionRoutes, ['/api/health']);
+});
+
+test('the host starts dest with the workspace and keeps it watching files', async () => {
+  const [chat, snapshot, live, apply, assemble, resume, preview, prompt] = await Promise.all([
+    readFile('agents/_lib/turn/chat.ts', 'utf8'),
+    readFile('agents/_lib/project/snapshot.ts', 'utf8'),
+    surface(LIVE_TURN),
+    surface('app/features/workspace/hooks/use-workspace-snapshot.ts'),
+    readFile('agents/_lib/tools/assemble.ts', 'utf8'),
+    readFile('agents/_lib/session/resume.ts', 'utf8'),
+    surface(PREVIEW_SURFACE),
+    readFile('agents/_lib/prompt.ts', 'utf8'),
+  ]);
+
+  assert.match(chat, /const startHostPreview = async/);
+  assert.match(chat, /if \(state\.created\) \{\s*\n\s*void startHostPreview\('\[preview\] workspace ready:'\)/);
+  assert.doesNotMatch(chat, /onWorkspaceReady/);
+  assert.match(chat, /state\.created && !state\.previewUrl/);
+  assert.match(chat, /await persistWorkspace\(context, conversationId, state\)/);
+  assert.match(chat, /let previewVerified = Boolean\(state\.previewUrl\)/);
+  assert.match(chat, /filesWritten \? \{ restarted: true \}/);
+  assert.doesNotMatch(
+    chat,
+    /previewTouched && Boolean\(state\.previewUrl\)/,
+    'host preview must not wait for the model to have launched dest',
+  );
+  assert.doesNotMatch(assemble, /onWorkspaceReady/);
+  assert.match(resume, /const shouldStartPreview = !generationActive && hasFileItems/);
+  assert.doesNotMatch(resume, /&& hadPreview/);
+  assert.match(preview, /revision === undefined \|\| nextPreview\.restarted/);
+  assert.match(prompt, /keeps that dest server watching files/);
+  assert.match(snapshot, /\.\.\.\(preview\.url \? \{ preview \} : \{\}\)/);
+  assert.match(apply, /if \(data\.preview\?\.url\) preview\.applyResumedPreview\(data\.preview\)/);
+  assert.match(
+    live,
+    /if \(event\.type === 'file_changed' && event\.data\?\.paths\?\.length\) \{\s*\n\s*sawProjectActivity = true;/,
+  );
 });

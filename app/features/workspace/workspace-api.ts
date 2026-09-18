@@ -1,8 +1,11 @@
+import type { Locale } from '@/app/i18n';
+import type { ModelOption } from '../../../shared/models';
 import type {
   PersistedActivityTurn,
   ResumeData,
+  SessionPrepMode,
+  WorkspaceSnapshot,
 } from '../../../shared/protocol';
-import type { ModelOption } from '../../../shared/models';
 
 function conversationHeaders(conversationId: string): HeadersInit {
   return {
@@ -16,16 +19,27 @@ async function readJson<T>(response: Response): Promise<T | null> {
   return response.json().catch(() => null) as Promise<T | null>;
 }
 
-export function openSessionStream(conversationId: string, signal?: AbortSignal) {
-  return fetch('/session', {
+export function openSessionStream(
+  conversationId: string,
+  signal?: AbortSignal,
+  options: {
+    model?: string;
+    language?: Locale;
+    mode?: SessionPrepMode;
+  } = {},
+) {
+  const params = new URLSearchParams();
+  if (options.model) params.set('model', options.model);
+  if (options.language) params.set('language', options.language);
+  if (options.mode) params.set('mode', options.mode);
+  const query = params.toString();
+  return fetch(`/session${query ? `?${query}` : ''}`, {
     method: 'GET',
     headers: conversationHeaders(conversationId),
     signal,
   });
 }
 
-// Cold session restore can reinstall the EdgeOne CLI (420s ceiling) and project
-// dependencies before makers-dev starts.
 const PREVIEW_CLIENT_TIMEOUT_MS = 620_000;
 
 export function fetchPreviewRefresh(conversationId: string) {
@@ -42,13 +56,6 @@ export function fetchPreviewRefresh(conversationId: string) {
     .finally(() => clearTimeout(timer));
 }
 
-/**
- * The models this deployment offers. Fetched rather than bundled: the list is
- * assembled from server environment the browser cannot read, and the server
- * validates against the same list, so building one here could only drift.
- *
- * An edge function, so it does not need a conversation the way agent routes do.
- */
 export function fetchModelCatalog(signal?: AbortSignal) {
   return fetch('/models', {
     method: 'GET',
@@ -62,33 +69,60 @@ export function fetchModelCatalog(signal?: AbortSignal) {
     .catch(() => null);
 }
 
-export function startSessionTurn(options: {
+export function applyGatewayDecision(options: {
   conversationId: string;
-  message: string;
-  turnId: string;
-  resetProject: boolean;
-  /** 'deploy' publishes the current project instead of running the model. */
-  intent?: 'deploy';
-  /** Omitted runs the deployment default; the server drops anything it does not offer. */
-  model?: string;
-  siteDomain?: string;
-  /** Real key from the input card; the visible message stays masked. */
   apiKey?: string;
   gatewaySkip?: boolean;
   signal?: AbortSignal;
 }) {
-  return fetch('/session', {
+  return fetch('/prompt', {
+    method: 'POST',
+    headers: conversationHeaders(options.conversationId),
+    body: JSON.stringify({
+      ...(options.apiKey ? { apiKey: options.apiKey } : {}),
+      ...(options.gatewaySkip ? { gatewaySkip: true } : {}),
+    }),
+    signal: options.signal,
+  });
+}
+
+export function startPromptTurn(options: {
+  conversationId: string;
+  message: string;
+  turnId: string;
+  model?: string;
+  language?: Locale;
+  apiKey?: string;
+  signal?: AbortSignal;
+}) {
+  return fetch('/prompt', {
     method: 'POST',
     headers: conversationHeaders(options.conversationId),
     body: JSON.stringify({
       message: options.message,
       turnId: options.turnId,
-      ...(options.resetProject ? { resetProject: true } : {}),
-      ...(options.intent ? { intent: options.intent } : {}),
       ...(options.model ? { model: options.model } : {}),
-      ...(options.siteDomain ? { siteDomain: options.siteDomain } : {}),
+      ...(options.language ? { language: options.language } : {}),
       ...(options.apiKey ? { apiKey: options.apiKey } : {}),
-      ...(options.gatewaySkip ? { gatewaySkip: true } : {}),
+    }),
+    signal: options.signal,
+  });
+}
+
+export function startDeployTurn(options: {
+  conversationId: string;
+  turnId: string;
+  language?: Locale;
+  apiKey?: string;
+  signal?: AbortSignal;
+}) {
+  return fetch('/deploy', {
+    method: 'POST',
+    headers: conversationHeaders(options.conversationId),
+    body: JSON.stringify({
+      turnId: options.turnId,
+      ...(options.language ? { language: options.language } : {}),
+      ...(options.apiKey ? { apiKey: options.apiKey } : {}),
     }),
     signal: options.signal,
   });
@@ -99,10 +133,6 @@ export async function stopChatTask(
   turn: PersistedActivityTurn,
   options: { discardProject?: boolean } = {},
 ) {
-  // Agent routes reject a missing makers-conversation-id before the handler
-  // runs. /stop still puts conversation_id in the body so abortActiveRun can
-  // target the live chat; the header is what gets the request accepted and
-  // sticky-routed to the instance that holds abortLiveChatTask.
   return fetch('/stop', {
     method: 'POST',
     headers: conversationHeaders(conversationId),
@@ -124,4 +154,51 @@ export function fetchProjectArchive(url: string, conversationId: string) {
         }
       : {},
   });
+}
+
+export function openTranscriptStream(conversationId: string, signal?: AbortSignal) {
+  return fetch('/transcript', {
+    method: 'GET',
+    headers: conversationHeaders(conversationId),
+    signal,
+  });
+}
+
+export function fetchWorkspaceSnapshot(conversationId: string, signal?: AbortSignal) {
+  return fetch('/workspace', {
+    method: 'GET',
+    headers: conversationHeaders(conversationId),
+    signal,
+  }).then((response) => readJson<WorkspaceSnapshot>(response)).catch(() => null);
+}
+
+export type FileBatchEntry = {
+  path: string;
+  ok?: boolean;
+  content?: string;
+  size?: number;
+  truncated?: boolean;
+  error?: string;
+};
+
+const FILE_BATCH_MAX = 12;
+
+export async function fetchFileBatch(
+  conversationId: string,
+  paths: string[],
+  signal?: AbortSignal,
+): Promise<FileBatchEntry[]> {
+  const unique = [...new Set(paths.map((path) => path.trim()).filter(Boolean))];
+  const files: FileBatchEntry[] = [];
+  for (let index = 0; index < unique.length; index += FILE_BATCH_MAX) {
+    const batch = unique.slice(index, index + FILE_BATCH_MAX);
+    const response = await fetch(`/file?paths=${encodeURIComponent(batch.join(','))}`, {
+      method: 'GET',
+      headers: conversationHeaders(conversationId),
+      signal,
+    });
+    const data = await readJson<{ ok?: boolean; files?: FileBatchEntry[] }>(response);
+    if (Array.isArray(data?.files)) files.push(...data.files);
+  }
+  return files;
 }
