@@ -425,9 +425,9 @@ export function WorkspaceScreen() {
           }}
           gatewayPrompt={workspace.gatewayNeeded ? {
             title: t.workspace.gatewayPromptTitle,
-            description: workspace.gatewayPromptVariant === 'deploy'
-              ? `${t.workspace.gatewayPromptDescription} ${t.workspace.gatewayPromptDeployHint}`
-              : t.workspace.gatewayPromptDescription,
+            ...(workspace.gatewayPromptVariant === 'deploy'
+              ? { description: t.workspace.gatewayPromptDeployHint }
+              : {}),
             docs: t.workspace.gatewayPromptDocs,
             docsUrl: makersModelsDocsUrl,
             apiKey: t.workspace.gatewayPromptApiKey,

@@ -282,15 +282,15 @@ test('the conversation card is visible while generating and submits without a ch
     conversation.indexOf('className="gateway-prompt-actions"'),
   );
 
-  assert.equal(TRANSLATIONS.zh.workspace.gatewayPromptTitle, '启用 AI 对话');
-  assert.equal(
-    TRANSLATIONS.zh.workspace.gatewayPromptDescription,
-    '添加 Models API 密钥，即可在预览中试用对话。密钥只保存在此项目中，无需登录。',
-  );
-  assert.equal(TRANSLATIONS.zh.workspace.gatewayPromptSkip, '稍后');
-  assert.equal(TRANSLATIONS.zh.workspace.gatewayPromptContinue, '添加');
-  assert.equal(TRANSLATIONS.zh.workspace.gatewayPromptDocs, '如何获取密钥');
-  assert.equal(TRANSLATIONS.en.workspace.gatewayPromptDocs, 'How to get a key');
+  assert.equal(TRANSLATIONS.zh.workspace.gatewayPromptTitle, '集成 Models 调用大模型');
+  assert.equal(TRANSLATIONS.zh.workspace.gatewayPromptSkip, '跳过');
+  assert.equal(TRANSLATIONS.zh.workspace.gatewayPromptContinue, '继续');
+  assert.equal(TRANSLATIONS.zh.workspace.gatewayPromptDocs, '如何获取');
+  assert.equal(TRANSLATIONS.zh.workspace.gatewayPromptApiKey, 'API Key');
+  assert.equal(TRANSLATIONS.en.workspace.gatewayPromptTitle, 'Integrate Models to call large models');
+  assert.equal(TRANSLATIONS.en.workspace.gatewayPromptSkip, 'Skip');
+  assert.equal(TRANSLATIONS.en.workspace.gatewayPromptContinue, 'Continue');
+  assert.equal(TRANSLATIONS.en.workspace.gatewayPromptDocs, 'How to get them');
   assert.equal(
     getMakersModelsDocsUrl('edgeone.dev'),
     'https://pages.edgeone.ai/document/models',
