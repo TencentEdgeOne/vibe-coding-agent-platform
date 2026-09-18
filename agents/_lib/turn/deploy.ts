@@ -17,9 +17,11 @@ import {
 import { resolveGatewayUserTurn } from '../../../shared/gateway-secret.ts';
 import { describeMissingMakersRuntimeToken } from '../makers/token.ts';
 import { prepareMakersSession } from '../makers/session.ts';
+import { workspaceSnapshotFromState } from '../project/snapshot.ts';
 import type {
   AgentProgressEvent,
   DeploymentInfo,
+  FileTreeItem,
   StreamSend,
 } from '../types.ts';
 import {
@@ -214,16 +216,21 @@ export async function runDeployPipeline(
 
   // No `build` field: publishing runs no verification, and reporting one would
   // clear whatever the last generation said about the project.
+  let files: FileTreeItem[] = [];
   const finish = async (reply: string, status: 'completed' | 'failed') => {
     await turn.finalize(reply, status);
     sendTurnResult(send, {
       ok: status === 'completed',
       reply,
       conversation_id: conversationId,
-    });
+    }, workspaceSnapshotFromState(
+      conversationId,
+      state,
+      files.length > 0 ? files : undefined,
+    ));
   };
 
-  const files = await getFileTree(context, state).catch(() => []);
+  files = await getFileTree(context, state).catch(() => []);
   if (!files.some((item) => item.type === 'file')) {
     await finish(copy.noProject, 'failed');
     return;

@@ -24,6 +24,25 @@ function jsonResponse(obj: Record<string, unknown>, status = 200) {
   });
 }
 
+/** Project panel payload from in-memory state. Pass `items` only after a listing. */
+export function workspaceSnapshotFromState(
+  conversationId: string,
+  state: ProjectState,
+  items?: FileTreeItem[],
+): WorkspaceSnapshot {
+  const preview = previewLinkFromState(state);
+  const hasFiles = items?.some((item) => item.type === 'file') === true;
+  return {
+    ok: true,
+    conversation_id: conversationId,
+    ...(items ? { files: { root: state.appDir, items } } : {}),
+    ...(preview.url ? { preview } : {}),
+    deployment: state.deployment,
+    build: state.lastBuild,
+    ...(hasFiles ? { download: { url: '/download', filename: 'source.zip' } } : {}),
+  };
+}
+
 export async function loadWorkspaceSnapshot(
   context: AgentContext,
   conversationId: string,
@@ -35,17 +54,7 @@ export async function loadWorkspaceSnapshot(
   } catch {
     items = [];
   }
-  const hasFiles = items.some((item) => item.type === 'file');
-  const preview = previewLinkFromState(state);
-  return {
-    ok: true,
-    conversation_id: conversationId,
-    files: { root: state.appDir, items },
-    ...(preview.url ? { preview } : {}),
-    deployment: state.deployment,
-    build: state.lastBuild,
-    ...(hasFiles ? { download: { url: '/download', filename: 'source.zip' } } : {}),
-  };
+  return workspaceSnapshotFromState(conversationId, state, items);
 }
 
 export async function runWorkspaceSnapshotPipeline(context: AgentContext): Promise<Response> {

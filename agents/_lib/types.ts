@@ -35,7 +35,7 @@ export type ProjectState = {
   previewKind?: PreviewKind;
   /** Latest live deployment, kept separate from the sandbox preview iframe. */
   deployment?: DeploymentInfo;
-  /** Last verification result; GET /workspace exposes it independently of the chat stream. */
+  /** Last verification result; streamed on `workspace` and also on GET /workspace. */
   lastBuild?: BuildInfo;
   /** The host is waiting for a Models API key in the next user turn. */
   gatewayPromptPending?: boolean;

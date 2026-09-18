@@ -203,8 +203,6 @@ export function useLiveTurn(options: {
       const finalText = data.reply || data.error || t.response.noDisplay;
       const finalStatus: AssistantStatus = data.stopped ? 'stopped' : data.ok === false ? 'error' : 'done';
       finalizeAssistant(finalText, finalStatus);
-      const cid = data.conversation_id || sessionOptions.requestConversationId;
-      if (cid) void snapshot.refresh(cid);
     };
 
     const handleStreamEvent = (event: ChatStreamEvent) => {
@@ -235,6 +233,11 @@ export function useLiveTurn(options: {
             workspace.setGatewayPromptVariant('default');
           }
         }
+        return;
+      }
+      if (event.type === 'workspace' && event.data) {
+        snapshot.applySnapshot(event.data);
+        workspace.setFilesRefreshing(false);
         return;
       }
       if (event.type === 'result' && event.data) {
@@ -588,7 +591,6 @@ export function useLiveTurn(options: {
       if (data.download) {
         workspace.setDownload(data.download);
       }
-      void snapshot.refresh(cid);
     } catch {
       workspace.setGatewayBusy(false);
     }

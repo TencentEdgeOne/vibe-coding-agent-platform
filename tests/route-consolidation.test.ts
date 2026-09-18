@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { access, readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { workspaceSnapshotFromState } from '../agents/_lib/project/snapshot.ts';
 
 test('the model menu is an edge function, not an agent route', async () => {
   const route = await readFile('edge-functions/models.ts', 'utf8');
@@ -163,10 +164,78 @@ test('workspace snapshot and preview status are pullable without the chat stream
   const workspace = await readFile('agents/workspace.ts', 'utf8');
   const preview = await readFile('agents/preview.ts', 'utf8');
   const client = await readFile('app/features/workspace/workspace-api.ts', 'utf8');
+  const previewSurface = await readFile('app/features/workspace/hooks/use-preview-surface.ts', 'utf8');
 
   assert.match(workspace, /onRequestGet/);
   assert.match(workspace, /runWorkspaceSnapshotPipeline/);
   assert.match(preview, /onRequestGet/);
   assert.match(client, /fetch\('\/workspace'/);
   assert.match(client, /fetch\(`\/file\?paths=/);
+  assert.match(previewSurface, /void options\.refreshWorkspace\?\.\(id\)/);
+});
+
+test('a finished turn streams the workspace snapshot instead of GET /workspace', async () => {
+  const [
+    protocol,
+    result,
+    chat,
+    deploy,
+    snapshot,
+    live,
+  ] = await Promise.all([
+    readFile('shared/protocol.ts', 'utf8'),
+    readFile('agents/_lib/turn/result.ts', 'utf8'),
+    readFile('agents/_lib/turn/chat.ts', 'utf8'),
+    readFile('agents/_lib/turn/deploy.ts', 'utf8'),
+    readFile('agents/_lib/project/snapshot.ts', 'utf8'),
+    readFile('app/features/workspace/hooks/use-live-turn.ts', 'utf8'),
+  ]);
+
+  assert.match(protocol, /type: 'workspace'; data\?: WorkspaceSnapshot/);
+  assert.match(result, /type: 'workspace'/);
+  assert.match(snapshot, /export function workspaceSnapshotFromState/);
+  assert.match(chat, /workspaceSnapshotFromState\(conversationId, state, flushedItems\)/);
+  assert.match(chat, /rememberTree\(await fileTreePush\.flush/);
+  assert.match(deploy, /workspaceSnapshotFromState\(/);
+  assert.match(live, /event\.type === 'workspace' && event\.data/);
+  assert.match(live, /snapshot\.applySnapshot\(event\.data\)/);
+
+  const applyResponse = live.slice(
+    live.indexOf('const applyResponse'),
+    live.indexOf('const handleStreamEvent'),
+  );
+  assert.doesNotMatch(applyResponse, /snapshot\.refresh/);
+
+  const applyGateway = live.slice(live.indexOf('async function applyGateway'));
+  assert.doesNotMatch(applyGateway, /snapshot\.refresh/);
+});
+
+test('workspaceSnapshotFromState reuses a listing and skips files when none was passed', () => {
+  const withFiles = workspaceSnapshotFromState('c1', {
+    created: true,
+    sessionDir: 'projects/c1',
+    appDir: 'projects/c1/app',
+    previewUrl: 'https://preview.example',
+    previewKind: 'sandbox',
+    lastBuild: { status: 'failed', stderr: 'boom' },
+    deployment: { status: 'success', startedAt: 1, url: 'https://live.example' },
+  }, [{ path: 'index.html', name: 'index.html', type: 'file', depth: 0 }]);
+
+  assert.equal(withFiles.ok, true);
+  assert.equal(withFiles.conversation_id, 'c1');
+  assert.equal(withFiles.files?.items.length, 1);
+  assert.equal(withFiles.preview?.url, 'https://preview.example');
+  assert.equal(withFiles.download?.url, '/download');
+  assert.equal(withFiles.build?.status, 'failed');
+  assert.equal(withFiles.deployment?.url, 'https://live.example');
+
+  const metaOnly = workspaceSnapshotFromState('c1', {
+    created: true,
+    sessionDir: 'projects/c1',
+    appDir: 'projects/c1/app',
+    lastBuild: { status: 'success' },
+  });
+  assert.equal(metaOnly.files, undefined);
+  assert.equal(metaOnly.download, undefined);
+  assert.equal(metaOnly.build?.status, 'success');
 });

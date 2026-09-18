@@ -166,7 +166,7 @@ async function publishFileTreeAfterEnvWrite(
       },
     });
   } catch {
-    // The files panel refreshes again at the end of the turn.
+    // The files panel still receives the listing on this SSE when a turn is live.
   }
 }
 

@@ -173,6 +173,7 @@ export type ChatStreamEvent =
     }
   | { type: 'result'; data?: ChatResponse }
   | { type: 'agent'; data?: Pick<ChatResponse, 'ok' | 'reply' | 'error'> }
+  | { type: 'workspace'; data?: WorkspaceSnapshot }
   | { type: 'file_tree'; data?: FileTree }
   | {
       type: 'file_changed';

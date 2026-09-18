@@ -10,9 +10,11 @@ import {
   setDeployment,
   setLastBuild,
 } from '../project/workspace-store.ts';
+import { workspaceSnapshotFromState } from '../project/snapshot.ts';
 import type {
   AgentProgressEvent,
   DeploymentInfo,
+  FileTreeItem,
   StreamSend,
 } from '../types.ts';
 import { toAppRelPath } from '../utils/paths.ts';
@@ -148,6 +150,17 @@ export async function runChatPipeline(
     send(event);
   };
   const fileTreePush = createFileTreePushController(context, state, send);
+  let flushedItems: FileTreeItem[] | undefined;
+  const rememberTree = (items: FileTreeItem[]) => {
+    if (items.length > 0) flushedItems = items;
+  };
+  const finishResult = (extra: Omit<ChatResponse, 'conversation_id'>) => {
+    sendTurnResult(
+      send,
+      slimResult(conversationId, extra),
+      workspaceSnapshotFromState(conversationId, state, flushedItems),
+    );
+  };
   const handleProjectFilesChanged = async (file?: { path: string; content: string }) => {
     if (file) {
       const path = toAppRelPath(file.path, state.appDir) || file.path;
@@ -234,11 +247,11 @@ export async function runChatPipeline(
     await finalizeTurn(stoppedReply, 'stopped', {
       withSnapshot: modelResult.projectTouched,
     });
-    sendTurnResult(send, slimResult(conversationId, {
+    finishResult({
       ok: false,
       stopped: true,
       reply: stoppedReply,
-    }));
+    });
     return;
   }
 
@@ -278,11 +291,11 @@ export async function runChatPipeline(
     await finalizeTurn(assistantReply, 'failed', {
       withSnapshot: modelResult.projectTouched,
     });
-    sendTurnResult(send, slimResult(conversationId, {
+    finishResult({
       ok: false,
       reply: assistantReply,
       error: modelResult.error || undefined,
-    }));
+    });
     return;
   }
 
@@ -309,10 +322,10 @@ export async function runChatPipeline(
     await finalizeTurn(assistantReply, operationOk ? 'completed' : 'failed', {
       withState: Boolean(state.previewUrl) || modelResult.deploymentTouched,
     });
-    sendTurnResult(send, slimResult(conversationId, {
+    finishResult({
       ok: operationOk,
       reply: assistantReply,
-    }));
+    });
     return;
   }
 
@@ -323,7 +336,7 @@ export async function runChatPipeline(
     previewVerified = await startHostPreview('[preview] host start failed:');
   }
 
-  await fileTreePush.flush('Failed to read the file list.');
+  rememberTree(await fileTreePush.flush('Failed to read the file list.'));
   let build = await runVerification(context, state, {
     previewVerified,
   });
@@ -336,10 +349,10 @@ export async function runChatPipeline(
     await persistWorkspace(context, conversationId, state);
     const fatalReply = build.stderr || 'The task failed, and the remaining workflow was stopped.';
     await finalizeTurn(fatalReply, 'failed', { withSnapshot: true });
-    sendTurnResult(send, slimResult(conversationId, {
+    finishResult({
       ok: false,
       reply: fatalReply,
-    }));
+    });
     return;
   }
 
@@ -364,11 +377,11 @@ export async function runChatPipeline(
     if (autoFixResult.stopped || abortSignal?.aborted) {
       const stoppedReply = STOPPED_TURN_REPLY[replyLocale];
       await finalizeTurn(stoppedReply, 'stopped', { withSnapshot: true });
-      sendTurnResult(send, slimResult(conversationId, {
+      finishResult({
         ok: false,
         stopped: true,
         reply: stoppedReply,
-      }));
+      });
       return;
     }
     const rawAutoFixReply = stripReturnedPreviewLinks(sanitizeAssistantText(
@@ -394,17 +407,17 @@ export async function runChatPipeline(
       });
     }
 
-    await fileTreePush.flush('Failed to read the file list after auto-fix.');
+    rememberTree(await fileTreePush.flush('Failed to read the file list after auto-fix.'));
     build = await runVerification(context, state);
     if (build.fatal) {
       setLastBuild(state, build);
       await persistWorkspace(context, conversationId, state);
       const fatalReply = build.stderr || 'The task failed, and the remaining workflow was stopped.';
       await finalizeTurn(fatalReply, 'failed', { withSnapshot: true });
-      sendTurnResult(send, slimResult(conversationId, {
+      finishResult({
         ok: false,
         reply: fatalReply,
-      }));
+      });
       return;
     }
 
@@ -455,8 +468,8 @@ export async function runChatPipeline(
   const turnOk = modelResult.success && !turnFailed;
   await finalizeTurn(reply, turnOk ? 'completed' : 'failed', { withSnapshot: true });
 
-  sendTurnResult(send, slimResult(conversationId, {
+  finishResult({
     ok: turnOk,
     reply,
-  }));
+  });
 }

@@ -264,7 +264,9 @@ export function createFileTreePushController(
       });
       return items;
     } catch (error) {
-      // Non-fatal: the turn pushes the final tree again when it completes.
+      // Non-fatal: the turn reuses whatever listing it already has for the
+      // closing workspace event, and GET /workspace remains a pull fallback.
+
       console.warn('[file-tree]', error instanceof Error ? error.message : fallbackMessage);
       return [];
     }
