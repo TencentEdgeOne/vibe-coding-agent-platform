@@ -233,8 +233,8 @@ export function useLiveTurn(options: {
         patchAssistant({ content: text });
         return;
       }
-      if (event.type === 'text_segment' || event.type === 'tool_use' || event.type === 'tool_result') {
-        if (event.type !== 'text_segment') sawProjectActivity = true;
+      if (event.type === 'text_segment' || event.type === 'thinking_segment' || event.type === 'system_info' || event.type === 'tool_use' || event.type === 'tool_result') {
+        if (event.type === 'tool_use' || event.type === 'tool_result') sawProjectActivity = true;
         foldActivityEvent(event);
         return;
       }

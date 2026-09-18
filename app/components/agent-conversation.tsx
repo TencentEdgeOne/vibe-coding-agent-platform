@@ -59,6 +59,11 @@ type ConversationCopy = {
   stopped: string;
   input: string;
   output: string;
+  thinking: string;
+  info: string;
+  usage: string;
+  compact: string;
+  status: string;
   placeholder: string;
   send: string;
   stop: string;
@@ -85,8 +90,44 @@ export type GatewayPromptCopy = {
   skip: string;
 };
 
+function infoLabel(
+  infoType: Extract<AssistantActivity, { kind: 'info' }>['infoType'],
+  copy: ConversationCopy,
+) {
+  if (infoType === 'usage') return copy.usage;
+  if (infoType === 'compact') return copy.compact;
+  if (infoType === 'status') return copy.status;
+  return copy.info;
+}
+
 function actionLabel(action: ToolAction, copy: ConversationCopy) {
   return copy.toolActions[action];
+}
+
+function ThinkingBlock({ content, copy }: { content: string; copy: ConversationCopy }) {
+  return (
+    <details open className="conversation-skeleton conversation-thinking">
+      <summary>{copy.thinking}</summary>
+      <pre>{content}</pre>
+    </details>
+  );
+}
+
+function InfoBlock({
+  activity,
+  copy,
+}: {
+  activity: Extract<AssistantActivity, { kind: 'info' }>;
+  copy: ConversationCopy;
+}) {
+  const label = infoLabel(activity.infoType, copy);
+  const title = activity.title && activity.title !== label ? `${label} · ${activity.title}` : label;
+  return (
+    <details open className="conversation-skeleton conversation-info">
+      <summary>{title}</summary>
+      {activity.content ? <pre>{activity.content}</pre> : null}
+    </details>
+  );
 }
 
 /** What the row names: a topic for reference loads, a path or command otherwise. */
@@ -137,7 +178,7 @@ function ToolActivityRow({ item, copy, previouslyReadPaths }: {
   copy: ConversationCopy;
   previouslyReadPaths: ReadonlySet<string>;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const steps = [item.activity, ...item.repeats];
   const status = rowStatus(steps);
   const presentation = presentToolActivity(item.activity, previouslyReadPaths);
@@ -320,6 +361,12 @@ const AssistantTurn = memo(function AssistantTurn({ message, copy }: {
           if (block.kind === 'text') {
             return <Markdown key={`text-${block.index}`} content={block.content} copy={copy} />;
           }
+          if (block.kind === 'thinking') {
+            return <ThinkingBlock key={`thinking-${block.index}`} content={block.content} copy={copy} />;
+          }
+          if (block.kind === 'info') {
+            return <InfoBlock key={`info-${block.index}`} activity={block.activity} copy={copy} />;
+          }
 
           return (
             <div key={`tools-${block.items[0]?.index ?? 0}`} className="conversation-tool-chain">
@@ -418,9 +465,11 @@ export function AgentConversation({
     message.id,
     message.status,
     message.content,
-    message.activities?.map((activity) => activity.kind === 'text'
-      ? activity.content
-      : `${activity.toolUseId}:${activity.status}:${activity.outputSummary || ''}`).join('|'),
+    message.activities?.map((activity) => {
+      if (activity.kind === 'text' || activity.kind === 'thinking') return activity.content;
+      if (activity.kind === 'info') return `${activity.infoType}:${activity.content}`;
+      return `${activity.toolUseId}:${activity.status}:${activity.inputSummary || ''}:${activity.outputSummary || ''}`;
+    }).join('|'),
   ].join(':')).join('\n');
 
   useEffect(() => {

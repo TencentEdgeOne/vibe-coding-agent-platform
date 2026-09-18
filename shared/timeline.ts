@@ -159,7 +159,7 @@ export function resolveNarrationEmit(
   };
 }
 
-const SUMMARY_LIMIT = 2_000;
+const SUMMARY_LIMIT = 8_000;
 const SENSITIVE_KEY = /(authorization|cookie|password|passwd|secret|token|api[_-]?key|private[_-]?key|credential)/i;
 
 function truncate(value: string, limit = SUMMARY_LIMIT) {
@@ -313,6 +313,24 @@ export function appendNarrationChunk(
   const last = list.at(-1);
   if (last?.kind !== 'text') {
     list.push({ kind: 'text', content: text });
+    return list;
+  }
+  const trimmed = text.trim();
+  if (trimmed.length >= MIN_REPLAY_CHUNK && last.content.includes(trimmed)) {
+    return list;
+  }
+  list[list.length - 1] = { ...last, content: `${last.content}${text}` };
+  return list;
+}
+
+export function appendThinkingChunk(
+  activities: readonly AssistantActivity[],
+  text: string,
+): AssistantActivity[] {
+  const list = [...activities];
+  const last = list.at(-1);
+  if (last?.kind !== 'thinking') {
+    list.push({ kind: 'thinking', content: text });
     return list;
   }
   const trimmed = text.trim();
@@ -508,6 +526,18 @@ export type AssistantTimelineTextBlock = {
   content: string;
 };
 
+export type AssistantTimelineThinkingBlock = {
+  kind: 'thinking';
+  index: number;
+  content: string;
+};
+
+export type AssistantTimelineInfoBlock = {
+  kind: 'info';
+  index: number;
+  activity: Extract<AssistantActivity, { kind: 'info' }>;
+};
+
 export type AssistantTimelineToolItem = {
   index: number;
   activity: ToolActivity;
@@ -519,7 +549,11 @@ export type AssistantTimelineToolBlock = {
   items: AssistantTimelineToolItem[];
 };
 
-export type AssistantTimelineBlock = AssistantTimelineTextBlock | AssistantTimelineToolBlock;
+export type AssistantTimelineBlock =
+  | AssistantTimelineTextBlock
+  | AssistantTimelineThinkingBlock
+  | AssistantTimelineInfoBlock
+  | AssistantTimelineToolBlock;
 
 export function normalizeTimelineText(value: string) {
   return value.replace(/\s+/g, ' ').trim();
@@ -539,6 +573,16 @@ export function buildAssistantTimeline(activities: AssistantActivity[]): Assista
     if (activity.kind === 'text') {
       if (!activity.content.trim()) continue;
       blocks.push({ kind: 'text', index, content: activity.content });
+      continue;
+    }
+    if (activity.kind === 'thinking') {
+      if (!activity.content.trim()) continue;
+      blocks.push({ kind: 'thinking', index, content: activity.content });
+      continue;
+    }
+    if (activity.kind === 'info') {
+      if (!activity.content.trim() && !activity.title.trim()) continue;
+      blocks.push({ kind: 'info', index, activity });
       continue;
     }
 
@@ -595,6 +639,26 @@ export function applyStreamEvent(
     return {
       ...turn,
       activities: appendNarrationChunk(turn.activities, event.data.text),
+    };
+  }
+  if (event.type === 'thinking_segment' && event.data?.text) {
+    return {
+      ...turn,
+      activities: appendThinkingChunk(turn.activities, event.data.text),
+    };
+  }
+  if (event.type === 'system_info' && (event.data?.content || event.data?.title)) {
+    return {
+      ...turn,
+      activities: [
+        ...turn.activities,
+        {
+          kind: 'info',
+          infoType: event.data.infoType || 'sdk',
+          title: event.data.title || event.data.infoType || 'sdk',
+          content: event.data.content || '',
+        },
+      ],
     };
   }
   if (event.type === 'tool_use' && event.data?.id) {

@@ -8,9 +8,21 @@ export type BuildStatus = 'success' | 'failed' | 'skipped';
 
 export type ActivityStatus = 'running' | 'completed' | 'failed' | 'stopped';
 
+export type SystemInfoType = 'compact' | 'usage' | 'status' | 'system' | 'sdk';
+
 export type AssistantActivity =
   | {
       kind: 'text';
+      content: string;
+    }
+  | {
+      kind: 'thinking';
+      content: string;
+    }
+  | {
+      kind: 'info';
+      infoType: SystemInfoType;
+      title: string;
       content: string;
     }
   | {
@@ -201,6 +213,15 @@ export type ChatStreamEvent =
       };
     }
   | { type: 'text_segment'; data?: { uuid?: string; text?: string } }
+  | { type: 'thinking_segment'; data?: { uuid?: string; text?: string } }
+  | {
+      type: 'system_info';
+      data?: {
+        infoType?: SystemInfoType;
+        title?: string;
+        content?: string;
+      };
+    }
   | {
       type: 'gateway_credentials';
       data?: {

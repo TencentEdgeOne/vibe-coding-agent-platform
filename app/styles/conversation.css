@@ -312,8 +312,52 @@
   text-transform: uppercase;
 }
 
+.conversation-skeleton {
+  min-width: 0;
+  margin: 0;
+  border-left: 2px solid var(--n-200);
+  padding: 2px 0 6px 10px;
+}
+
+.conversation-skeleton summary {
+  cursor: pointer;
+  color: var(--n-500);
+  font-size: var(--fs-2xs);
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.conversation-skeleton pre {
+  max-height: 320px;
+  margin: 6px 0 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  color: var(--n-700);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.conversation-thinking {
+  border-left-color: color-mix(in srgb, var(--brand) 35%, var(--n-200));
+}
+
+.conversation-info {
+  border-left-color: var(--n-200);
+}
+
+.agent-markdown + .conversation-skeleton,
+.conversation-skeleton + .agent-markdown,
+.conversation-tool-chain + .conversation-skeleton,
+.conversation-skeleton + .conversation-tool-chain,
+.conversation-skeleton + .conversation-skeleton {
+  margin-top: 10px;
+}
+
 .tool-activity-detail pre {
-  max-height: 180px;
+  max-height: 280px;
   overflow: auto;
   white-space: pre-wrap;
   color: var(--n-700);

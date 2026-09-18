@@ -110,6 +110,11 @@ export const TRANSLATIONS = {
       activityStopped: '已停止',
       activityInput: '输入',
       activityOutput: '输出',
+      activityThinking: '思考',
+      activityInfo: '系统',
+      activityUsage: '用量',
+      activityCompact: '上下文压缩',
+      activityStatus: '状态',
       toolActions: {
         'Environment Preparing': '环境准备',
         Glob: '搜索文件',
@@ -296,6 +301,11 @@ export const TRANSLATIONS = {
       activityStopped: 'Stopped',
       activityInput: 'Input',
       activityOutput: 'Output',
+      activityThinking: 'Thinking',
+      activityInfo: 'System',
+      activityUsage: 'Usage',
+      activityCompact: 'Context compacted',
+      activityStatus: 'Status',
       toolActions: {
         'Environment Preparing': 'Environment Preparing',
         Glob: 'Glob',

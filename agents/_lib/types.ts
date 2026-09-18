@@ -104,7 +104,7 @@ export type BuildResult = {
 
 export type AgentProgressEvent = Extract<
   ChatStreamEvent,
-  { type: 'tool_use' | 'tool_result' | 'text_segment' }
+  { type: 'tool_use' | 'tool_result' | 'text_segment' | 'thinking_segment' | 'system_info' }
 >;
 
 export type ClaudeMcpTool = SdkMcpToolDefinition<any>;

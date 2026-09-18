@@ -41,8 +41,13 @@ import { PromptQueue } from './prompt-queue.ts';
 import {
   SCAFFOLD_TOOL_NAME,
   createProgressEmitter,
+  describeSdkMessage,
   extractVisibleNarrationDelta,
   extractVisibleTextBlock,
+  extractVisibleThinkingBlock,
+  extractVisibleThinkingDelta,
+  formatResultUsage,
+  isThinkingContentBlock,
   isToolUseContentBlock,
   parseToolInputJson,
   type StreamingToolUseBlock,
@@ -178,11 +183,22 @@ async function pumpSession(session: LiveQuerySession) {
           typeof event.uuid === 'string' ? event.uuid : '',
           false,
         );
+        progress.emitThinking(
+          extractVisibleThinkingDelta(event),
+          typeof event.uuid === 'string' ? event.uuid : '',
+          false,
+        );
         const streamEvent = (event as { event?: Record<string, any> }).event;
         if (streamEvent?.type === 'content_block_start') {
           const contentBlock = streamEvent.content_block;
           if (contentBlock?.type === 'text') {
             progress.beginTextBlock();
+          }
+          if (isThinkingContentBlock(contentBlock)) {
+            progress.beginThinkingBlock();
+            if (contentBlock?.type === 'redacted_thinking') {
+              progress.emitThinking('(redacted)', typeof event.uuid === 'string' ? event.uuid : '', true);
+            }
           }
           if (isToolUseContentBlock(contentBlock) && typeof streamEvent.index === 'number') {
             pendingToolUseBlocks.set(streamEvent.index, {
@@ -203,7 +219,18 @@ async function pumpSession(session: LiveQuerySession) {
             ? pendingToolUseBlocks.get(streamEvent.index)
             : undefined;
           if (pendingToolUse && delta?.type === 'input_json_delta' && typeof delta.partial_json === 'string') {
+            const previousLength = pendingToolUse.inputJson.length;
             pendingToolUse.inputJson += delta.partial_json;
+            const parsed = parseToolInputJson(pendingToolUse.inputJson, pendingToolUse.input);
+            const crossedChunk = Math.floor(previousLength / 120) !== Math.floor(pendingToolUse.inputJson.length / 120);
+            if (crossedChunk || parsed !== pendingToolUse.input) {
+              progress.emitToolUseProgress({
+                id: pendingToolUse.id,
+                name: pendingToolUse.name,
+                input: parsed,
+                inputJson: pendingToolUse.inputJson,
+              });
+            }
           }
         } else if (streamEvent?.type === 'content_block_stop') {
           const pendingToolUse = typeof streamEvent.index === 'number'
@@ -215,6 +242,7 @@ async function pumpSession(session: LiveQuerySession) {
               id: pendingToolUse.id,
               name: pendingToolUse.name,
               input: parseToolInputJson(pendingToolUse.inputJson, pendingToolUse.input),
+              inputJson: pendingToolUse.inputJson,
             });
           }
         }
@@ -227,6 +255,11 @@ async function pumpSession(session: LiveQuerySession) {
           for (const block of blocks) {
             progress.emitNarration(
               extractVisibleTextBlock(block),
+              typeof event.uuid === 'string' ? event.uuid : '',
+              true,
+            );
+            progress.emitThinking(
+              extractVisibleThinkingBlock(block),
               typeof event.uuid === 'string' ? event.uuid : '',
               true,
             );
@@ -260,7 +293,7 @@ async function pumpSession(session: LiveQuerySession) {
                 toolName,
                 ...(toolContext?.command ? { command: toolContext.command } : {}),
                 ok: !toolFailed,
-                preview: truncateForStream(text, 500),
+                preview: truncateForStream(text, 8_000),
                 outputSummary: summarizeToolOutput(text, session.getState().appDir, toolName),
                 status: toolFailed ? 'failed' : 'completed',
                 endedAt: Date.now(),
@@ -294,8 +327,32 @@ async function pumpSession(session: LiveQuerySession) {
         continue;
       }
 
+      if (event.type === 'tool_progress') {
+        const progressEvent = event as SDKMessage & {
+          tool_use_id?: string;
+          tool_name?: string;
+          elapsed_time_seconds?: number;
+        };
+        const toolUseId = typeof progressEvent.tool_use_id === 'string' ? progressEvent.tool_use_id : '';
+        const toolContext = progress.toolContextById.get(toolUseId);
+        const elapsed = typeof progressEvent.elapsed_time_seconds === 'number'
+          ? Math.max(0, Math.round(progressEvent.elapsed_time_seconds))
+          : 0;
+        progress.emitToolUseProgress({
+          id: toolUseId,
+          name: progressEvent.tool_name || toolContext?.name || '<unknown>',
+          outputSummary: elapsed ? `${elapsed}s` : 'running',
+        });
+        continue;
+      }
+
       if (event.type === 'result') {
         const resultMessage = event as SDKResultMessage;
+        progress.emitInfo({
+          infoType: 'usage',
+          title: 'Usage',
+          content: formatResultUsage(resultMessage),
+        });
         const modelRun = describeModelRun(session.model, resultMessage.modelUsage);
         if (modelRun.mismatch) {
           console.warn('[model]', `${modelRun.line} — the gateway served a model this turn did not request`);
@@ -321,7 +378,11 @@ async function pumpSession(session: LiveQuerySession) {
         progress.resetTurn();
         scaffoldHandled = false;
         fatalError = null;
+        continue;
       }
+
+      const info = describeSdkMessage(event);
+      if (info) progress.emitInfo(info);
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

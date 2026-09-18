@@ -123,3 +123,19 @@ test('trailingTimelineContent keeps leftover reply after the last streamed text'
   assert.equal(trailingTimelineContent('Thinking', 'Boom', 'error'), 'Boom');
   assert.equal(trailingTimelineContent('Thinking', 'Thinking more', 'running'), '');
 });
+
+test('buildAssistantTimeline keeps thinking and system info as their own blocks', () => {
+  const blocks = buildAssistantTimeline([
+    { kind: 'thinking', content: 'Need a form first.' },
+    { kind: 'text', content: 'I will add the form.' },
+    {
+      kind: 'info',
+      infoType: 'usage',
+      title: 'Usage',
+      content: 'turns=2 cost=$0.01',
+    },
+  ]);
+  assert.deepEqual(blocks.map((block) => block.kind), ['thinking', 'text', 'info']);
+  assert.equal(blocks[0].kind === 'thinking' && blocks[0].content, 'Need a form first.');
+  assert.equal(lastTimelineText(blocks)?.content, 'I will add the form.');
+});

@@ -146,6 +146,53 @@ test('live SSE events fold into the same turn model as a JSONL projection', () =
   }
 });
 
+test('JSONL thinking blocks survive projection', () => {
+  const jsonl = [
+    JSON.stringify({
+      type: 'user',
+      timestamp: '2026-01-01T00:00:00.000Z',
+      message: { role: 'user', content: 'Build a page' },
+    }),
+    JSON.stringify({
+      type: 'assistant',
+      timestamp: '2026-01-01T00:00:01.000Z',
+      message: {
+        role: 'assistant',
+        content: [
+          { type: 'thinking', thinking: 'A landing page needs a form.' },
+          { type: 'text', text: 'Writing files.' },
+        ],
+      },
+    }),
+  ].join('\n');
+
+  const turns = projectTranscript(jsonl);
+  assert.equal(turns[0].activities[0]?.kind, 'thinking');
+  assert.equal(turns[0].activities[0]?.kind === 'thinking' && turns[0].activities[0].content, 'A landing page needs a form.');
+  assert.equal(turns[0].activities[1]?.kind, 'text');
+});
+
+test('live SSE folds thinking and usage into the turn', () => {
+  let turn: PersistedActivityTurn = {
+    id: 'turn-1',
+    user: 'Build a page',
+    assistant: '',
+    status: 'completed',
+    createdAt: 1,
+    activities: [],
+  };
+  turn = applyStreamEvent(turn, { type: 'thinking_segment', data: { text: 'Need a form.' } });
+  turn = applyStreamEvent(turn, { type: 'text_segment', data: { text: 'Writing files.' } });
+  turn = applyStreamEvent(turn, {
+    type: 'system_info',
+    data: { infoType: 'usage', title: 'Usage', content: 'turns=1 cost=$0.01' },
+  });
+  assert.equal(turn.activities[0]?.kind, 'thinking');
+  assert.equal(turn.activities[1]?.kind, 'text');
+  assert.equal(turn.activities[2]?.kind, 'info');
+  assert.equal(turn.activities[2]?.kind === 'info' && turn.activities[2].infoType, 'usage');
+});
+
 test('GET /transcript streams the JSONL file unaltered', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'transcript-read-'));
   const source = path.join(directory, 'session.jsonl');
@@ -246,4 +293,7 @@ test('compaction re-uploads the local transcript file', async () => {
   assert.match(live, /patchConversationRecord/);
   assert.match(live, /transcript_path/);
   assert.match(live, /resolveClaudeTranscriptPath/);
+  assert.match(live, /extractVisibleThinkingDelta/);
+  assert.match(live, /describeSdkMessage/);
+  assert.match(live, /formatResultUsage/);
 });

@@ -1,7 +1,9 @@
 import type { AssistantActivity, PersistedActivityTurn } from '../../../shared/protocol.ts';
 import {
   appendNarrationChunk,
+  appendThinkingChunk,
   sanitizeAssistantText,
+  sanitizeThinkingContent,
   summarizeToolInput,
   summarizeToolOutput,
 } from '../../../shared/timeline.ts';
@@ -96,25 +98,60 @@ export function projectTranscript(jsonl: string, projectDir = ''): PersistedActi
       continue;
     }
 
+    if (entry.type === 'system' && entry.subtype === 'compact_boundary' && active.turn) {
+      const compact = asRecord(entry.compact_metadata);
+      active.turn.activities.push({
+        kind: 'info',
+        infoType: 'compact',
+        title: 'Compact',
+        content: [
+          compact.trigger ? `trigger=${compact.trigger}` : '',
+          compact.pre_tokens != null ? `pre_tokens=${compact.pre_tokens}` : '',
+          compact.post_tokens != null ? `post_tokens=${compact.post_tokens}` : '',
+        ].filter(Boolean).join('\n'),
+      });
+      continue;
+    }
+
     if (entry.type === 'assistant' && active.turn) {
       const turn = active.turn;
       const text = textFromContent(content);
-      if (text) {
+      if (text) turn.assistant = text;
+      if (Array.isArray(content)) {
+        for (const block of content) {
+          const record = asRecord(block);
+          if (record.type === 'thinking') {
+            const thinking = typeof record.thinking === 'string'
+              ? record.thinking
+              : typeof record.text === 'string' ? record.text : '';
+            if (thinking) {
+              turn.activities = appendThinkingChunk(turn.activities, sanitizeThinkingContent(thinking));
+            }
+            continue;
+          }
+          if (record.type === 'redacted_thinking') {
+            turn.activities = appendThinkingChunk(turn.activities, '(redacted)');
+            continue;
+          }
+          if (record.type === 'text' && typeof record.text === 'string') {
+            const narration = sanitizeAssistantText(record.text);
+            if (narration) turn.activities = appendNarrationChunk(turn.activities, narration);
+            continue;
+          }
+          if (record.type !== 'tool_use' && record.type !== 'mcp_tool_use') continue;
+          const id = typeof record.id === 'string' ? record.id : '';
+          const name = typeof record.name === 'string' ? record.name : 'tool';
+          turn.activities.push({
+            kind: 'tool',
+            toolUseId: id,
+            name,
+            status: 'completed',
+            inputSummary: summarizeToolInput(name, record.input, projectDir),
+            startedAt: createdAt,
+          });
+        }
+      } else if (text) {
         turn.activities = appendNarrationChunk(turn.activities, text);
-        turn.assistant = text;
-      }
-      for (const block of toolBlocks(content)) {
-        if (block.type !== 'tool_use' && block.type !== 'mcp_tool_use') continue;
-        const id = typeof block.id === 'string' ? block.id : '';
-        const name = typeof block.name === 'string' ? block.name : 'tool';
-        turn.activities.push({
-          kind: 'tool',
-          toolUseId: id,
-          name,
-          status: 'completed',
-          inputSummary: summarizeToolInput(name, block.input, projectDir),
-          startedAt: createdAt,
-        });
       }
     }
   }

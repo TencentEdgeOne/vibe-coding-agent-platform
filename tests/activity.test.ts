@@ -45,8 +45,8 @@ test('specific Makers skill activity shows its reference and hides the document 
   assert.match(summarizeToolOutput('Unable to load Makers skill: missing', '', name), /Unable to load/);
 });
 
-test('tool output is capped at two kilobytes', () => {
-  const summary = summarizeToolOutput('x'.repeat(3_000));
-  assert.ok(summary.length < 2_100);
+test('tool output is capped at eight kilobytes', () => {
+  const summary = summarizeToolOutput('x'.repeat(10_000));
+  assert.ok(summary.length < 8_200);
   assert.match(summary, /truncated$/);
 });

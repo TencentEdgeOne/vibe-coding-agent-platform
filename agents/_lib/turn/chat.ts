@@ -156,6 +156,12 @@ export async function runChatPipeline(
       send(narration);
       return;
     }
+    if (event.type === 'thinking_segment' && !event.data?.text) {
+      return;
+    }
+    if (event.type === 'system_info' && !event.data?.content && !event.data?.title) {
+      return;
+    }
     recordProgress(event);
     send(event);
   };
