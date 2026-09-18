@@ -48,8 +48,8 @@ import {
 } from '../makers/tool-phase.ts';
 import { buildPrompt } from '../prompt.ts';
 import { resolveMakersProjectName } from '../makers/project.ts';
-import { getConversationRecord } from './store.ts';
-import { downloadTranscript, uploadTranscript } from './transcript.ts';
+import { getConversationRecord, patchConversationRecord } from './store.ts';
+import { downloadTranscript, resolveClaudeTranscriptPath, uploadTranscript } from './transcript.ts';
 
 class PromptQueue implements AsyncIterable<SDKUserMessage> {
   private messages: SDKUserMessage[] = [];
@@ -324,6 +324,9 @@ async function pumpSession(session: LiveQuerySession) {
       }
       if (typeof systemEvent.session_id === 'string' && systemEvent.session_id) {
         session.sessionId = systemEvent.session_id;
+        if (!session.transcriptPath) {
+          session.transcriptPath = resolveClaudeTranscriptPath(systemEvent.session_id);
+        }
       }
 
       if (!session.turn) continue;
@@ -613,7 +616,17 @@ async function startLiveQuery(options: RunCodingAgentOptions): Promise<LiveQuery
         hooks: [async (input) => {
           if (input.hook_event_name === 'SessionStart') {
             session.sessionId = input.session_id;
-            session.transcriptPath = input.transcript_path;
+            session.transcriptPath = resolveClaudeTranscriptPath(input.session_id, {
+              explicitPath: input.transcript_path,
+            });
+            // Remember the path now. Upload still waits for the turn to end;
+            // the Session tab reads this local file while the agent is running.
+            await patchConversationRecord(session.context, session.conversationId, {
+              claudeSessionId: input.session_id,
+              transcriptPath: session.transcriptPath,
+            }).catch((error) => {
+              console.warn('[transcript] session path persist failed', error);
+            });
           }
           return {};
         }],

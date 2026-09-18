@@ -126,3 +126,11 @@ export function fetchProjectArchive(url: string, conversationId: string) {
       : {},
   });
 }
+
+export function openTranscriptStream(conversationId: string, signal?: AbortSignal) {
+  return fetch('/transcript', {
+    method: 'GET',
+    headers: conversationHeaders(conversationId),
+    signal,
+  });
+}

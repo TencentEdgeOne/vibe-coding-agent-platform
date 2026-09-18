@@ -1,13 +1,20 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile as readDisk, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile as readDisk, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { createMemoryBlobStore, transcriptBlobKey } from '../agents/_lib/session/store.ts';
-import { downloadTranscript, uploadTranscript } from '../agents/_lib/session/transcript.ts';
+import { createMemoryBlobStore, patchConversationRecord, transcriptBlobKey } from '../agents/_lib/session/store.ts';
+import {
+  createTranscriptStreamResponse,
+  downloadTranscript,
+  loadTranscriptJsonl,
+  resolveClaudeTranscriptPath,
+  uploadTranscript,
+} from '../agents/_lib/session/transcript.ts';
 import { projectTranscript } from '../agents/_lib/session/projection.ts';
+import { consumeEventStream } from '../app/features/workspace/sse.ts';
 import { applyStreamEvent } from '../shared/timeline.ts';
-import type { PersistedActivityTurn } from '../shared/protocol.ts';
+import type { PersistedActivityTurn, TranscriptStreamEvent } from '../shared/protocol.ts';
 
 test('transcript upload and download stay a single JSONL file', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'transcript-'));
@@ -139,10 +146,104 @@ test('live SSE events fold into the same turn model as a JSONL projection', () =
   }
 });
 
+test('GET /transcript streams the JSONL file unaltered', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'transcript-read-'));
+  const source = path.join(directory, 'session.jsonl');
+  const jsonl = [
+    JSON.stringify({ type: 'user', message: { role: 'user', content: 'Hello' } }),
+    JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: 'Hi.' } }),
+    '',
+  ].join('\n');
+  await writeFile(source, jsonl);
+
+  const blobStore = createMemoryBlobStore();
+  await uploadTranscript({
+    context: { blobStore },
+    conversationId: 'conv-read',
+    sessionId: 'sess-read',
+    sourcePath: source,
+  });
+
+  const missing = await createTranscriptStreamResponse({ blobStore }, () => null);
+  assert.equal(missing.status, 400);
+
+  const response = await createTranscriptStreamResponse(
+    { blobStore, conversation_id: 'conv-read' },
+    () => null,
+  );
+  assert.match(response.headers.get('content-type') || '', /text\/event-stream/);
+  const events: TranscriptStreamEvent[] = [];
+  await consumeEventStream<TranscriptStreamEvent>(response, (event) => {
+    if (event.type !== 'ping') events.push(event);
+  });
+  assert.equal(events.length, 1);
+  assert.equal(events[0]?.type, 'transcript');
+  if (events[0]?.type === 'transcript') {
+    assert.equal(events[0].data?.ok, true);
+    assert.equal(events[0].data?.sessionId, 'sess-read');
+    assert.equal(events[0].data?.jsonl, jsonl);
+    assert.equal(events[0].data?.live, false);
+  }
+  await rm(directory, { recursive: true, force: true });
+});
+
+test('a live transcript path streams before the record is uploaded', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'transcript-live-'));
+  const source = path.join(directory, 'session.jsonl');
+  await writeFile(source, 'line-1\n');
+
+  const blobStore = createMemoryBlobStore();
+  const empty = await loadTranscriptJsonl({ blobStore }, 'conv-live');
+  assert.equal(empty, '');
+
+  let active = true;
+  const response = await createTranscriptStreamResponse(
+    { blobStore, conversation_id: 'conv-live' },
+    () => ({ path: source, sessionId: 'sess-live', active }),
+  );
+  const snapshots: string[] = [];
+  const done = consumeEventStream<TranscriptStreamEvent>(response, (event) => {
+    if (event.type !== 'transcript' || typeof event.data?.jsonl !== 'string') return;
+    snapshots.push(event.data.jsonl);
+    if (snapshots.length === 1) {
+      void writeFile(source, 'line-1\nline-2\n').then(() => {
+        active = false;
+      });
+    }
+  });
+  await done;
+  assert.deepEqual(snapshots, ['line-1\n', 'line-1\nline-2\n']);
+  await rm(directory, { recursive: true, force: true });
+});
+
+test('Claude JSONL lives under projects/<cwd-slug>/<sessionId>.jsonl, not sessions/', async () => {
+  const configDir = await mkdtemp(path.join(tmpdir(), 'claude-config-'));
+  const cwd = '/Users/me/app';
+  const sessionId = '28247548-0d9f-4dae-9760-e9380aab5c40';
+  const jsonl = `${JSON.stringify({ type: 'user', message: { role: 'user', content: 'Hello' } })}\n`;
+  const expected = path.join(configDir, 'projects', '-Users-me-app', `${sessionId}.jsonl`);
+  assert.equal(
+    resolveClaudeTranscriptPath(sessionId, { configDir, cwd }),
+    expected,
+  );
+  await mkdir(path.dirname(expected), { recursive: true });
+  await writeFile(expected, jsonl);
+
+  const blobStore = createMemoryBlobStore();
+  await patchConversationRecord({ blobStore }, 'conv-slug', { claudeSessionId: sessionId });
+  const loaded = await loadTranscriptJsonl({ blobStore }, 'conv-slug', '', { configDir, cwd, sessionId });
+  assert.equal(loaded, jsonl);
+  await rm(configDir, { recursive: true, force: true });
+});
+
 test('compaction re-uploads the local transcript file', async () => {
   const { readFile } = await import('node:fs/promises');
   const live = await readFile('agents/_lib/session/live.ts', 'utf8');
   assert.match(live, /subtype === 'compact_boundary'/);
   assert.match(live, /PostCompact:/);
   assert.match(live, /persistTranscript\(session\)/);
+  assert.match(live, /SessionStart/);
+  assert.match(live, /patchConversationRecord/);
+  assert.match(live, /transcript_path/);
+  assert.match(live, /resolveClaudeTranscriptPath/);
 });

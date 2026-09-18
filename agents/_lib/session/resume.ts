@@ -1,4 +1,3 @@
-import { existsSync } from 'node:fs';
 import {
   getChatTask,
   getConversationRecord,
@@ -7,7 +6,7 @@ import {
   saveProjectState,
 } from './store.ts';
 import { hasLiveChatTask, isChatTaskActive, iterateLiveChatTaskEvents, markOrphanedTaskFailed } from './task.ts';
-import { downloadTranscript, readTranscriptText } from './transcript.ts';
+import { loadTranscriptJsonl } from './transcript.ts';
 import { projectTranscript, turnsToMessages } from './projection.ts';
 import {
   assertPreviewServerReady,
@@ -82,25 +81,6 @@ function jsonResponse(obj: Record<string, unknown>, status = 200) {
       'cache-control': 'no-store',
     },
   });
-}
-
-async function loadTranscriptJsonl(context: any, conversationId: string) {
-  const record = await getConversationRecord(context, conversationId);
-  if (record.transcriptPath && existsSync(record.transcriptPath)) {
-    return readTranscriptText(record.transcriptPath);
-  }
-  if (record.claudeSessionId) {
-    const dest = record.transcriptPath
-      || `/tmp/.claude/sessions/${record.claudeSessionId}.jsonl`;
-    const restored = await downloadTranscript({
-      context,
-      conversationId,
-      sessionId: record.claudeSessionId,
-      destPath: dest,
-    });
-    if (restored) return readTranscriptText(dest);
-  }
-  return '';
 }
 
 async function loadProjectResumeHistory(context: any, conversationId: string) {

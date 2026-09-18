@@ -11,6 +11,7 @@ import {
   PanelRight,
   PanelRightClose,
   Rocket,
+  ScrollText,
 } from 'lucide-react';
 import { Button } from '@/app/components/ui/button';
 import {
@@ -99,6 +100,10 @@ const AgentConversation = dynamic(importAgentConversation, {
 });
 const FilesPanel = dynamic(
   () => import('@/app/components/files-panel').then((mod) => mod.FilesPanel),
+  { ssr: false, loading: PanelLoading },
+);
+const SessionPanel = dynamic(
+  () => import('@/app/components/session-panel').then((mod) => mod.SessionPanel),
   { ssr: false, loading: PanelLoading },
 );
 
@@ -460,6 +465,10 @@ export function WorkspaceScreen() {
                     {t.workspace.code}
                     {workspace.filesRefreshing && <span className="workspace-tab-refreshing">{t.files.refreshing}</span>}
                   </TabsTrigger>
+                  <TabsTrigger value="session" className="workspace-tab">
+                    <ScrollText />
+                    {t.workspace.session}
+                  </TabsTrigger>
                 </TabsList>
               </Tabs>
             </div>
@@ -572,6 +581,16 @@ export function WorkspaceScreen() {
                   copy={t.files}
                   cache={fileCache}
                   focusPath={workspace.filesFocusPath}
+                />
+              </div>
+            )}
+
+            {workspace.sandboxTab === 'session' && (
+              <div className="workspace-panel-pane">
+                <SessionPanel
+                  conversationId={conversationId}
+                  live={live.loading}
+                  copy={t.session}
                 />
               </div>
             )}

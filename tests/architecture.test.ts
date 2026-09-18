@@ -67,6 +67,7 @@ const AGENT_ROUTE_FILES = new Set([
   'agents/stop.ts',
   'agents/file.ts',
   'agents/download.ts',
+  'agents/transcript.ts',
 ]);
 
 test('agent routes stay at agents/ and implementation lives in agents/_lib/', async () => {
@@ -124,6 +125,7 @@ test('session kernel and makers CLI live under agents/_lib', async () => {
   for (const target of [
     'agents/_lib/session/store.ts',
     'agents/_lib/session/transcript.ts',
+    'agents/transcript.ts',
     'agents/_lib/session/live.ts',
     'agents/_lib/session/projection.ts',
     'agents/_lib/makers/session.ts',

@@ -110,6 +110,18 @@ export type ResumeData = {
   error?: string;
 };
 
+/** Raw Claude JSONL for the Session tab. The file is the source of truth. */
+export type TranscriptData = {
+  ok?: boolean;
+  conversation_id?: string;
+  sessionId?: string;
+  transcriptPath?: string;
+  jsonl?: string;
+  /** The live query still has a turn in flight; more snapshots may follow. */
+  live?: boolean;
+  error?: string;
+};
+
 export type ChatResponse = {
   ok?: boolean;
   reply?: string;
@@ -210,4 +222,9 @@ export type ResumeStreamEvent =
   | { type: 'error'; error?: string }
   | { type: 'ping'; ts?: number };
 
-export type SessionStreamEvent = ChatStreamEvent | ResumeStreamEvent;
+export type TranscriptStreamEvent =
+  | { type: 'transcript'; data?: TranscriptData }
+  | { type: 'error'; error?: string }
+  | { type: 'ping'; ts?: number };
+
+export type SessionStreamEvent = ChatStreamEvent | ResumeStreamEvent | TranscriptStreamEvent;

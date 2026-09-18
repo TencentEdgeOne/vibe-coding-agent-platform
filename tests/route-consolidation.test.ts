@@ -64,6 +64,29 @@ test('initial session restore is one progressive SSE request that can attach a l
   assert.match(client, /fetch\('\/session',[\s\S]*?method: 'GET'/);
 });
 
+test('the session tab reads the raw JSONL transcript and does not project it', async () => {
+  const route = await readFile('agents/transcript.ts', 'utf8');
+  const pipeline = await readFile('agents/_lib/session/transcript.ts', 'utf8');
+  const client = await readFile('app/features/workspace/workspace-api.ts', 'utf8');
+  const panel = await readFile('app/components/session-panel.tsx', 'utf8');
+  const screen = await readFile('app/features/workspace/workspace-screen.tsx', 'utf8');
+
+  assert.match(route, /onRequestGet/);
+  assert.match(route, /createTranscriptStreamResponse/);
+  assert.match(route, /getLiveQuery/);
+  assert.doesNotMatch(route, /onRequestPost/);
+  assert.match(pipeline, /export async function loadTranscriptJsonl/);
+  assert.match(pipeline, /export async function createTranscriptStreamResponse/);
+  assert.match(pipeline, /type: 'transcript'/);
+  assert.match(client, /fetch\('\/transcript',[\s\S]*?method: 'GET'/);
+  assert.match(panel, /openTranscriptStream\(/);
+  assert.match(panel, /consumeEventStream/);
+  assert.match(panel, /\{state\.jsonl\}/);
+  assert.doesNotMatch(panel, /setInterval|fetchTranscript/);
+  assert.doesNotMatch(panel, /projectTranscript|JSON\.stringify\(|JSON\.parse\(/);
+  assert.match(screen, /value="session"/);
+});
+
 test('file panel performs no automatic or hover prefetch', async () => {
   const source = await readFile('app/components/files-panel.tsx', 'utf8');
   assert.doesNotMatch(source, /prefetch/i);

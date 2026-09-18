@@ -163,9 +163,12 @@ export const TRANSLATIONS = {
       gatewayPromptSkip: '跳过',
       preview: '预览',
       code: '代码',
+      // The Claude JSONL file is the only history this product keeps. The chat
+      // column is a projection of it; this tab shows the file itself.
+      session: '会话',
       showPanel: '展开右侧面板',
       hidePanel: '折叠右侧面板',
-      choosePanel: '选择预览或代码',
+      choosePanel: '选择预览、代码或会话',
       refreshPreview: '刷新预览',
       copyPreviewPath: '复制当前路径',
       previewPathCopied: '已复制当前路径',
@@ -218,6 +221,14 @@ export const TRANSLATIONS = {
         config: '运行配置',
       },
       route: (route: string) => `路由 ${route}`,
+    },
+    session: {
+      empty: '还没有会话记录。',
+      writing: '会话正在写入…',
+      loading: '正在加载会话…',
+      failed: '读取会话失败',
+      source: 'session.jsonl',
+      lines: (count: number) => `${count} 行`,
     },
   },
   en: {
@@ -330,9 +341,10 @@ export const TRANSLATIONS = {
       gatewayPromptSkip: 'Skip',
       preview: 'Preview',
       code: 'Code',
+      session: 'Session',
       showPanel: 'Show side panel',
       hidePanel: 'Hide side panel',
-      choosePanel: 'Choose Preview or Code',
+      choosePanel: 'Choose Preview, Code, or Session',
       refreshPreview: 'Refresh preview',
       copyPreviewPath: 'Copy current path',
       previewPathCopied: 'Current path copied',
@@ -384,8 +396,17 @@ export const TRANSLATIONS = {
       },
       route: (route: string) => `Route ${route}`,
     },
+    session: {
+      empty: 'No session transcript yet.',
+      writing: 'Writing session…',
+      loading: 'Loading session…',
+      failed: 'Failed to read session',
+      source: 'session.jsonl',
+      lines: (count: number) => `${count} line${count === 1 ? '' : 's'}`,
+    },
   },
 } as const;
 
 export type UiCopy = (typeof TRANSLATIONS)[Locale];
 export type FileCopy = UiCopy['files'];
+export type SessionCopy = UiCopy['session'];

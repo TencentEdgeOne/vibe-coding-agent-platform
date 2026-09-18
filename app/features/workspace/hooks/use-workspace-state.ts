@@ -13,7 +13,7 @@ import type {
 } from '@/app/types/workspace';
 import { fetchProjectArchive } from '../workspace-api';
 
-export type SandboxTab = 'preview' | 'files';
+export type SandboxTab = 'preview' | 'files' | 'session';
 
 export function useWorkspaceState() {
   const [deployment, setDeployment] = useState<DeploymentInfo | null>(null);
