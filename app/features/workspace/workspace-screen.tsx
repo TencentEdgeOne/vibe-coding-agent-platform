@@ -213,8 +213,6 @@ export function WorkspaceScreen() {
     completed: t.workspace.activityCompleted,
     failed: t.workspace.activityFailed,
     stopped: t.workspace.activityStopped,
-    input: t.workspace.activityInput,
-    output: t.workspace.activityOutput,
     thinking: t.workspace.activityThinking,
     info: t.workspace.activityInfo,
     usage: t.workspace.activityUsage,
@@ -224,9 +222,6 @@ export function WorkspaceScreen() {
     send: t.workspace.send,
     stop: t.workspace.stop,
     modelLabel: t.workspace.modelLabel,
-    toolActions: t.workspace.toolActions,
-    referenceTopics: t.workspace.referenceTopics,
-    referenceDetail: t.workspace.referenceDetail,
     copyLink: t.workspace.copyLink,
     linkCopied: t.workspace.linkCopied,
   }), [t]);
@@ -343,7 +338,11 @@ export function WorkspaceScreen() {
           className="size-8 animate-spin rounded-full border-2 border-primary/30 border-t-primary"
           aria-hidden="true"
         />
-        <p className="text-sm text-muted-foreground">{t.workspace.resuming}</p>
+        <p className="text-sm text-muted-foreground">
+          {resume.prepStage
+            ? t.workspace.prepStages[resume.prepStage]
+            : t.workspace.resuming}
+        </p>
       </main>
     );
   }

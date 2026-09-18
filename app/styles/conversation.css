@@ -62,22 +62,15 @@
   line-height: 1.55;
 }
 
-.agent-markdown + .agent-markdown,
-.conversation-tool-chain + .agent-markdown,
-.agent-markdown + .conversation-tool-chain,
-.tool-activity-row + .agent-markdown,
-.agent-markdown + .tool-activity-row {
+.agent-markdown + .agent-markdown {
   margin-top: 10px;
 }
 
-.conversation-assistant-turn .agent-markdown + .conversation-tool-chain,
-.conversation-assistant-turn .conversation-tool-chain + .agent-markdown,
-.conversation-assistant-turn .conversation-tool-chain + .assistant-error-message,
 .conversation-assistant-turn .agent-markdown + .assistant-error-message {
   margin-top: 12px;
 }
 
-.conversation-tool-chain + .agent-waiting,
+.conversation-skeleton + .agent-waiting,
 .agent-markdown + .agent-waiting,
 .assistant-error-message + .agent-waiting {
   margin-top: 8px;
@@ -156,163 +149,8 @@
   height: 12px;
 }
 
-/* ---- Tool activity ------------------------------------------------------
-   Three tiers of weight: plain file operations stay quiet, Makers platform
-   operations carry the accent, and the activity chain never competes with the
-   assistant's prose. */
-
-.conversation-tool-chain {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.tool-activity-row {
-  min-width: 0;
-}
-
-.tool-activity-trigger {
-  display: flex;
-  position: relative;
-  width: 100%;
-  min-width: 0;
-  align-items: center;
-  gap: 8px;
-  border-radius: var(--r-sm);
-  padding: 3px 5px 3px 2px;
-  color: var(--n-600);
-  font-size: var(--fs-sm);
-  line-height: 20px;
-  text-align: left;
-  transition:
-    color var(--t-fast) ease,
-    background var(--t-fast) ease;
-}
-
-.tool-activity-trigger:hover {
-  background: var(--n-50);
-  color: var(--foreground);
-}
-
-.tool-activity-status {
-  display: grid;
-  width: 14px;
-  height: 20px;
-  flex: 0 0 14px;
-  place-items: center;
-  color: var(--n-500);
-}
-
-.tool-activity-status svg {
-  width: 11px;
-  height: 11px;
-  stroke-width: 1.8;
-}
-
-.tool-activity-action-icon,
-.tool-activity-status .tool-activity-action-icon {
-  width: 14px;
-  height: 14px;
-  color: var(--n-500);
-  stroke-width: 1.7;
-}
-
-/* Platform work (skills, compatibility lint, dev, deploy) is the part of the
-   run that only exists on Makers, so it is the only tier that gets colour —
-   carried by the glyph alone. A tile behind it made a 14px icon in a list of
-   plain ones look like a button, and the rows are not clickable one by one. */
-.tool-activity-trigger[data-tier='platform'] .tool-activity-status {
-  color: var(--brand);
-}
-
-.tool-activity-trigger[data-tier='platform'] .tool-activity-action-icon {
-  color: var(--brand);
-}
-
-.tool-activity-spinner {
-  width: 12px;
-  height: 12px;
-  border: 1.5px solid color-mix(in srgb, var(--brand) 20%, transparent);
-  border-top-color: var(--brand);
-  border-radius: 50%;
-  animation: spin 700ms linear infinite;
-}
-
-.tool-activity-copy {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  align-items: baseline;
-  gap: 6px;
-}
-
-.tool-activity-copy > span {
-  flex: 0 0 auto;
-}
-
-.tool-activity-copy strong {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--n-900);
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tool-activity-chevron {
-  width: 11px;
-  height: 11px;
-  flex: 0 0 11px;
-  color: var(--n-400);
-  transition: transform var(--t-base) ease;
-}
-
-.tool-activity-running {
-  color: var(--n-700);
-}
-
-.tool-activity-failed,
-.tool-activity-failed .tool-activity-status {
-  color: var(--danger);
-}
-
-.tool-activity-stopped {
-  color: var(--n-500);
-}
-
-.tool-activity-detail {
-  display: grid;
-  gap: 9px;
-  margin: 3px 0 7px;
-  border-radius: var(--r-sm);
-  background: var(--n-25);
-  padding: 7px 10px;
-  animation: trace-list-in var(--t-base) ease-out both;
-}
-
-/* A row can stand for several calls, so the panel is sectioned: one block per
-   call, ruled off from the next. */
-.tool-activity-step {
-  display: grid;
-  gap: 9px;
-}
-
-.tool-activity-step + .tool-activity-step {
-  border-top: 1px solid var(--n-100);
-  padding-top: 9px;
-}
-
-.tool-activity-detail span {
-  color: var(--n-500);
-  font-size: var(--fs-2xs);
-  font-weight: 650;
-  text-transform: uppercase;
-}
-
 .conversation-skeleton {
+  position: relative;
   min-width: 0;
   margin: 0;
   border-left: 2px solid var(--n-200);
@@ -344,45 +182,15 @@
   border-left-color: color-mix(in srgb, var(--brand) 35%, var(--n-200));
 }
 
-.conversation-info {
+.conversation-info,
+.conversation-tool {
   border-left-color: var(--n-200);
 }
 
 .agent-markdown + .conversation-skeleton,
 .conversation-skeleton + .agent-markdown,
-.conversation-tool-chain + .conversation-skeleton,
-.conversation-skeleton + .conversation-tool-chain,
 .conversation-skeleton + .conversation-skeleton {
   margin-top: 10px;
-}
-
-.tool-activity-detail pre {
-  max-height: 280px;
-  overflow: auto;
-  white-space: pre-wrap;
-  color: var(--n-700);
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  line-height: 1.55;
-  overflow-wrap: anywhere;
-}
-
-.tool-activity-empty {
-  margin: 0;
-  color: var(--n-500);
-  font-size: var(--fs-xs);
-  line-height: 1.45;
-}
-
-@keyframes trace-list-in {
-  from {
-    opacity: 0;
-    transform: translateY(-3px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
 }
 
 .assistant-error-message {

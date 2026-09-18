@@ -27,6 +27,16 @@ function textFromContent(content: unknown): string {
   );
 }
 
+function commandFromInput(input: unknown) {
+  const record = asRecord(input);
+  const command = typeof record.command === 'string'
+    ? record.command
+    : typeof record.cmd === 'string'
+      ? record.cmd
+      : '';
+  return command.trim();
+}
+
 function toolBlocks(content: unknown): JsonRecord[] {
   if (!Array.isArray(content)) return [];
   return content.filter((block) => {
@@ -141,11 +151,13 @@ export function projectTranscript(jsonl: string, projectDir = ''): PersistedActi
           if (record.type !== 'tool_use' && record.type !== 'mcp_tool_use') continue;
           const id = typeof record.id === 'string' ? record.id : '';
           const name = typeof record.name === 'string' ? record.name : 'tool';
+          const command = commandFromInput(record.input);
           turn.activities.push({
             kind: 'tool',
             toolUseId: id,
             name,
             status: 'completed',
+            ...(command ? { command } : {}),
             inputSummary: summarizeToolInput(name, record.input, projectDir),
             startedAt: createdAt,
           });

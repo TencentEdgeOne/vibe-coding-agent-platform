@@ -37,7 +37,7 @@ test('scroll containers are containing blocks, so sr-only labels cannot stretch 
   const css = await stylesheet();
 
   assert.match(css, /\.conversation-scroll \{[^}]*position: relative;/);
-  assert.match(css, /\.tool-activity-trigger \{[^}]*position: relative;/);
+  assert.match(css, /\.conversation-skeleton \{[^}]*position: relative;/);
 });
 
 test('the stacked workspace fits one viewport instead of scrolling past its panes', async () => {

@@ -39,7 +39,7 @@ function toolNameImpliesProject(name: string) {
 
 function activityIsMakersCli(activity: PersistedActivity) {
   if (activity.kind !== 'tool' || !activity.name.includes('commands')) return false;
-  const command = activity.inputSummary || '';
+  const command = activity.command || activity.inputSummary || '';
   return isMakersDevCommand(command) || isMakersDeployCommand(command);
 }
 
@@ -58,7 +58,7 @@ function activityHistoryImpliesPreview(activityHistory: PersistedActivityTurn[])
       activity.kind === 'tool'
       && activity.status === 'completed'
       && activity.name.includes('commands')
-      && isMakersDevCommand(activity.inputSummary || ''),
+      && isMakersDevCommand(activity.command || activity.inputSummary || ''),
     ),
   );
 }

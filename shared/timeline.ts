@@ -199,11 +199,6 @@ export function summarizeToolInput(name: string, input: unknown, projectDir = ''
   const record = input && typeof input === 'object' ? input as Record<string, unknown> : {};
   const shortName = name.replace(/^mcp__[^_]+__/, '');
 
-  if (shortName === 'Skill' || shortName === 'load_makers_skill') {
-    const skill = typeof record.skill === 'string' ? record.skill : '';
-    const ref = typeof record.ref === 'string' ? record.ref.trim() : '';
-    return truncate(ref ? JSON.stringify({ skill, ref }) : skill, 200);
-  }
   if (shortName === 'write_project_file' || shortName === 'files_write' || shortName === 'write_files') {
     if (typeof record.path !== 'string' && typeof record.content !== 'string') return '';
     const path = typeof record.path === 'string' ? record.path : '<pending path>';
@@ -218,31 +213,11 @@ export function summarizeToolInput(name: string, input: unknown, projectDir = ''
         : '';
     return truncate(redactInlineSecrets(projectDir ? command.split(projectDir).join('<project>') : command));
   }
-  if (
-    shortName === 'files_make_dir'
-    || shortName === 'files_remove'
-    || shortName === 'files_exists'
-    || shortName === 'files_read'
-    || shortName === 'files_list'
-  ) {
-    const path = typeof record.path === 'string'
-      ? record.path
-      : typeof record.file_path === 'string'
-        ? record.file_path
-        : '';
-    return path ? truncate(projectDir ? path.split(projectDir).join('<project>') : path) : '';
-  }
 
   return truncate(JSON.stringify(safeValue(record, projectDir), null, 2));
 }
 
-export function summarizeToolOutput(value: string, projectDir = '', name = '') {
-  if (name.replace(/^mcp__[^_]+__/, '') === 'Skill' && /^launching skill:/i.test(value.trim())) {
-    return '';
-  }
-  if (name.replace(/^mcp__[^_]+__/, '') === 'load_makers_skill' && /^---\s*\nname:/i.test(value.trim())) {
-    return '';
-  }
+export function summarizeToolOutput(value: string, projectDir = '', _name = '') {
   const withoutProjectPath = projectDir ? value.split(projectDir).join('<project>') : value;
   return truncate(redactInlineSecrets(withoutProjectPath));
 }
@@ -415,8 +390,8 @@ export function presentToolActivity(
   const structuredTarget = readStructuredTarget(activity.inputSummary);
   const target = structuredTarget || cleanSummaryTarget(activity.inputSummary);
 
-  if (name.includes('ensure project scaffold') || name.includes('environment')) {
-    return { action: 'Environment Preparing' };
+  if (name.includes('environment')) {
+    return { action: 'Environment Preparing', target };
   }
   if (name === 'skill' || name === 'load makers skill') {
     const request = readReferenceRequest(activity.inputSummary);
@@ -538,15 +513,10 @@ export type AssistantTimelineInfoBlock = {
   activity: Extract<AssistantActivity, { kind: 'info' }>;
 };
 
-export type AssistantTimelineToolItem = {
+export type AssistantTimelineToolBlock = {
+  kind: 'tool';
   index: number;
   activity: ToolActivity;
-  repeats: ToolActivity[];
-};
-
-export type AssistantTimelineToolBlock = {
-  kind: 'tools';
-  items: AssistantTimelineToolItem[];
 };
 
 export type AssistantTimelineBlock =
@@ -559,14 +529,8 @@ export function normalizeTimelineText(value: string) {
   return value.replace(/\s+/g, ' ').trim();
 }
 
-function referenceRowKey(activity: ToolActivity) {
-  const { topic, detailed } = presentToolActivity(activity);
-  return topic ? `${topic}:${detailed ? 'detail' : 'overview'}` : '';
-}
-
 export function buildAssistantTimeline(activities: AssistantActivity[]): AssistantTimelineBlock[] {
   const blocks: AssistantTimelineBlock[] = [];
-  const referenceRows = new Map<string, AssistantTimelineToolItem>();
 
   for (let index = 0; index < activities.length; index += 1) {
     const activity = activities[index];
@@ -585,25 +549,7 @@ export function buildAssistantTimeline(activities: AssistantActivity[]): Assista
       blocks.push({ kind: 'info', index, activity });
       continue;
     }
-
-    let chain = blocks.at(-1);
-    if (chain?.kind !== 'tools') {
-      const opened: AssistantTimelineToolBlock = { kind: 'tools', items: [] };
-      blocks.push(opened);
-      referenceRows.clear();
-      chain = opened;
-    }
-
-    const key = referenceRowKey(activity);
-    const open = key ? referenceRows.get(key) : undefined;
-    if (open) {
-      open.repeats.push(activity);
-      continue;
-    }
-
-    const item: AssistantTimelineToolItem = { index, activity, repeats: [] };
-    if (key) referenceRows.set(key, item);
-    chain.items.push(item);
+    blocks.push({ kind: 'tool', index, activity });
   }
   return blocks;
 }
@@ -668,6 +614,9 @@ export function applyStreamEvent(
     );
     if (existing) {
       existing.name = event.data.name || existing.name;
+      existing.command = event.data.command || existing.command;
+      existing.phaseHint = event.data.phaseHint || existing.phaseHint;
+      existing.fileCount = event.data.fileCount ?? existing.fileCount;
       existing.inputSummary = event.data.inputSummary || existing.inputSummary;
       existing.outputSummary = event.data.outputSummary || existing.outputSummary;
       return { ...turn, activities: [...turn.activities] };
@@ -681,6 +630,9 @@ export function applyStreamEvent(
           toolUseId: event.data.id,
           name: event.data.name || 'tool',
           status: 'running',
+          command: event.data.command,
+          phaseHint: event.data.phaseHint,
+          fileCount: event.data.fileCount,
           inputSummary: event.data.inputSummary,
           outputSummary: event.data.outputSummary,
           startedAt: event.data.startedAt || Date.now(),
@@ -696,6 +648,7 @@ export function applyStreamEvent(
           ? {
               ...activity,
               status: event.data.status || (event.data.ok ? 'completed' : 'failed'),
+              command: event.data.command || activity.command,
               outputSummary: event.data.outputSummary || event.data.preview || activity.outputSummary,
               endedAt: event.data.endedAt || Date.now(),
             }

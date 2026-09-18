@@ -8,6 +8,8 @@ export type BuildStatus = 'success' | 'failed' | 'skipped';
 
 export type ActivityStatus = 'running' | 'completed' | 'failed' | 'stopped';
 
+export type ProgressPhase = 'scaffold' | 'modify' | 'code' | 'install' | 'preview' | 'link';
+
 export type SystemInfoType = 'compact' | 'usage' | 'status' | 'system' | 'sdk';
 
 export type AssistantActivity =
@@ -30,6 +32,9 @@ export type AssistantActivity =
       toolUseId: string;
       name: string;
       status: ActivityStatus;
+      command?: string;
+      phaseHint?: ProgressPhase;
+      fileCount?: number;
       inputSummary?: string;
       outputSummary?: string;
       startedAt?: number;
@@ -154,8 +159,6 @@ export type ChatResponse = {
   error?: string;
   stopped?: boolean;
 };
-
-type ProgressPhase = 'scaffold' | 'modify' | 'code' | 'install' | 'preview' | 'link';
 
 export type ChatStreamEvent =
   | {

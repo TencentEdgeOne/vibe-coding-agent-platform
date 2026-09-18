@@ -109,3 +109,33 @@ test('tool_use patches keep a growing outputSummary on the same row', () => {
     assert.equal(tool.outputSummary, '12s');
   }
 });
+
+test('tool_use keeps command and phase fields on the same row', () => {
+  let turn: PersistedActivityTurn = {
+    id: 'turn-1',
+    user: 'Build',
+    assistant: '',
+    status: 'completed',
+    createdAt: 1,
+    activities: [],
+  };
+  turn = applyStreamEvent(turn, {
+    type: 'tool_use',
+    data: {
+      id: 't1',
+      name: 'Glob',
+      phaseHint: 'code',
+      fileCount: 4,
+      inputSummary: JSON.stringify({ pattern: '**/*', path: 'src' }, null, 2),
+    },
+  });
+  const tool = turn.activities[0];
+  assert.equal(tool.kind, 'tool');
+  if (tool.kind === 'tool') {
+    assert.equal(tool.name, 'Glob');
+    assert.equal(tool.phaseHint, 'code');
+    assert.equal(tool.fileCount, 4);
+    assert.match(tool.inputSummary || '', /pattern/);
+    assert.match(tool.inputSummary || '', /\*\*\/\*/);
+  }
+});

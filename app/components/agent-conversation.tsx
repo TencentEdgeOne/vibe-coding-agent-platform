@@ -2,24 +2,11 @@
 
 import { FormEvent, ReactNode, memo, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AppWindow,
   ArrowUp,
-  BookOpen,
   Check,
-  ChevronRight,
   CircleAlert,
   Copy,
-  FilePenLine,
-  FilePlus2,
-  FolderPlus,
-  FolderSearch,
-  Monitor,
-  Rocket,
-  Search,
   Square,
-  SquareTerminal,
-  Trash2,
-  X,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -27,21 +14,10 @@ import {
   buildAssistantTimeline,
   lastTimelineText,
   trailingTimelineContent,
-  type AssistantTimelineToolItem,
 } from '../lib/assistant-timeline';
-import {
-  presentToolActivity,
-  toolActionTier,
-  type ReferenceTopic,
-  type ToolAction,
-  type ToolPresentation,
-} from '../lib/tool-activity';
 import { withoutPlatformName } from '../../shared/platform-name';
 import { ModelPicker } from './model-picker';
-import type {
-  ActivityStatus,
-  AssistantActivity,
-} from '../../shared/protocol';
+import type { AssistantActivity } from '../../shared/protocol';
 import type { ModelOption } from '../../shared/models';
 
 export type ConversationMessage = {
@@ -57,8 +33,6 @@ type ConversationCopy = {
   completed: string;
   failed: string;
   stopped: string;
-  input: string;
-  output: string;
   thinking: string;
   info: string;
   usage: string;
@@ -68,9 +42,6 @@ type ConversationCopy = {
   send: string;
   stop: string;
   modelLabel: string;
-  toolActions: Record<ToolAction, string>;
-  referenceTopics: Record<ReferenceTopic, string>;
-  referenceDetail: string;
   copyLink: string;
   linkCopied: string;
 };
@@ -100,8 +71,52 @@ function infoLabel(
   return copy.info;
 }
 
-function actionLabel(action: ToolAction, copy: ConversationCopy) {
-  return copy.toolActions[action];
+function statusLabel(status: Extract<AssistantActivity, { kind: 'tool' }>['status'], copy: ConversationCopy) {
+  if (status === 'running') return copy.running;
+  if (status === 'failed') return copy.failed;
+  if (status === 'stopped') return copy.stopped;
+  return copy.completed;
+}
+
+function formatTimestamp(value?: number) {
+  if (!value) return '';
+  try {
+    return new Date(value).toISOString();
+  } catch {
+    return String(value);
+  }
+}
+
+function maybeJson(value?: string) {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      return value;
+    }
+  }
+  return value;
+}
+
+function formatToolDump(activity: Extract<AssistantActivity, { kind: 'tool' }>, copy: ConversationCopy) {
+  return JSON.stringify({
+    name: activity.name,
+    id: activity.toolUseId,
+    status: activity.status,
+    statusLabel: statusLabel(activity.status, copy),
+    command: activity.command || undefined,
+    phaseHint: activity.phaseHint || undefined,
+    fileCount: activity.fileCount,
+    startedAt: formatTimestamp(activity.startedAt) || undefined,
+    endedAt: formatTimestamp(activity.endedAt) || undefined,
+    durationMs: activity.startedAt && activity.endedAt
+      ? activity.endedAt - activity.startedAt
+      : undefined,
+    input: maybeJson(activity.inputSummary),
+    output: maybeJson(activity.outputSummary),
+  }, null, 2);
 }
 
 function ThinkingBlock({ content, copy }: { content: string; copy: ConversationCopy }) {
@@ -130,112 +145,18 @@ function InfoBlock({
   );
 }
 
-/** What the row names: a topic for reference loads, a path or command otherwise. */
-function targetLabel(presentation: ToolPresentation, copy: ConversationCopy) {
-  if (!presentation.topic) return withoutPlatformName(presentation.target || '');
-  const topic = copy.referenceTopics[presentation.topic];
-  return presentation.detailed ? `${topic} · ${copy.referenceDetail}` : topic;
-}
-
-function ActionIcon({ action }: { action: ToolAction }) {
-  const props = { className: 'tool-activity-action-icon', 'aria-hidden': true } as const;
-  if (action === 'Environment Preparing') return <Monitor {...props} />;
-  if (action === 'Glob') return <FolderSearch {...props} />;
-  if (action === 'Read file') return <Search {...props} />;
-  if (action === 'Write file') return <FilePlus2 {...props} />;
-  if (action === 'Edit file') return <FilePenLine {...props} />;
-  if (action === 'Create folder') return <FolderPlus {...props} />;
-  if (action === 'Delete file') return <Trash2 {...props} />;
-  if (action === 'Create preview') return <AppWindow {...props} />;
-  if (action === 'Deploy project') return <Rocket {...props} />;
-  if (action === 'Load skill') return <BookOpen {...props} />;
-  return <SquareTerminal {...props} />;
-}
-
-function ActivityIcon({ status, action }: { status: ActivityStatus; action: ToolAction }) {
-  if (status === 'running') {
-    return <span className="tool-activity-spinner" />;
-  }
-  if (status === 'failed') return <X className="size-3.5" />;
-  if (status === 'stopped') return <Square className="size-3" />;
-  return <ActionIcon action={action} />;
-}
-
-/**
- * One status for a row that stands for several calls: a run still going says so
- * until its last step lands, and a step that broke outranks the ones that did
- * not, because the row is the only place it can be reported.
- */
-function rowStatus(steps: readonly Extract<AssistantActivity, { kind: 'tool' }>[]): ActivityStatus {
-  for (const status of ['running', 'failed', 'stopped'] as const) {
-    if (steps.some((step) => step.status === status)) return status;
-  }
-  return 'completed';
-}
-
-function ToolActivityRow({ item, copy, previouslyReadPaths }: {
-  item: AssistantTimelineToolItem;
+function ToolBlock({
+  activity,
+  copy,
+}: {
+  activity: Extract<AssistantActivity, { kind: 'tool' }>;
   copy: ConversationCopy;
-  previouslyReadPaths: ReadonlySet<string>;
 }) {
-  const [open, setOpen] = useState(true);
-  const steps = [item.activity, ...item.repeats];
-  const status = rowStatus(steps);
-  const presentation = presentToolActivity(item.activity, previouslyReadPaths);
-  const target = targetLabel(presentation, copy);
-  const label = status === 'running'
-    ? copy.running
-    : status === 'completed'
-      ? copy.completed
-      : status === 'failed'
-        ? copy.failed
-        : copy.stopped;
-  // Every folded call keeps its own input and output, so the panel reads as one
-  // section per call and the row hides a line rather than the work behind it.
-  const details = steps.filter((step) => step.inputSummary || step.outputSummary);
-
   return (
-    <div className="tool-activity-row">
-      <button
-        type="button"
-        onClick={() => setOpen((current) => !current)}
-        aria-expanded={open}
-        data-tier={toolActionTier(presentation.action)}
-        className={`tool-activity-trigger tool-activity-${status}`}
-      >
-        <span className="tool-activity-status"><ActivityIcon status={status} action={presentation.action} /></span>
-        <span className="tool-activity-copy">
-          <span>{actionLabel(presentation.action, copy)}{target ? ' ' : ''}</span>
-          {target && <strong>{target}</strong>}
-        </span>
-        {details.length > 0 && (
-          <ChevronRight className={`tool-activity-chevron ${open ? 'rotate-90' : ''}`} />
-        )}
-        <span className="sr-only">{label}</span>
-      </button>
-      {open && (
-        <div className="tool-activity-detail">
-          {details.length === 0 ? (
-            <p className="tool-activity-empty">{label}</p>
-          ) : details.map((step, position) => (
-            <div className="tool-activity-step" key={step.toolUseId || position}>
-              {step.inputSummary && (
-                <div>
-                  <span>{copy.input}</span>
-                  <pre>{withoutPlatformName(step.inputSummary)}</pre>
-                </div>
-              )}
-              {step.outputSummary && (
-                <div>
-                  <span>{copy.output}</span>
-                  <pre>{withoutPlatformName(step.outputSummary)}</pre>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+    <details open className="conversation-skeleton conversation-tool">
+      <summary>{activity.name} · {statusLabel(activity.status, copy)}</summary>
+      <pre>{formatToolDump(activity, copy)}</pre>
+    </details>
   );
 }
 
@@ -323,31 +244,12 @@ function Markdown({ content, copy }: { content: string; copy: ConversationCopy }
   );
 }
 
-// Memoized because the streaming turn is the only one that changes: the chat
-// reducer hands back every other message unchanged, so without this each token
-// rebuilt the timeline and the read-path scan for the whole conversation.
 const AssistantTurn = memo(function AssistantTurn({ message, copy }: {
   message: ConversationMessage;
   copy: ConversationCopy;
 }) {
   const activities = message.activities ?? [];
   const blocks = useMemo(() => buildAssistantTimeline(activities), [activities]);
-  // What each tool row may treat as already-read, so a repeated Read of the same
-  // file can render as a revisit. Built as a running prefix, hence one snapshot
-  // per activity rather than one shared set.
-  const previouslyReadPaths = useMemo(() => {
-    const readPaths = new Set<string>();
-    return activities.map((activity) => {
-      const snapshot = new Set(readPaths);
-      if (activity.kind === 'tool') {
-        const presentation = presentToolActivity(activity);
-        if (presentation.action === 'Read file' && presentation.target) {
-          readPaths.add(presentation.target);
-        }
-      }
-      return snapshot;
-    });
-  }, [activities]);
   const lastText = lastTimelineText(blocks);
   const trailing = trailingTimelineContent(lastText?.content, message.content, message.status);
   const hasRunningTool = activities.some(
@@ -367,19 +269,7 @@ const AssistantTurn = memo(function AssistantTurn({ message, copy }: {
           if (block.kind === 'info') {
             return <InfoBlock key={`info-${block.index}`} activity={block.activity} copy={copy} />;
           }
-
-          return (
-            <div key={`tools-${block.items[0]?.index ?? 0}`} className="conversation-tool-chain">
-              {block.items.map((item) => (
-                <ToolActivityRow
-                  key={item.activity.toolUseId || `tool-${item.index}`}
-                  item={item}
-                  copy={copy}
-                  previouslyReadPaths={previouslyReadPaths[item.index] ?? new Set()}
-                />
-              ))}
-            </div>
-          );
+          return <ToolBlock key={block.activity.toolUseId || `tool-${block.index}`} activity={block.activity} copy={copy} />;
         })}
         {trailing && (
           message.status === 'error' ? (

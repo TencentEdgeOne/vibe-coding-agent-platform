@@ -28,21 +28,35 @@ test('a streamed single-file call stays blank until its path arrives', () => {
   assert.equal(summarizeToolInput('write_project_file', {}), '');
 });
 
-test('directory tools summarize as a path, not JSON', () => {
-  assert.equal(summarizeToolInput('mcp__edgeone-sandbox__files_make_dir', { path: 'src/lib' }), 'src/lib');
+test('directory tools keep the path in the dumped input', () => {
+  assert.match(summarizeToolInput('mcp__edgeone-sandbox__files_make_dir', { path: 'src/lib' }), /src\/lib/);
 });
 
-test('Skill activity shows the skill name and drops the echoed launch line', () => {
-  assert.equal(summarizeToolInput('Skill', { skill: 'edgeone-makers-tools' }), 'edgeone-makers-tools');
-  assert.equal(summarizeToolOutput('Launching skill: edgeone-makers-tools', '', 'Skill'), '');
+test('Skill activity keeps the skill name and the tool output', () => {
+  assert.match(summarizeToolInput('Skill', { skill: 'edgeone-makers-tools' }), /edgeone-makers-tools/);
+  assert.match(summarizeToolOutput('Launching skill: edgeone-makers-tools', '', 'Skill'), /Launching skill/);
   assert.match(summarizeToolOutput('Skill not found: nope', '', 'Skill'), /Skill not found/);
 });
 
-test('specific Makers skill activity shows its reference and hides the document body', () => {
+test('specific Makers skill activity keeps the document body', () => {
   const name = 'mcp__edgeone-sandbox__load_makers_skill';
-  assert.equal(summarizeToolInput(name, { skill: 'makers-agents' }), 'makers-agents');
-  assert.equal(summarizeToolOutput('---\nname: edgeone-makers-agents\n---\nGuide', '', name), '');
+  assert.match(summarizeToolInput(name, { skill: 'makers-agents' }), /makers-agents/);
+  assert.match(summarizeToolOutput('---\nname: edgeone-makers-agents\n---\nGuide', '', name), /makers-agents/);
   assert.match(summarizeToolOutput('Unable to load Makers skill: missing', '', name), /Unable to load/);
+});
+
+test('glob and skill inputs keep every field instead of a short label', () => {
+  const glob = summarizeToolInput('Glob', { pattern: '**/*', path: 'src' });
+  assert.match(glob, /pattern/);
+  assert.match(glob, /\*\*\/\*/);
+  assert.match(glob, /"path": "src"/);
+
+  const skill = summarizeToolInput('mcp__edgeone-sandbox__load_makers_skill', {
+    skill: 'makers-agents',
+    ref: 'platform/sse-protocol.md',
+  });
+  assert.match(skill, /makers-agents/);
+  assert.match(skill, /platform\/sse-protocol\.md/);
 });
 
 test('tool output is capped at eight kilobytes', () => {
