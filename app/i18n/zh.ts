@@ -148,6 +148,7 @@ export const zh = {
     session: '会话',
     showPanel: '展开右侧面板',
     hidePanel: '折叠右侧面板',
+    resizePanel: '拖动调节左右宽度',
     choosePanel: '选择预览或代码',
     refreshPreview: '刷新预览',
     copyPreviewPath: '复制当前路径',

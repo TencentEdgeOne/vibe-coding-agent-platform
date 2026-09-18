@@ -9,8 +9,8 @@ import { previewDisplayPathFromPath } from '../../../shared/preview-display-path
 import type { ModelOption } from '../../../shared/models';
 import { HomeStage } from './components/home-stage';
 import { NewProjectDialog } from './components/new-project-dialog';
-import { ResultPanel, ResultPanelToggle } from './components/result-panel';
-import { AgentConversation, importAgentConversation } from './components/lazy-panels';
+import { WorkspaceCanvas } from './components/workspace-canvas';
+import { importAgentConversation } from './components/lazy-panels';
 import { SessionPrepLoading } from './components/session-prep-loading';
 import { SiteHeader } from './components/site-header';
 import { fetchModelCatalog } from './workspace-api';
@@ -22,6 +22,7 @@ import { usePreviewSurface } from './hooks/use-preview-surface';
 import { useSessionResume } from './hooks/use-session-resume';
 import { useWorkspaceCopy } from './hooks/use-workspace-copy';
 import { useWorkspaceSnapshot } from './hooks/use-workspace-snapshot';
+import { useWorkspaceSplit } from './hooks/use-workspace-split';
 import { useWorkspaceState } from './hooks/use-workspace-state';
 
 export function WorkspaceScreen() {
@@ -37,6 +38,7 @@ export function WorkspaceScreen() {
   const fileCache = useFileContentCache();
 
   const workspace = useWorkspaceState();
+  const split = useWorkspaceSplit();
   const snapshotRefreshRef = useRef<(conversationId: string) => Promise<unknown>>(async () => null);
   const preview = usePreviewSurface({
     conversationIdRef,
@@ -208,92 +210,29 @@ export function WorkspaceScreen() {
         />
       )}
 
-      <section
-        className={`min-h-0 min-w-0 w-full flex-1 ${
-          hasWorkspace
-            ? `workspace-shell${workspace.resultPanelOpen ? '' : ' is-chat-only'}`
-            : 'hidden'
-        }`}
-      >
-        {hasWorkspace && <AgentConversation
-          messages={live.messages}
-          input={live.input}
-          loading={live.loading}
-          canSend={canSend}
-          compact
-          models={models}
-          model={model}
-          onModelChange={setModel}
-          copy={copy.conversationCopy}
-          onInputChange={live.setInput}
-          onSubmit={() => void live.sendMessage(live.input)}
-          onStop={() => void live.stopCurrentTask()}
-          deployOffer={workspace.gatewayNeeded ? null : deployOffer}
-          onDeployOffer={handleDeployProject}
-          onDismissDeployOffer={() => {
-            if (deployOfferTurnId) workspace.setDismissedDeployTurnId(deployOfferTurnId);
-          }}
-          gatewayPrompt={workspace.gatewayNeeded ? {
-            title: t.workspace.gatewayPromptTitle,
-            ...(workspace.gatewayPromptVariant === 'deploy'
-              ? { description: t.workspace.gatewayPromptDeployHint }
-              : {}),
-            docs: t.workspace.gatewayPromptDocs,
-            docsUrl: makersModelsDocsUrl,
-            apiKey: t.workspace.gatewayPromptApiKey,
-            continue: t.workspace.gatewayPromptContinue,
-            skip: t.workspace.gatewayPromptSkip,
-          } : null}
-          gatewayChip={workspace.gatewayDeferred && !workspace.gatewayNeeded
-            ? t.workspace.gatewayPromptChip
-            : null}
-          gatewaySaved={workspace.gatewayConfigured && !workspace.gatewayNeeded
-            ? t.workspace.gatewayPromptSaved
-            : null}
-          gatewayBusy={workspace.gatewayBusy}
-          onGatewaySubmit={(values) => {
-            const apiKey = values.apiKey.trim();
-            if (!apiKey || workspace.gatewayBusy) return;
-            void live.applyGateway({ apiKey });
-          }}
-          onGatewaySkip={() => {
-            if (workspace.gatewayBusy) return;
-            void live.applyGateway({ skip: true });
-          }}
-          onGatewayReopen={() => {
-            workspace.setGatewayNeeded(true);
-          }}
-        />}
-
-        {hasWorkspace && !workspace.resultPanelOpen && (
-          <div className="workspace-panel-toggle">
-            <ResultPanelToggle
-              open={false}
-              showLabel={t.workspace.showPanel}
-              hideLabel={t.workspace.hidePanel}
-              onToggle={() => workspace.setResultPanelOpen(true)}
-            />
-          </div>
-        )}
-
-        {workspace.resultPanelOpen && <ResultPanel
-          workspace={workspace}
-          preview={preview}
-          t={t}
-          previewDisplayPath={previewDisplayPath}
-          deployHint={copy.deployHint}
-          downloadHint={copy.downloadHint}
-          canDeployProject={canDeployProject}
-          publishing={publishing}
-          conversationId={conversationId}
-          previewControlsCopy={copy.previewControlsCopy}
-          previewFrameCopy={copy.previewFrameCopy}
-          restoring={resume.workspaceRestoring}
-          cache={fileCache}
-          loading={live.loading}
-          handleDeployProject={handleDeployProject}
-        />}
-      </section>
+      <WorkspaceCanvas
+        hasWorkspace={hasWorkspace}
+        workspace={workspace}
+        preview={preview}
+        live={live}
+        split={split}
+        t={t}
+        copy={copy}
+        models={models}
+        model={model}
+        onModelChange={setModel}
+        conversationId={conversationId}
+        previewDisplayPath={previewDisplayPath}
+        deployOffer={deployOffer}
+        deployOfferTurnId={deployOfferTurnId}
+        canSend={canSend}
+        canDeployProject={canDeployProject}
+        publishing={publishing}
+        restoring={resume.workspaceRestoring}
+        cache={fileCache}
+        makersModelsDocsUrl={makersModelsDocsUrl}
+        handleDeployProject={handleDeployProject}
+      />
     </main>
   );
 }

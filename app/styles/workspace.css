@@ -1,6 +1,8 @@
 /* ============================================================
    Workspace — the split canvas: chat column on the left, the
-   preview/code/session result panel on the right.
+   preview/code/session result panel on the right. The default
+   split is 3:7; a gutter between the columns updates
+   --workspace-chat-share.
 
    These rules are intentionally unlayered. Tailwind v4 emits its
    utilities inside @layer utilities, and unlayered CSS outranks
@@ -9,6 +11,7 @@
    ============================================================ */
 
 .workspace-shell {
+  --workspace-chat-share: 30%;
   display: flex;
   position: relative;
   width: 100%;
@@ -20,16 +23,27 @@
 }
 
 .workspace-shell > .agent-conversation {
-  width: 400px;
-  min-width: 0;
+  width: auto;
+  min-width: 280px;
   min-height: 0;
-  flex: 0 0 400px;
+  flex: 0 0 var(--workspace-chat-share);
   overflow: hidden;
   border-right: 1px solid var(--n-150);
   background: var(--n-0);
-  transition:
-    flex-basis var(--t-slow) var(--ease),
-    width var(--t-slow) var(--ease);
+  transition: flex-basis var(--t-slow) var(--ease);
+}
+
+.workspace-shell.is-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.workspace-shell.is-resizing > .agent-conversation {
+  transition: none;
+}
+
+.workspace-shell.is-resizing iframe {
+  pointer-events: none;
 }
 
 .workspace-shell.is-chat-only > .agent-conversation {
@@ -42,14 +56,47 @@
 
 .workspace-result-panel {
   display: flex;
-  width: 100%;
-  min-width: 0;
+  width: auto;
+  min-width: 360px;
   min-height: 0;
-  flex: 1 1 auto;
+  flex: 1 1 0;
   flex-direction: column;
   overflow: hidden;
   background: var(--n-25);
   animation: workspace-panel-slide-in 420ms var(--ease) both;
+}
+
+.workspace-split-handle {
+  position: relative;
+  z-index: 16;
+  flex: 0 0 8px;
+  margin: 0 -4px;
+  cursor: col-resize;
+  touch-action: none;
+  background: transparent;
+  user-select: none;
+}
+
+.workspace-split-handle::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 2px;
+  border-radius: 1px;
+  background: transparent;
+  transition: background-color var(--t-fast) var(--ease);
+}
+
+.workspace-split-handle:hover::before,
+.workspace-split-handle:focus-visible::before,
+.workspace-shell.is-resizing .workspace-split-handle::before {
+  background: var(--brand);
+}
+
+.workspace-split-handle:focus-visible {
+  outline: none;
 }
 
 @keyframes workspace-panel-slide-in {
@@ -556,6 +603,7 @@
 
   .workspace-shell > .agent-conversation {
     width: 100%;
+    min-width: 0;
     min-height: 0;
     flex: 1 1 45%;
     border-right: 0;
@@ -571,9 +619,14 @@
   }
 
   .workspace-result-panel {
+    min-width: 0;
     min-height: 0;
     flex: 1 1 55%;
     animation-name: workspace-panel-rise-in;
+  }
+
+  .workspace-split-handle {
+    display: none;
   }
 }
 

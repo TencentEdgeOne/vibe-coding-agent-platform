@@ -121,6 +121,7 @@ export const en = {
     session: 'Session',
     showPanel: 'Show side panel',
     hidePanel: 'Hide side panel',
+    resizePanel: 'Resize the side panel',
     choosePanel: 'Choose Preview or Code',
     refreshPreview: 'Refresh preview',
     copyPreviewPath: 'Copy current path',

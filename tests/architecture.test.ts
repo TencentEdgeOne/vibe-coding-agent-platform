@@ -99,6 +99,7 @@ test('workspace screen is assembled from session, live, preview, and workspace h
     'use-live-turn.ts',
     'use-preview-surface.ts',
     'use-workspace-state.ts',
+    'use-workspace-split.ts',
   ]) {
     assert.ok(hooks.includes(name), `missing workspace hook ${name}`);
   }

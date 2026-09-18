@@ -158,8 +158,8 @@ test('the topbar overlays the preview from its own layer, and never through opac
   assert.match(disabled, /:disabled svg,\s*\.workspace-icon-button:disabled \.workspace-icon-spinner \{\s*opacity: 0\.45/);
 });
 
-// Preview, code and session stay behind a control the user keeps on the
-// canvas. The stream used to open that column and pick a tab for them.
+// The canvas starts with the result column open, but the stream still must
+// not open it or pick a tab as a side effect of a tool call.
 test('the result panel only opens from its toggle, and never picks a tab by itself', async () => {
   const [screen, live, resume, state] = await Promise.all([
     surface(WORKSPACE),
@@ -172,7 +172,8 @@ test('the result panel only opens from its toggle, and never picks a tab by itse
   assert.match(screen, /workspace\.setResultPanelOpen\(true\)/);
   assert.match(screen, /workspace\.setResultPanelOpen\(false\)/);
   assert.match(screen, /onValueChange=\{\(value\) => workspace\.setSandboxTab\(value as SandboxTab\)\}/);
-  assert.match(state, /useState<SandboxTab \| null>\(null\)/);
+  assert.match(state, /\[resultPanelOpen, setResultPanelOpen\] = useState\(true\)/);
+  assert.match(state, /useState<SandboxTab \| null>\('preview'\)/);
   assert.doesNotMatch(live, /setResultPanelOpen\(/);
   assert.doesNotMatch(live, /setSandboxTab\(/);
   assert.doesNotMatch(resume, /setResultPanelOpen\(/);
@@ -203,4 +204,19 @@ test('the full-screen prep overlay drops on ready while files and preview keep l
   assert.match(live, /onReady: \(\) => \{/);
   assert.match(live, /setSessionPreparing\(false\)/);
   assert.match(live, /options\.onReady\(\)/);
+});
+
+test('the split workspace defaults to a 3:7 chat-to-panel ratio and can be dragged', async () => {
+  const [css, screen] = await Promise.all([
+    readFile('app/styles/workspace.css', 'utf8'),
+    surface(WORKSPACE),
+  ]);
+  const stacked = css.slice(css.indexOf('@media (max-width: 900px)'));
+
+  assert.match(css, /--workspace-chat-share:\s*30%/);
+  assert.match(css, /flex: 0 0 var\(--workspace-chat-share\)/);
+  assert.match(screen, /function WorkspaceSplitHandle\(/);
+  assert.match(screen, /role="separator"/);
+  assert.match(screen, /clampWorkspaceChatShare/);
+  assert.match(stacked, /\.workspace-split-handle \{[^}]*display: none;/);
 });

@@ -1,0 +1,163 @@
+'use client';
+
+import type { FileContentCache } from '@/app/hooks/use-file-content-cache';
+import type { UiCopy } from '@/app/i18n';
+import type { ModelOption } from '../../../../shared/models';
+import { workspaceShellClassName } from '../workspace-split';
+import type { LiveTurnApi } from '../hooks/use-live-turn';
+import type { PreviewSurfaceApi } from '../hooks/use-preview-surface';
+import type { WorkspaceSplitApi } from '../hooks/use-workspace-split';
+import type { WorkspaceStateApi } from '../hooks/use-workspace-state';
+import type { useWorkspaceCopy } from '../hooks/use-workspace-copy';
+import { AgentConversation } from './lazy-panels';
+import { ResultPanel, ResultPanelToggle } from './result-panel';
+import { WorkspaceSplitHandle } from './workspace-split-handle';
+import type { DeployOfferCopy } from './conversation/types';
+
+type WorkspaceCopy = ReturnType<typeof useWorkspaceCopy>;
+
+export function WorkspaceCanvas({
+  hasWorkspace,
+  workspace,
+  preview,
+  live,
+  split,
+  t,
+  copy,
+  models,
+  model,
+  onModelChange,
+  conversationId,
+  previewDisplayPath,
+  deployOffer,
+  deployOfferTurnId,
+  canSend,
+  canDeployProject,
+  publishing,
+  restoring,
+  cache,
+  makersModelsDocsUrl,
+  handleDeployProject,
+}: {
+  hasWorkspace: boolean;
+  workspace: WorkspaceStateApi;
+  preview: PreviewSurfaceApi;
+  live: LiveTurnApi;
+  split: WorkspaceSplitApi;
+  t: UiCopy;
+  copy: WorkspaceCopy;
+  models: ModelOption[];
+  model: string;
+  onModelChange: (model: string) => void;
+  conversationId: string | null;
+  previewDisplayPath: string;
+  deployOffer: DeployOfferCopy | null;
+  deployOfferTurnId: string;
+  canSend: boolean;
+  canDeployProject: boolean;
+  publishing: boolean;
+  restoring: boolean;
+  cache: FileContentCache;
+  makersModelsDocsUrl: string;
+  handleDeployProject: () => void;
+}) {
+  return (
+    <section
+      ref={(node) => {
+        split.shellRef.current = node;
+      }}
+      className={workspaceShellClassName(hasWorkspace, workspace.resultPanelOpen, split.resizing)}
+    >
+      {hasWorkspace && (
+        <AgentConversation
+          messages={live.messages}
+          input={live.input}
+          loading={live.loading}
+          canSend={canSend}
+          compact
+          models={models}
+          model={model}
+          onModelChange={onModelChange}
+          copy={copy.conversationCopy}
+          onInputChange={live.setInput}
+          onSubmit={() => void live.sendMessage(live.input)}
+          onStop={() => void live.stopCurrentTask()}
+          deployOffer={workspace.gatewayNeeded ? null : deployOffer}
+          onDeployOffer={handleDeployProject}
+          onDismissDeployOffer={() => {
+            if (deployOfferTurnId) workspace.setDismissedDeployTurnId(deployOfferTurnId);
+          }}
+          gatewayPrompt={workspace.gatewayNeeded ? {
+            title: t.workspace.gatewayPromptTitle,
+            ...(workspace.gatewayPromptVariant === 'deploy'
+              ? { description: t.workspace.gatewayPromptDeployHint }
+              : {}),
+            docs: t.workspace.gatewayPromptDocs,
+            docsUrl: makersModelsDocsUrl,
+            apiKey: t.workspace.gatewayPromptApiKey,
+            continue: t.workspace.gatewayPromptContinue,
+            skip: t.workspace.gatewayPromptSkip,
+          } : null}
+          gatewayChip={workspace.gatewayDeferred && !workspace.gatewayNeeded
+            ? t.workspace.gatewayPromptChip
+            : null}
+          gatewaySaved={workspace.gatewayConfigured && !workspace.gatewayNeeded
+            ? t.workspace.gatewayPromptSaved
+            : null}
+          gatewayBusy={workspace.gatewayBusy}
+          onGatewaySubmit={(values: { apiKey: string }) => {
+            const apiKey = values.apiKey.trim();
+            if (!apiKey || workspace.gatewayBusy) return;
+            void live.applyGateway({ apiKey });
+          }}
+          onGatewaySkip={() => {
+            if (workspace.gatewayBusy) return;
+            void live.applyGateway({ skip: true });
+          }}
+          onGatewayReopen={() => {
+            workspace.setGatewayNeeded(true);
+          }}
+        />
+      )}
+
+      {hasWorkspace && workspace.resultPanelOpen && (
+        <WorkspaceSplitHandle
+          label={t.workspace.resizePanel}
+          value={Math.round(split.chatShare * 100)}
+          {...split.splitHandleProps}
+        />
+      )}
+
+      {hasWorkspace && !workspace.resultPanelOpen && (
+        <div className="workspace-panel-toggle">
+          <ResultPanelToggle
+            open={false}
+            showLabel={t.workspace.showPanel}
+            hideLabel={t.workspace.hidePanel}
+            onToggle={() => workspace.setResultPanelOpen(true)}
+          />
+        </div>
+      )}
+
+      {hasWorkspace && workspace.resultPanelOpen && (
+        <ResultPanel
+          workspace={workspace}
+          preview={preview}
+          t={t}
+          previewDisplayPath={previewDisplayPath}
+          deployHint={copy.deployHint}
+          downloadHint={copy.downloadHint}
+          canDeployProject={canDeployProject}
+          publishing={publishing}
+          conversationId={conversationId}
+          previewControlsCopy={copy.previewControlsCopy}
+          previewFrameCopy={copy.previewFrameCopy}
+          restoring={restoring}
+          cache={cache}
+          loading={live.loading}
+          handleDeployProject={handleDeployProject}
+        />
+      )}
+    </section>
+  );
+}

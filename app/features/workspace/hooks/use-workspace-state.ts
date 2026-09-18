@@ -20,11 +20,11 @@ export function useWorkspaceState() {
   const [download, setDownload] = useState<LinkInfo | null>(null);
   const [downloadBusy, setDownloadBusy] = useState(false);
   const [build, setBuild] = useState<BuildInfo | null>(null);
-  const [sandboxTab, setSandboxTab] = useState<SandboxTab | null>(null);
+  const [sandboxTab, setSandboxTab] = useState<SandboxTab | null>('preview');
   const [fileTree, setFileTree] = useState<FileTree | null>(null);
   const [filesRefreshing, setFilesRefreshing] = useState(false);
   const [filesFocusPath, setFilesFocusPath] = useState<string | null>(null);
-  const [resultPanelOpen, setResultPanelOpen] = useState(false);
+  const [resultPanelOpen, setResultPanelOpen] = useState(true);
   const [dismissedDeployTurnId, setDismissedDeployTurnId] = useState('');
   const [gatewayNeeded, setGatewayNeeded] = useState(false);
   const [gatewayDeferred, setGatewayDeferred] = useState(false);
@@ -39,14 +39,14 @@ export function useWorkspaceState() {
     setFileTree(null);
     setFilesRefreshing(false);
     setFilesFocusPath(null);
-    setResultPanelOpen(false);
+    setResultPanelOpen(true);
     setDismissedDeployTurnId('');
     setGatewayNeeded(false);
     setGatewayDeferred(false);
     setGatewayConfigured(false);
     setGatewayPromptVariant('default');
     setGatewayBusy(false);
-    setSandboxTab(null);
+    setSandboxTab('preview');
   }, []);
 
   async function handleDownload(conversationId: string | null, failedMessage: string) {
