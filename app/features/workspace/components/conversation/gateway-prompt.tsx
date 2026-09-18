@@ -23,6 +23,7 @@ export const GatewayPrompt = memo(function GatewayPrompt({
 }) {
   const [gatewayApiKey, setGatewayApiKey] = useState('');
   const gatewayInputRef = useRef<HTMLInputElement | null>(null);
+  const focusOnOpenRef = useRef(false);
   const lastPromptRef = useRef<GatewayPromptCopy | null>(gatewayPrompt ?? null);
   if (gatewayPrompt) lastPromptRef.current = gatewayPrompt;
 
@@ -59,6 +60,8 @@ export const GatewayPrompt = memo(function GatewayPrompt({
       return;
     }
     const node = gatewayInputRef.current;
+    if (!focusOnOpenRef.current) return;
+    focusOnOpenRef.current = false;
     if (!node || node.disabled) return;
     node.focus();
   }, [gatewayPrompt]);
@@ -153,7 +156,10 @@ export const GatewayPrompt = memo(function GatewayPrompt({
                 className="gateway-prompt-expand"
                 disabled={gatewayBusy || cardPresence.exiting || !collapsed || savedStatus}
                 tabIndex={collapsed ? undefined : -1}
-                onClick={onGatewayReopen}
+                onClick={() => {
+                  focusOnOpenRef.current = true;
+                  onGatewayReopen?.();
+                }}
               >
                 {savedStatus ? (
                   <span className="gateway-prompt-status" role="status">
