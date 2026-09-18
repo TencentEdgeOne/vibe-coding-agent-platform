@@ -65,7 +65,6 @@ export function ResultPanel({
           hidePanel: t.workspace.hidePanel,
           previewPathCopied: t.workspace.previewPathCopied,
           copyPreviewPath: t.workspace.copyPreviewPath,
-          filesRefreshing: t.files.refreshing,
         }}
         previewDisplayPath={previewDisplayPath}
         deployHint={deployHint}

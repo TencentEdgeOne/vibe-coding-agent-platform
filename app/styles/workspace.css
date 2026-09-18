@@ -233,12 +233,6 @@
   color: var(--brand);
 }
 
-.workspace-tab-refreshing {
-  color: var(--n-500);
-  font-size: var(--fs-2xs);
-  font-weight: 500;
-}
-
 .workspace-url-chip {
   display: flex;
   width: min(280px, 38vw);
@@ -652,8 +646,7 @@
     padding: 0 8px;
   }
 
-  .workspace-url-chip,
-  .workspace-tab-refreshing {
+  .workspace-url-chip {
     display: none;
   }
 

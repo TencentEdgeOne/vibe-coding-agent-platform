@@ -35,7 +35,6 @@ export function ResultPanelTopbar({
     hidePanel: string;
     previewPathCopied: string;
     copyPreviewPath: string;
-    filesRefreshing: string;
   };
   previewDisplayPath: string;
   deployHint: string;
@@ -68,7 +67,6 @@ export function ResultPanelTopbar({
             <TabsTrigger value="files" className="workspace-tab">
               <Code2 />
               {copy.code}
-              {workspace.filesRefreshing && <span className="workspace-tab-refreshing">{copy.filesRefreshing}</span>}
             </TabsTrigger>
             {SHOW_SESSION_TAB && (
               <TabsTrigger value="session" className="workspace-tab">
