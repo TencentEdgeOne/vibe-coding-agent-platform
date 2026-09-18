@@ -259,7 +259,7 @@ export async function applyUserGatewayDecision(
   conversationId: string,
   decision: { apiKey?: string; skip?: boolean },
   send?: StreamSend,
-) {
+): Promise<{ AI_GATEWAY_API_KEY?: string; AI_GATEWAY_BASE_URL?: string }> {
   if (decision.skip) {
     setGatewaySkipped(state, true);
     await persistGatewayState(context, conversationId, state);

@@ -150,7 +150,7 @@ export const zh = {
     gatewayPromptContinue: '继续',
     gatewayPromptSkip: '跳过',
     gatewayPromptChip: '配置 API Key',
-    gatewayPromptSaved: '已写入，预览正在用这把 Key 重连。',
+    gatewayPromptSaved: 'Models 集成中...',
     preview: '预览',
     code: '代码',
     // The Claude JSONL file is the only history this product keeps. The chat

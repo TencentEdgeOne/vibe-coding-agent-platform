@@ -279,8 +279,8 @@ test('the conversation card is visible while generating and submits without a ch
     readFile('agents/_lib/session/gateway-apply.ts', 'utf8'),
   ]);
   const card = conversation.slice(
-    conversation.indexOf('className="gateway-prompt"'),
-    conversation.indexOf('className="gateway-prompt-actions"'),
+    conversation.indexOf('className={`gateway-prompt'),
+    conversation.indexOf('className="gateway-prompt-saved"'),
   );
 
   assert.equal(TRANSLATIONS.zh.workspace.gatewayPromptTitle, '集成 Models 调用大模型');
@@ -306,11 +306,11 @@ test('the conversation card is visible while generating and submits without a ch
   );
   assert.match(screen, /docsUrl: makersModelsDocsUrl/);
   assert.match(screen, /setMakersModelsDocsUrl\(getMakersModelsDocsUrl\(domain\)\)/);
-  assert.match(card, /gatewayPrompt\.title/);
-  assert.match(card, /gatewayPrompt\.description/);
-  assert.match(card, /href=\{gatewayPrompt\.docsUrl\}/);
-  assert.match(card, /gatewayPrompt\.apiKey/);
-  assert.doesNotMatch(card, /gatewayPrompt\.baseUrl/);
+  assert.match(card, /cardCopy\.title/);
+  assert.match(card, /cardCopy\.description/);
+  assert.match(card, /href=\{cardCopy\.docsUrl\}/);
+  assert.match(card, /cardCopy\.apiKey/);
+  assert.doesNotMatch(card, /baseUrl/);
   assert.equal(DEFAULT_AI_GATEWAY_BASE_URL, 'https://ai-gateway.edgeone.link/v1');
   assert.equal(AI_GATEWAY_ORIGIN, 'https://ai-gateway.edgeone.link');
   assert.match(screen, /gatewayPrompt=\{workspace\.gatewayNeeded \? \{/);
@@ -319,7 +319,12 @@ test('the conversation card is visible while generating and submits without a ch
   assert.match(screen, /live\.applyGateway\(\{ skip: true \}\)/);
   assert.doesNotMatch(screen, /sendMessage\(`\$\{t\.workspace\.gatewayPromptApiKey\}/);
   assert.doesNotMatch(screen, /sendMessage\(t\.workspace\.gatewayPromptSkip/);
-  assert.match(conversation, /className="gateway-prompt-chip"/);
+  assert.match(conversation, /className="gateway-prompt-expand"/);
+  assert.match(conversation, /className="gateway-prompt-status"/);
+  assert.match(conversation, /className="gateway-prompt-saved"/);
+  assert.match(screen, /gatewaySaved=\{workspace\.gatewaySavedVisible && !workspace\.gatewayNeeded/);
+  assert.match(live, /setGatewaySavedVisible\(true\)/);
+  assert.match(live, /gatewayKeyApplied/);
   assert.match(live, /async function applyGateway/);
   assert.match(live, /if \(!trimmed \|\| loading\) return/);
   assert.match(live, /extractApiKeyFromUserText\(trimmed\)/);

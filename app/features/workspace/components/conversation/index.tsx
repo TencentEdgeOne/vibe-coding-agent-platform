@@ -140,22 +140,22 @@ export const AgentConversation = memo(function AgentConversation({
         )}
       </div>
       <div className="conversation-composer-dock">
-        <GatewayPrompt
-          gatewayPrompt={gatewayPrompt}
-          gatewayChip={gatewayChip}
-          gatewaySaved={gatewaySaved}
-          gatewayBusy={gatewayBusy}
-          onGatewaySubmit={onGatewaySubmit}
-          onGatewaySkip={onGatewaySkip}
-          onGatewayReopen={onGatewayReopen}
-        />
-        {deployOffer && (
+        <div className="conversation-card-stack">
+          <GatewayPrompt
+            gatewayPrompt={gatewayPrompt}
+            gatewayChip={gatewayChip}
+            gatewaySaved={gatewaySaved}
+            gatewayBusy={gatewayBusy}
+            onGatewaySubmit={onGatewaySubmit}
+            onGatewaySkip={onGatewaySkip}
+            onGatewayReopen={onGatewayReopen}
+          />
           <DeployOffer
-            deployOffer={deployOffer}
+            deployOffer={deployOffer || null}
             onDeployOffer={onDeployOffer}
             onDismissDeployOffer={onDismissDeployOffer}
           />
-        )}
+        </div>
         <Composer
           input={input}
           loading={loading}

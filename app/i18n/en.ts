@@ -126,7 +126,7 @@ export const en = {
     gatewayPromptContinue: 'Continue',
     gatewayPromptSkip: 'Skip',
     gatewayPromptChip: 'Set up API Key',
-    gatewayPromptSaved: 'Saved. Preview is reconnecting with this key.',
+    gatewayPromptSaved: 'Integrating Models...',
     preview: 'Preview',
     code: 'Code',
     session: 'Session',

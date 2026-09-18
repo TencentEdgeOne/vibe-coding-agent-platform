@@ -1,6 +1,7 @@
 'use client';
 
 import { memo, useEffect, useRef, useState } from 'react';
+import { usePresence } from '@/app/hooks/use-presence';
 import type { GatewayPromptCopy } from './types';
 
 export const GatewayPrompt = memo(function GatewayPrompt({
@@ -22,90 +23,150 @@ export const GatewayPrompt = memo(function GatewayPrompt({
 }) {
   const [gatewayApiKey, setGatewayApiKey] = useState('');
   const gatewayInputRef = useRef<HTMLInputElement | null>(null);
-  const gatewayVisible = Boolean(gatewayPrompt);
+  const lastPromptRef = useRef<GatewayPromptCopy | null>(gatewayPrompt ?? null);
+  if (gatewayPrompt) lastPromptRef.current = gatewayPrompt;
+
+  const lastChipRef = useRef<string | null>(gatewayChip ?? null);
+  if (gatewayChip) lastChipRef.current = gatewayChip;
+
+  const lastSavedRef = useRef<string | null>(gatewaySaved ?? null);
+  if (gatewaySaved) lastSavedRef.current = gatewaySaved;
+
+  const lastCollapsedRef = useRef(false);
+  if (gatewayPrompt) lastCollapsedRef.current = false;
+  else if (gatewayChip || gatewaySaved) lastCollapsedRef.current = true;
+
+  const cardVisible = Boolean(gatewayPrompt || gatewayChip || gatewaySaved);
+  const cardPresence = usePresence(cardVisible ? true : null);
+  const collapsed = Boolean(gatewayChip || gatewaySaved)
+    || (cardPresence.exiting && lastCollapsedRef.current);
+  const savedStatus = Boolean(gatewaySaved);
+  const cardLabel = gatewayChip || lastChipRef.current || lastPromptRef.current?.title || '';
+  const cardCopy: GatewayPromptCopy = lastPromptRef.current ?? {
+    title: cardLabel,
+    docs: '',
+    docsUrl: '',
+    apiKey: '',
+    continue: '',
+    skip: '',
+  };
+  const cardInDom = cardVisible || cardPresence.mounted;
+  const gatewaySlot = cardInDom;
 
   useEffect(() => {
-    if (!gatewayVisible) {
+    if (!gatewayPrompt) {
       setGatewayApiKey('');
       return;
     }
     const node = gatewayInputRef.current;
     if (!node || node.disabled) return;
     node.focus();
-  }, [gatewayVisible]);
+  }, [gatewayPrompt]);
+
+  if (!gatewaySlot) return null;
 
   return (
-    <>
-      {gatewayPrompt && (
+    <div className="gateway-prompt-slot">
+      {cardInDom ? (
         <form
-          className="gateway-prompt"
+          className={`gateway-prompt${collapsed ? ' is-collapsed' : ''}${savedStatus ? ' is-status' : ''}`}
+          data-presence={cardPresence.exiting ? 'exiting' : 'entering'}
           onSubmit={(event) => {
             event.preventDefault();
-            if (gatewayBusy) return;
+            if (gatewayBusy || cardPresence.exiting || collapsed) return;
             onGatewaySubmit?.({
               apiKey: gatewayApiKey.trim(),
             });
           }}
+          onAnimationEnd={cardPresence.finishExit}
         >
-          <div className="gateway-prompt-copy">
-            <p className="gateway-prompt-title">{gatewayPrompt.title}</p>
-            {gatewayPrompt.description && (
-              <p className="gateway-prompt-description">{gatewayPrompt.description}</p>
-            )}
-            <p className="gateway-prompt-docs">
-              <a
-                href={gatewayPrompt.docsUrl}
-                target="_blank"
-                rel="noreferrer"
+          <div
+            className="gateway-prompt-state gateway-prompt-expanded"
+            aria-hidden={collapsed}
+          >
+            <div className="gateway-prompt-state-inner gateway-prompt-expanded-inner">
+              <div className="gateway-prompt-copy">
+                <p className="gateway-prompt-title">
+                  {cardCopy.title}
+                  {cardCopy.description && (
+                    <span className="gateway-prompt-description">
+                      {cardCopy.description}
+                    </span>
+                  )}
+                </p>
+                {cardCopy.docsUrl && (
+                  <a
+                    className="gateway-prompt-docs"
+                    href={cardCopy.docsUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    tabIndex={collapsed ? -1 : undefined}
+                  >
+                    {cardCopy.docs}
+                  </a>
+                )}
+              </div>
+              <label className="gateway-prompt-field">
+                <input
+                  ref={gatewayInputRef}
+                  type="password"
+                  aria-label={cardCopy.apiKey}
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder={cardCopy.apiKey}
+                  value={gatewayApiKey}
+                  disabled={gatewayBusy || cardPresence.exiting || collapsed}
+                  onChange={(event) => setGatewayApiKey(event.target.value)}
+                />
+              </label>
+              <button
+                type="button"
+                className="deploy-offer-dismiss"
+                disabled={gatewayBusy || cardPresence.exiting || collapsed}
+                tabIndex={collapsed ? -1 : undefined}
+                onClick={onGatewaySkip}
               >
-                {gatewayPrompt.docs}
-              </a>
-            </p>
+                {cardCopy.skip}
+              </button>
+              <button
+                type="submit"
+                className="deploy-offer-accept"
+                disabled={
+                  gatewayBusy
+                  || cardPresence.exiting
+                  || collapsed
+                  || !gatewayApiKey.trim()
+                }
+                tabIndex={collapsed ? -1 : undefined}
+              >
+                {cardCopy.continue}
+              </button>
+            </div>
           </div>
-          <label className="gateway-prompt-field">
-            <span>{gatewayPrompt.apiKey}</span>
-            <input
-              ref={gatewayInputRef}
-              type="password"
-              autoComplete="off"
-              autoFocus
-              spellCheck={false}
-              value={gatewayApiKey}
-              disabled={gatewayBusy}
-              onChange={(event) => setGatewayApiKey(event.target.value)}
-            />
-          </label>
-          <div className="gateway-prompt-actions">
-            <button
-              type="button"
-              className="deploy-offer-dismiss"
-              disabled={gatewayBusy}
-              onClick={onGatewaySkip}
-            >
-              {gatewayPrompt.skip}
-            </button>
-            <button
-              type="submit"
-              className="deploy-offer-accept"
-              disabled={gatewayBusy || !gatewayApiKey.trim()}
-            >
-              {gatewayPrompt.continue}
-            </button>
+          <div
+            className="gateway-prompt-state gateway-prompt-collapsed"
+            aria-hidden={!collapsed}
+          >
+            <div className="gateway-prompt-state-inner">
+              <button
+                type="button"
+                className="gateway-prompt-expand"
+                disabled={gatewayBusy || cardPresence.exiting || !collapsed || savedStatus}
+                tabIndex={collapsed ? undefined : -1}
+                onClick={onGatewayReopen}
+              >
+                {savedStatus ? (
+                  <span className="gateway-prompt-status" role="status">
+                    {gatewaySaved}
+                  </span>
+                ) : cardLabel}
+              </button>
+            </div>
           </div>
         </form>
-      )}
-      {!gatewayPrompt && gatewayChip && (
-        <button
-          type="button"
-          className="gateway-prompt-chip"
-          onClick={onGatewayReopen}
-        >
-          {gatewayChip}
-        </button>
-      )}
-      {!gatewayPrompt && !gatewayChip && gatewaySaved && (
-        <p className="gateway-prompt-saved" role="status">{gatewaySaved}</p>
-      )}
-    </>
+      ) : lastSavedRef.current ? (
+        <p className="gateway-prompt-saved" role="status">{lastSavedRef.current}</p>
+      ) : null}
+    </div>
   );
 });
