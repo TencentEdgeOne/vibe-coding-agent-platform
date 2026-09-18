@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
-import { buildPrompt, buildTurnPrompt } from '../agents/_lib/prompt.ts';
+import { buildPrompt } from '../agents/_lib/prompt.ts';
 import {
   MAKERS_DEV_PORT,
   PREVIEW_ASSET_PREFIX_ENV,
@@ -229,21 +229,19 @@ test('the prompt reflects whether the workspace already exists', () => {
   assert.match(renderPrompt(false), /already prepared a project workspace/);
 });
 
-test('recent conversation history is included when present', () => {
-  const withHistory = buildTurnPrompt('再加一个深色模式', [
-    { role: 'user', content: '做一个待办列表' },
-    { role: 'assistant', content: '已完成，右侧可以预览。' },
-  ]);
-  assert.match(withHistory, /Recent conversation:/);
-  assert.match(withHistory, /User: 做一个待办列表/);
-  assert.match(withHistory, /Current user request: 再加一个深色模式/);
-  assert.doesNotMatch(buildTurnPrompt('再加一个深色模式', []), /Recent conversation:/);
+test('the system prompt is the same on every turn of a conversation', () => {
+  const request = '做一个带留言板的网站';
+  const prompt = renderPrompt();
+
+  assert.equal(prompt, renderPrompt(), 'the rules must not vary between two identical calls');
+  assert.ok(
+    !prompt.includes(request),
+    'the request belongs to the SDK user message; a copy here changes the cached prefix every turn',
+  );
+  assert.doesNotMatch(prompt, /Recent conversation:/);
+  assert.doesNotMatch(prompt, /Current user request:/);
 });
 
-// The rules are a ~20k-character prefix. Anything turn-specific in here makes
-// that prefix new on every turn, so the provider re-reads all of it instead of
-// reusing it, and the request would arrive twice with no way to say which copy
-// is authoritative.
 test('an international site tells the model to preview onto the overseas area', () => {
   const prompt = buildPrompt(
     projectState('projects/demo', { siteDomain: 'edgeone.dev' }),
@@ -254,19 +252,6 @@ test('an international site tells the model to preview onto the overseas area', 
   );
   assert.match(prompt, /--area overseas/);
   assert.doesNotMatch(prompt, /--area global/);
-});
-
-test('the system prompt is the same on every turn of a conversation', () => {
-  const request = '做一个带留言板的网站';
-  const prompt = renderPrompt();
-
-  assert.equal(prompt, renderPrompt(), 'the rules must not vary between two identical calls');
-  assert.ok(
-    !prompt.includes(request),
-    'the request belongs to buildTurnPrompt; a copy here changes the cached prefix every turn',
-  );
-  assert.doesNotMatch(prompt, /Recent conversation:/);
-  assert.doesNotMatch(prompt, /Current user request:/);
 });
 
 test('the prompt reads as sections rather than one wall of rules', () => {

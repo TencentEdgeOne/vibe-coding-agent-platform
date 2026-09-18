@@ -14,7 +14,7 @@ import {
 } from '../agents/_lib/project/templates.ts';
 import { describeScaffold } from '../agents/_lib/tools/project-tools.ts';
 import { PREVIEW_ASSET_PREFIX_ENV } from '../agents/_lib/constants.ts';
-import { NPM_WARMUP_BASE } from '../shared/npm-install.ts';
+import { NPM_WARMUP_BASE } from '../agents/_lib/makers/npm-install.ts';
 import { projectState } from './helpers/fixtures.ts';
 
 const execFileAsync = promisify(execFile);

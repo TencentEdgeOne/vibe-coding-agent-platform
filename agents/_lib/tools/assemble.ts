@@ -1,0 +1,178 @@
+import { createSdkMcpServer } from '@anthropic-ai/claude-agent-sdk';
+import {
+  MAKERS_SKILL_NAMES,
+  SANDBOX_MCP_SERVER_NAME,
+} from '../constants.ts';
+import {
+  buildRequestGatewayCredentialsTool,
+  REQUEST_GATEWAY_CREDENTIALS_TOOL,
+} from '../project/gateway.ts';
+import type { AgentContext } from '../runtime/context.ts';
+import type {
+  ClaudeMcpTool,
+  CodingAgentResult,
+  DeploymentInfo,
+  PreviewKind,
+  ProjectState,
+  ScaffoldLog,
+  StreamSend,
+} from '../types.ts';
+import { wrapSandboxTools } from './commands-wrap.ts';
+import { wrapWebSearchTool } from './web-search-wrap.ts';
+import {
+  WEB_SEARCH_API_KEY_ENV,
+  isWebSearchConfigured,
+  isWebSearchToolName,
+} from '../../../shared/web-search.ts';
+import { buildLoadMakersSkillTool } from './makers-skills.ts';
+import {
+  buildProjectScaffoldTool,
+  buildWriteProjectFileTool,
+} from './project-tools.ts';
+
+export type LiveTurnCallbacks = {
+  onScaffoldLog?: (log: ScaffoldLog) => void;
+  onProjectFilesChanged?: (file?: { path: string; content: string }) => void | Promise<void>;
+  onPreviewReady?: (preview: { url?: string; sandboxDebugUrl?: string; kind?: PreviewKind }) => void;
+  onDeploymentStatus?: (deployment: DeploymentInfo) => void;
+  send?: StreamSend;
+  abortSignal?: AbortSignal;
+};
+
+export type LiveSessionHandle = {
+  conversationId: string;
+  context: AgentContext;
+  getState: () => ProjectState;
+  getCallbacks: () => LiveTurnCallbacks;
+  flags: {
+    projectTouched: boolean;
+    filesWritten: boolean;
+    previewTouched: boolean;
+    deploymentTouched: boolean;
+    wasCreated: boolean;
+  };
+};
+
+function isBrowserSandboxToolName(name: string) {
+  return name.toLowerCase().includes('browser');
+}
+
+function isGenericProjectWriteToolName(name: string) {
+  const normalized = name.toLowerCase();
+  return normalized === 'files_write'
+    || normalized === 'write_files'
+    || normalized.endsWith('__files_write')
+    || normalized.endsWith('__write_files');
+}
+
+function pickEnvValue(context: AgentContext, key: string) {
+  const value = context?.env?.[key];
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+export function assembleAgentTools(session: LiveSessionHandle) {
+  const context = session.context;
+  if (typeof context.tools?.toClaudeMcpServer !== 'function') {
+    throw new Error('The current Pages Agent Runtime is missing context.tools.toClaudeMcpServer. Please upgrade to a runtime that supports the new pages-agent-toolkit Tools API.');
+  }
+
+  const mcpServerName = SANDBOX_MCP_SERVER_NAME;
+  const edgeoneMcp = context.tools.toClaudeMcpServer(mcpServerName, { alwaysLoad: true });
+  const webSearchAvailable = isWebSearchConfigured(
+    pickEnvValue(context, WEB_SEARCH_API_KEY_ENV),
+  );
+  const offerSandboxTool = (name: string) =>
+    !isBrowserSandboxToolName(name)
+    && !isGenericProjectWriteToolName(name)
+    && (webSearchAvailable || !isWebSearchToolName(name));
+
+  const scaffoldTool = buildProjectScaffoldTool(
+    context,
+    session.getState(),
+    (log) => session.getCallbacks().onScaffoldLog?.(log),
+    ({ created }) => {
+      session.flags.projectTouched = true;
+      session.flags.wasCreated = created;
+    },
+  );
+  const writeProjectFileTool = buildWriteProjectFileTool(
+    context,
+    session.getState(),
+    async ({ written, content }) => {
+      session.flags.projectTouched = true;
+      session.flags.filesWritten = true;
+      await session.getCallbacks().onProjectFilesChanged?.({ path: written, content });
+    },
+  );
+  const sandboxTools = wrapWebSearchTool(wrapSandboxTools(
+    edgeoneMcp.tools.filter((tool: { name: string }) => offerSandboxTool(tool.name)) as ClaudeMcpTool[],
+    {
+      context,
+      get state() {
+        return session.getState();
+      },
+      conversationId: session.conversationId,
+      get send() {
+        return session.getCallbacks().send;
+      },
+      get signal() {
+        return session.getCallbacks().abortSignal;
+      },
+      onPreviewReady: (preview) => {
+        session.flags.previewTouched = true;
+        if (preview.url) session.getCallbacks().onPreviewReady?.(preview);
+      },
+      onDeploymentStatus: (deployment: DeploymentInfo) => {
+        session.flags.deploymentTouched = true;
+        session.getCallbacks().onDeploymentStatus?.(deployment);
+      },
+    } as any,
+  ));
+  const mcpTools = [
+    ...sandboxTools,
+    scaffoldTool,
+    buildLoadMakersSkillTool(),
+    writeProjectFileTool,
+    buildRequestGatewayCredentialsTool({
+      context,
+      get state() {
+        return session.getState();
+      },
+      conversationId: session.conversationId,
+      get send() {
+        return session.getCallbacks().send;
+      },
+    } as any),
+  ];
+  const mcpAllowedTools = [
+    ...edgeoneMcp.allowedTools.filter(offerSandboxTool),
+    `mcp__${mcpServerName}__ensure_project_scaffold`,
+    `mcp__${mcpServerName}__load_makers_skill`,
+    `mcp__${mcpServerName}__write_project_file`,
+    `mcp__${mcpServerName}__${REQUEST_GATEWAY_CREDENTIALS_TOOL}`,
+    'Skill',
+  ];
+
+  return {
+    mcpServerName,
+    webSearchAvailable,
+    sandboxMcpServer: createSdkMcpServer({
+      name: mcpServerName,
+      tools: mcpTools,
+      alwaysLoad: true,
+    }),
+    mcpAllowedTools,
+  };
+}
+
+export function emptyCodingResult(partial: Partial<CodingAgentResult> = {}): CodingAgentResult {
+  return {
+    success: false,
+    output: null,
+    error: null,
+    projectTouched: false,
+    filesWritten: false,
+    wasCreated: false,
+    ...partial,
+  };
+}

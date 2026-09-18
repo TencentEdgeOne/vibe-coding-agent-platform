@@ -76,7 +76,7 @@ test('workspace actions stay in place and go quiet instead of disappearing', asy
     screen.indexOf("sandboxTab === 'preview'", actionsStart),
   );
   assert.ok(projectActions.length > 0);
-  assert.match(projectActions, /disabled=\{downloadBusy \|\| !download\?\.url\}/);
+  assert.match(projectActions, /disabled=\{workspace\.downloadBusy \|\| !workspace\.download\?\.url\}/);
   assert.match(projectActions, /disabled=\{!canDeployProject\}/);
   assert.doesNotMatch(projectActions, /\{download\?\.url && /);
   // A native title is dropped on a disabled control, so the tooltip is CSS on an

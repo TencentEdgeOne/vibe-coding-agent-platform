@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
-import { resolveSandboxCommandOptions } from '../shared/sandbox-command.ts';
+import { resolveSandboxCommandOptions } from '../agents/_lib/project/sandbox-command.ts';
 
 test('timeout in seconds is also sent as timeoutMs', () => {
   assert.deepEqual(resolveSandboxCommandOptions({ cwd: '/app', timeout: 420 }), {

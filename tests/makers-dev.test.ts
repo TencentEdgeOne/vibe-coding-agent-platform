@@ -25,7 +25,7 @@ import {
   previewTrailingSlashFollow,
   previewUpstreamClaimsPrefix,
   rewritePreviewProxyPath,
-} from '../shared/makers-dev.ts';
+} from '../agents/_lib/makers/cli-dev.ts';
 import {
   MAKERS_DEV_PORT,
   PREVIEW_ASSET_PREFIX_ENV,
@@ -1044,12 +1044,16 @@ test('makers-dev captured exit markers preserve CLI failures', () => {
 });
 
 test('sandbox preview publishes the fixed gateway path through a local adapter', async () => {
-  const preview = await readFile('agents/_lib/project/preview.ts', 'utf8');
+  const [preview, session] = await Promise.all([
+    readFile('agents/_lib/project/preview.ts', 'utf8'),
+    readFile('agents/_lib/makers/session.ts', 'utf8'),
+  ]);
   assert.doesNotMatch(preview, /ensureEdgeoneCli|npm install -g edgeone/);
   assert.match(preview, /buildMakersDevLaunchCommand/);
   assert.match(preview, /buildMakersDevBackgroundCommand/);
   assert.match(preview, /resolveConversationPublishArea\(state\)/);
-  assert.match(preview, /ensureMakersPublishProject/);
+  assert.match(preview, /prepareMakersSession/);
+  assert.match(session, /ensureMakersPublishProject/);
   assert.doesNotMatch(preview, /syncSandboxEnvToMakersProject/);
   assert.match(preview, /getHost\(PREVIEW_PUBLIC_PORT\)/);
   assert.match(

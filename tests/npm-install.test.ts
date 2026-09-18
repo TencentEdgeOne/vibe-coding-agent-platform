@@ -11,12 +11,12 @@ import {
   buildNpmWarmupCommand,
   buildNpmWarmupHandoffScript,
   buildNpmWarmupWaitScript,
-} from '../shared/npm-install.ts';
+} from '../agents/_lib/makers/npm-install.ts';
 import {
   isBareInstallCommand,
   isScaffolderCommand,
   withExitCodeEcho,
-} from '../shared/tool-phase.ts';
+} from '../agents/_lib/makers/tool-phase.ts';
 
 const run = promisify(execFile);
 

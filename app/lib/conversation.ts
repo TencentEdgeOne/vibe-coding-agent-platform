@@ -1,4 +1,5 @@
 import type { AssistantActivity, ChatMessage } from '../types/workspace';
+import { sanitizeThinkingContent as timelineSanitizeThinkingContent } from '../../shared/timeline.ts';
 
 const CONVERSATION_STORAGE_KEY = 'vibe-coding-platform-conversation-id';
 
@@ -114,15 +115,7 @@ export function markLastTurnStopped(
 }
 
 export function sanitizeThinkingContent(value: string) {
-  return value
-    .replace(/\x1b\[[0-9;?]*[~A-Za-z]/g, '')
-    .replace(/\[20[01]~/g, '')
-    .replace(/\x1b\][^\x07]*\x07/g, '')
-    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')
-    .replace(/<think\b[^>]*>/gi, '')
-    .replace(/<\/think>/gi, '')
-    .replace(/\n{4,}/g, '\n\n\n')
-    .replace(/<t(?:h(?:i(?:n(?:k(?:\b[^>]*)?)?)?)?)?$/i, '');
+  return timelineSanitizeThinkingContent(value);
 }
 
 export function extractProjectName() {

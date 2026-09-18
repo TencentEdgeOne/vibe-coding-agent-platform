@@ -11,44 +11,33 @@ import {
   PREVIEW_PATH_PREFIX,
   PREVIEW_SERVER_PORT,
 } from '../constants.ts';
-import { assertMakersProjectCompatible } from '../project/makers-compat.ts';
+import { assertMakersProjectCompatible } from '../makers/compat/run.ts';
+import { prepareMakersSession } from '../makers/session.ts';
 import {
   previewFailureWarrantsRestart,
   publishRunningPreview,
   startPreviewServer,
 } from '../project/preview.ts';
-import {
-  ensureMakersPublishProject,
-  resolveConversationPublishArea,
-  resolveMakersProjectName,
-  syncSandboxEnvToMakersProject,
-} from '../project/makers-deploy.ts';
-import { pauseForGatewayCredentialsIfNeeded } from '../project/gateway-prompt.ts';
-import {
-  buildSandboxMakersEnv,
-  describeMissingMakersRuntimeToken,
-  prepareSandboxGatewayEnv,
-  resolveMakersMasterToken,
-  resolveSandboxMakersToken,
-} from '../project/makers-token.ts';
+import { pauseForGatewayCredentialsIfNeeded } from '../project/gateway.ts';
+import { describeMissingMakersRuntimeToken } from '../makers/token.ts';
 import {
   MAKERS_DEV_LAUNCH_TIMEOUT_SECONDS,
   MAKERS_DEV_PORT_DRIFT_EXIT,
   buildMakersDevBackgroundCommand,
   buildMakersDevStopScript,
   parseMakersDevExitCode,
-} from '../../../shared/makers-dev.ts';
+} from '../makers/cli-dev.ts';
 import {
   buildMakersDeployCommand,
   describeMakersDeployment,
   readMakersDeployOutcome,
   redactSecret,
-} from '../../../shared/makers-deploy.ts';
+} from '../makers/cli-deploy.ts';
 import {
   buildNpmCacheReclaimScript,
   buildNpmWarmupHandoffScript,
   buildNpmWarmupWaitScript,
-} from '../../../shared/npm-install.ts';
+} from '../makers/npm-install.ts';
 import {
   MAKERS_CLI_UNAVAILABLE_ERROR_CODE,
   MAKERS_CLI_UNAVAILABLE_MESSAGE,
@@ -65,7 +54,7 @@ import {
   shortenToolName,
   parseEdgeoneVersionExitCode,
   withExitCodeEcho,
-} from '../utils/tool-phase.ts';
+} from '../makers/tool-phase.ts';
 
 type MakersCommandLifecycle = {
   context: any;
@@ -233,27 +222,9 @@ async function prepareMakersCommand(
   command: string,
   lifecycle: MakersCommandLifecycle,
 ) {
-  const masterToken = resolveMakersMasterToken(lifecycle.context);
-  const sandboxToken = await resolveSandboxMakersToken(
-    lifecycle.state,
-    masterToken,
-  );
-  const gateway = await prepareSandboxGatewayEnv(lifecycle.context, lifecycle.state);
-  const env = buildSandboxMakersEnv(
-    sandboxToken,
-    lifecycle.state.makersApiRegion,
-  );
-  // Whatever name the model typed is replaced here. It has no way to know
-  // which project belongs to this conversation, and a name it invents to dodge
-  // a collision would strand the site somewhere nobody can find again.
-  const projectName = resolveMakersProjectName(lifecycle.context, lifecycle.state);
-  const area = resolveConversationPublishArea(lifecycle.state);
-  await ensureMakersPublishProject(
-    sandboxToken,
-    projectName,
-    area,
-    lifecycle.state.makersApiRegion,
-  );
+  const makers = await prepareMakersSession(lifecycle.context, lifecycle.state, {
+    syncEnv: isMakersDeployCommand(command),
+  });
 
   if (isMakersDevCommand(command)) {
     return {
@@ -263,42 +234,34 @@ async function prepareMakersCommand(
           makersPort: MAKERS_DEV_PORT,
           previewPort: PREVIEW_SERVER_PORT,
           previewPath: PREVIEW_PATH_PREFIX,
-          projectName,
+          projectName: makers.projectName,
           assetPrefixEnvName: PREVIEW_ASSET_PREFIX_ENV,
-          area,
+          area: makers.area,
         }),
         lifecycle.state.appDir,
-        env,
+        makers.env,
         MAKERS_DEV_LAUNCH_TIMEOUT_SECONDS,
       ),
       kind: 'dev' as const,
-      sandboxToken,
-      gatewayKey: gateway.AI_GATEWAY_API_KEY || '',
+      sandboxToken: makers.sandboxToken,
+      gatewayKey: makers.gatewayKey,
     };
   }
-
-  await syncSandboxEnvToMakersProject(
-    lifecycle.context,
-    lifecycle.state,
-    masterToken,
-    projectName,
-    lifecycle.state.makersApiRegion,
-  );
 
   return {
     args: withCommandOptions(
       args,
-      buildMakersDeployCommand(projectName, command, {
+      buildMakersDeployCommand(makers.projectName, command, {
         stopDevPort: MAKERS_DEV_PORT,
-        area,
+        area: makers.area,
       }),
       lifecycle.state.appDir,
-      env,
+      makers.env,
       600,
     ),
     kind: 'deploy' as const,
-    sandboxToken,
-    gatewayKey: gateway.AI_GATEWAY_API_KEY || '',
+    sandboxToken: makers.sandboxToken,
+    gatewayKey: makers.gatewayKey,
   };
 }
 
@@ -460,6 +423,16 @@ export function wrapSandboxTools(
         }
 
         if (makers.kind === 'dev') {
+          const missingRuntimeToken = describeMissingMakersRuntimeToken(makersOutput);
+          if (missingRuntimeToken) {
+            return {
+              ...appendText(result, JSON.stringify({
+                status: 'error',
+                error: missingRuntimeToken,
+              })),
+              isError: true,
+            };
+          }
           const devExitCode = parseMakersDevExitCode(makersOutput);
           if (devExitCode != null && devExitCode !== 0) {
             if (isEdgeoneCliUnavailable(makersOutput)) {

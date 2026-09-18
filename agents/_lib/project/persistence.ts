@@ -1,4 +1,3 @@
-import { clearLegacyProjectSnapshot, getLegacyProjectSnapshot } from '../memory.ts';
 import type { ProjectState } from '../types.ts';
 import { restoreProjectArchive } from './archive.ts';
 import { runSandboxCommand } from './commands.ts';
@@ -8,7 +7,7 @@ export async function restorePersistedProject(
   conversationId: string,
   state: ProjectState,
   options: { installDependencies?: boolean } = {},
-): Promise<{ restored: boolean; migratedLegacy?: boolean; error?: string }> {
+): Promise<{ restored: boolean; error?: string }> {
   try {
     const restored = await context.sandbox.restore({ path: state.appDir });
     if (restored?.restored) {
@@ -18,19 +17,7 @@ export async function restorePersistedProject(
   } catch (error) {
     return { restored: false, error: error instanceof Error ? error.message : String(error) };
   }
-
-  const legacy = await getLegacyProjectSnapshot(context, conversationId);
-  if (!legacy) return { restored: false };
-  const restoredLegacy = await restoreProjectArchive(context, state, legacy, options);
-  if (!restoredLegacy.ok) return { restored: false, error: restoredLegacy.error };
-
-  try {
-    await context.sandbox.persist({ path: state.appDir });
-    await clearLegacyProjectSnapshot(context, conversationId);
-  } catch {
-    // Keep the legacy metadata until migration has durably completed.
-  }
-  return { restored: true, migratedLegacy: true };
+  return { restored: false };
 }
 
 async function installDependencies(context: any, state: ProjectState) {
@@ -41,3 +28,5 @@ async function installDependencies(context: any, state: ProjectState) {
     timeout: 300,
   });
 }
+
+export { restoreProjectArchive };

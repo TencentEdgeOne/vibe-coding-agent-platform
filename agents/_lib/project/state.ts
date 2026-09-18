@@ -1,7 +1,7 @@
 import type { ProjectState } from '../types.ts';
 import { safeSegment } from '../utils/paths.ts';
 import { runSandboxCommand } from './commands.ts';
-import { isMakersDeployUrl } from '../../../shared/makers-deploy.ts';
+import { isMakersDeployUrl } from '../../../shared/makers-url.ts';
 
 export function createProjectState(conversationId: string): ProjectState {
   const sessionDir = `projects/${safeSegment(conversationId)}`;

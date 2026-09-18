@@ -7,7 +7,7 @@ import {
   dropTrailingSummaryEcho,
   presentToolActivity,
 } from '../app/lib/tool-activity.ts';
-import { summarizeToolInput } from '../agents/_lib/utils/activity.ts';
+import { summarizeToolInput } from '../shared/timeline.ts';
 import { MAKERS_REFERENCE_SKILL_NAMES } from '../agents/_lib/tools/makers-skills.ts';
 
 test('direct Makers CLI dev and deploy commands have distinct actions', () => {

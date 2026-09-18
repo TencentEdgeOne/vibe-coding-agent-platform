@@ -32,7 +32,7 @@ import path from 'node:path';
 import { PREVIEW_ASSET_PREFIX_ENV } from '../constants.ts';
 import type { ProjectState, ScaffoldLog } from '../types.ts';
 import { safeSegment } from '../utils/paths.ts';
-import { buildNpmWarmupCommand } from '../../../shared/npm-install.ts';
+import { buildNpmWarmupCommand } from '../makers/npm-install.ts';
 import { runSandboxCommand } from './commands.ts';
 
 export type ProjectTemplate = {

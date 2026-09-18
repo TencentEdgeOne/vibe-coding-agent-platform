@@ -2,6 +2,7 @@ import type { SdkMcpToolDefinition } from '@anthropic-ai/claude-agent-sdk';
 import type {
   ActivityStatus,
   BuildStatus,
+  ChatStreamEvent,
   DeploymentInfo,
   PreviewKind,
 } from '../../shared/protocol.ts';
@@ -37,22 +38,6 @@ export type ProjectState = {
   gatewaySkipped?: boolean;
 };
 
-// A base64 archive of the whole project, persisted outside the volatile sandbox so
-// the code survives sandbox recycling (see agents/_lib/memory.ts snapshot helpers). The
-// fields mirror createProjectArchive's success result plus a write timestamp.
-export type LegacyProjectSnapshot = {
-  base64: string;
-  filename: string;
-  contentType: string;
-  size: number;
-  updatedAt: number;
-};
-
-export type ConversationMessage = {
-  role: 'user' | 'assistant';
-  content: string;
-};
-
 export type ChatTaskStatus = 'queued' | 'running' | 'completed' | 'failed' | 'stopped';
 
 /**
@@ -60,23 +45,20 @@ export type ChatTaskStatus = 'queued' | 'running' | 'completed' | 'failed' | 'st
  * command, so 'deploy' skips the model entirely — but it still occupies the
  * same slot, so it cannot race a generation over the same sandbox.
  */
-export type ChatTaskIntent = 'chat' | 'deploy';
+export type ChatTaskKind = 'prompt' | 'deploy';
 
 export type ChatTask = {
   id: string;
   message: string;
-  /** Absent on tasks persisted before deploy became a task of its own. */
-  intent?: ChatTaskIntent;
+  kind?: ChatTaskKind;
   /** Public site root from the browser; picks overseas vs global acceleration. */
   siteDomain?: string;
   /** Model this turn runs on. Absent means the deployment's configured default. */
   model?: string;
-  resetProject: boolean;
   status: ChatTaskStatus;
   createdAt: number;
   startedAt?: number;
   finishedAt?: number;
-  finalEvent?: Record<string, unknown>;
   error?: string;
 };
 
@@ -105,7 +87,7 @@ export type PersistedActivityTurn = {
   activities: PersistedActivity[];
 };
 
-export type StreamSend = (event: Record<string, unknown>) => void;
+export type StreamSend = (event: ChatStreamEvent) => void;
 
 export type ScaffoldLog = {
   stream: 'status' | 'stdout' | 'stderr';
@@ -140,42 +122,9 @@ export type BuildResult = {
   fatal?: boolean;
 };
 
-// Progress events streamed to the frontend. tool_use is the model's tool request,
-// and tool_result is the tool response. The assistant message renders these live.
-export type AgentProgressEvent =
-  | {
-      type: 'tool_use';
-      data: {
-        id: string;
-        name: string;
-        command?: string;
-        phaseHint?: 'scaffold' | 'code' | 'install' | 'preview' | 'link';
-        fileCount?: number;
-        inputSummary?: string;
-        /** Output from a call still in flight; see the note in protocol.ts. */
-        outputSummary?: string;
-        startedAt?: number;
-      };
-    }
-  | {
-      type: 'tool_result';
-      data: {
-        tool_use_id: string;
-        toolName?: string;
-        command?: string;
-        ok: boolean;
-        preview: string;
-        outputSummary?: string;
-        status?: ActivityStatus;
-        endedAt?: number;
-      };
-    }
-  | {
-      type: 'text_segment';
-      data: {
-        uuid: string;
-        text: string;
-      };
-    };
+export type AgentProgressEvent = Extract<
+  ChatStreamEvent,
+  { type: 'tool_use' | 'tool_result' | 'text_segment' }
+>;
 
 export type ClaudeMcpTool = SdkMcpToolDefinition<any>;

@@ -1,11 +1,12 @@
 import type { BuildResult, BuildStatus, ProjectState, ScaffoldLog } from '../types.ts';
 import { detectFatalToolError } from '../utils/text.ts';
 import { runCommandCapturingExit, runSandboxCommand } from './commands.ts';
-import { loadMakersFrameworkProfiles, runMakersCompatibilityCheck } from './makers-compat.ts';
-import { withFrameworkAdapter } from './makers-declarations.ts';
+import { loadMakersFrameworkProfiles } from '../makers/compat/skill-rules.ts';
+import { runMakersCompatibilityCheck } from '../makers/compat/run.ts';
+import { withFrameworkAdapter } from '../makers/declarations.ts';
 import { applyProjectTemplate, listProjectTemplates, resolveProjectTemplate } from './templates.ts';
 import type { AppliedTemplate } from './templates.ts';
-import { shellQuote } from '../../../shared/shell.ts';
+import { shellQuote } from '../utils/shell.ts';
 
 // Models used to pass `${appDir}/file` into write_project_file, which joined
 // appDir again and created appDir/appDir/... . Lift that nested tree back to

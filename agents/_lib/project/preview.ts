@@ -17,31 +17,22 @@ import {
   buildMakersDevBackgroundCommand,
   buildMakersDevLaunchCommand,
   parseMakersDevExitCode,
-} from '../../../shared/makers-dev.ts';
+} from '../makers/cli-dev.ts';
 import { makersFileSemantic } from '../../../shared/makers-file-semantics.ts';
-import { redactSecret } from '../../../shared/makers-deploy.ts';
-import { shellQuote } from '../../../shared/shell.ts';
+import { redactSecret } from '../makers/cli-deploy.ts';
+import { shellQuote } from '../utils/shell.ts';
 import {
   MAKERS_CLI_UNAVAILABLE_ERROR_CODE,
   MAKERS_CLI_UNAVAILABLE_MESSAGE,
   isEdgeoneCliUnavailable,
-} from '../../../shared/tool-phase.ts';
-import { resolveConversationId } from '../utils/request.ts';
-import { sandboxGatewayKeyIsSet } from './gateway-prompt.ts';
+} from '../makers/tool-phase.ts';
+import { resolveConversationId } from '../runtime/request.ts';
+import { sandboxGatewayKeyIsSet } from './gateway.ts';
 import { runCommandCapturingExit, runSandboxCommand } from './commands.ts';
-import { assertMakersProjectCompatible } from './makers-compat.ts';
-import {
-  ensureMakersPublishProject,
-  resolveConversationPublishArea,
-  resolveMakersProjectName,
-} from './makers-deploy.ts';
-import {
-  buildSandboxMakersEnv,
-  describeMissingMakersRuntimeToken,
-  prepareSandboxGatewayEnv,
-  resolveMakersMasterToken,
-  resolveSandboxMakersToken,
-} from './makers-token.ts';
+import { assertMakersProjectCompatible } from '../makers/compat/run.ts';
+import { prepareMakersSession } from '../makers/session.ts';
+import { resolveConversationPublishArea, resolveMakersProjectName } from '../makers/project.ts';
+import { describeMissingMakersRuntimeToken } from '../makers/token.ts';
 
 // Where Makers mounts generated HTTP handlers; both are optional in a project.
 const CLOUD_FUNCTION_DIRECTORIES = ['cloud-functions', 'edge-functions'];
@@ -125,7 +116,6 @@ export async function startPreviewServer(
 ) {
   const verifyRoutes = options.verifyRoutes !== false;
   await assertMakersProjectCompatible(context, state);
-  const masterToken = resolveMakersMasterToken(context);
   const projectName = resolveMakersProjectName(context, state);
   const area = resolveConversationPublishArea(state);
   const launchCommand = buildMakersDevLaunchCommand(MAKERS_DEV_PORT, projectName, { area });
@@ -152,16 +142,7 @@ export async function startPreviewServer(
     }
   }
 
-  // Scoped to this conversation, and redacted out of CLI output before the
-  // model or the UI sees it.
-  const sandboxToken = await resolveSandboxMakersToken(state, masterToken);
-  await ensureMakersPublishProject(
-    sandboxToken,
-    projectName,
-    area,
-    state.makersApiRegion,
-  );
-  await prepareSandboxGatewayEnv(context, state);
+  const makers = await prepareMakersSession(context, state);
 
   const startResult = await runSandboxCommand(
     context,
@@ -169,15 +150,15 @@ export async function startPreviewServer(
       makersPort: MAKERS_DEV_PORT,
       previewPort: PREVIEW_SERVER_PORT,
       previewPath: PREVIEW_PATH_PREFIX,
-      projectName,
+      projectName: makers.projectName,
       assetPrefixEnvName: PREVIEW_ASSET_PREFIX_ENV,
       forceRestart,
-      area,
+      area: makers.area,
     }),
     {
       cwd: state.appDir,
       timeout: MAKERS_DEV_LAUNCH_TIMEOUT_SECONDS,
-      env: buildSandboxMakersEnv(sandboxToken, state.makersApiRegion),
+      env: makers.env,
     },
   );
   const startOutput = [startResult.stdout, startResult.stderr].filter(Boolean).join('\n');
@@ -194,7 +175,7 @@ export async function startPreviewServer(
     throw new Error(
       redactSecret(
         failure,
-        sandboxToken,
+        makers.sandboxToken,
       ),
     );
   }

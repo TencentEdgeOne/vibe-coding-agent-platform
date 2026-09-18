@@ -24,8 +24,6 @@ export function openSessionStream(conversationId: string, signal?: AbortSignal) 
   });
 }
 
-// Cold session restore can reinstall the EdgeOne CLI (420s ceiling) and project
-// dependencies before makers-dev starts.
 const PREVIEW_CLIENT_TIMEOUT_MS = 620_000;
 
 export function fetchPreviewRefresh(conversationId: string) {
@@ -42,13 +40,6 @@ export function fetchPreviewRefresh(conversationId: string) {
     .finally(() => clearTimeout(timer));
 }
 
-/**
- * The models this deployment offers. Fetched rather than bundled: the list is
- * assembled from server environment the browser cannot read, and the server
- * validates against the same list, so building one here could only drift.
- *
- * An edge function, so it does not need a conversation the way agent routes do.
- */
 export function fetchModelCatalog(signal?: AbortSignal) {
   return fetch('/models', {
     method: 'GET',
@@ -62,29 +53,22 @@ export function fetchModelCatalog(signal?: AbortSignal) {
     .catch(() => null);
 }
 
-export function startSessionTurn(options: {
+export function startPromptTurn(options: {
   conversationId: string;
   message: string;
   turnId: string;
-  resetProject: boolean;
-  /** 'deploy' publishes the current project instead of running the model. */
-  intent?: 'deploy';
-  /** Omitted runs the deployment default; the server drops anything it does not offer. */
   model?: string;
   siteDomain?: string;
-  /** Real key from the input card; the visible message stays masked. */
   apiKey?: string;
   gatewaySkip?: boolean;
   signal?: AbortSignal;
 }) {
-  return fetch('/session', {
+  return fetch('/prompt', {
     method: 'POST',
     headers: conversationHeaders(options.conversationId),
     body: JSON.stringify({
       message: options.message,
       turnId: options.turnId,
-      ...(options.resetProject ? { resetProject: true } : {}),
-      ...(options.intent ? { intent: options.intent } : {}),
       ...(options.model ? { model: options.model } : {}),
       ...(options.siteDomain ? { siteDomain: options.siteDomain } : {}),
       ...(options.apiKey ? { apiKey: options.apiKey } : {}),
@@ -94,15 +78,40 @@ export function startSessionTurn(options: {
   });
 }
 
+export function startDeployTurn(options: {
+  conversationId: string;
+  turnId: string;
+  siteDomain?: string;
+  apiKey?: string;
+  gatewaySkip?: boolean;
+  signal?: AbortSignal;
+}) {
+  return fetch('/deploy', {
+    method: 'POST',
+    headers: conversationHeaders(options.conversationId),
+    body: JSON.stringify({
+      turnId: options.turnId,
+      ...(options.siteDomain ? { siteDomain: options.siteDomain } : {}),
+      ...(options.apiKey ? { apiKey: options.apiKey } : {}),
+      ...(options.gatewaySkip ? { gatewaySkip: true } : {}),
+    }),
+    signal: options.signal,
+  });
+}
+
+export function setSessionModel(conversationId: string, model: string) {
+  return fetch('/session-model', {
+    method: 'POST',
+    headers: conversationHeaders(conversationId),
+    body: JSON.stringify({ model }),
+  }).then((response) => readJson<{ ok?: boolean; model?: string }>(response));
+}
+
 export async function stopChatTask(
   conversationId: string,
   turn: PersistedActivityTurn,
   options: { discardProject?: boolean } = {},
 ) {
-  // Agent routes reject a missing makers-conversation-id before the handler
-  // runs. /stop still puts conversation_id in the body so abortActiveRun can
-  // target the live chat; the header is what gets the request accepted and
-  // sticky-routed to the instance that holds abortLiveChatTask.
   return fetch('/stop', {
     method: 'POST',
     headers: conversationHeaders(conversationId),

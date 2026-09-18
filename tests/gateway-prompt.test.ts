@@ -22,7 +22,7 @@ import {
   readProjectGatewayEnv,
   sandboxGatewayKeyIsSet,
   shouldPauseForGatewayCredentials,
-} from '../agents/_lib/project/gateway-prompt.ts';
+} from '../agents/_lib/project/gateway.ts';
 import { projectState } from './helpers/fixtures.ts';
 
 function sandboxFiles(initial: Array<[string, string]>) {
@@ -232,9 +232,10 @@ test('request_gateway_credentials asks once and does not wait', async () => {
 });
 
 test('the conversation card asks for API Key and submits a masked chat turn', async () => {
-  const [conversation, screen, api] = await Promise.all([
+  const [conversation, screen, live, api] = await Promise.all([
     readFile('app/components/agent-conversation.tsx', 'utf8'),
     readFile('app/features/workspace/workspace-screen.tsx', 'utf8'),
+    readFile('app/features/workspace/hooks/use-live-turn.ts', 'utf8'),
     readFile('app/features/workspace/workspace-api.ts', 'utf8'),
   ]);
   const card = conversation.slice(
@@ -266,20 +267,18 @@ test('the conversation card asks for API Key and submits a masked chat turn', as
   assert.equal(DEFAULT_AI_GATEWAY_BASE_URL, 'https://ai-gateway.edgeone.link/v1');
   assert.equal(AI_GATEWAY_ORIGIN, 'https://ai-gateway.edgeone.link');
   assert.match(screen, /maskApiKey\(apiKey\)/);
-  assert.match(screen, /extractApiKeyFromUserText\(trimmed\)/);
-  assert.match(screen, /inboundApiKey \? \{ apiKey: inboundApiKey \}/);
+  assert.match(live, /extractApiKeyFromUserText\(trimmed\)/);
+  assert.match(live, /inboundApiKey \? \{ apiKey: inboundApiKey \}/);
   assert.match(screen, /sendMessage\(`\$\{t\.workspace\.gatewayPromptApiKey\}: \$\{maskApiKey\(apiKey\)\}`, \{ apiKey \}\)/);
   assert.match(screen, /sendMessage\(t\.workspace\.gatewayPromptSkip, \{ gatewaySkip: true \}\)/);
   assert.doesNotMatch(api, /gateway-credentials/);
   assert.match(api, /options\.apiKey \? \{ apiKey: options\.apiKey \}/);
-  // The card stays after the assistant turn ends; wiping it in finalize made
-  // the input appear and then vanish.
-  const finalize = screen.slice(
-    screen.indexOf('const finalizeAssistant'),
-    screen.indexOf('const activatePreview'),
+  const finalize = live.slice(
+    live.indexOf('const finalizeAssistant'),
+    live.indexOf('const applyResponse'),
   );
   assert.doesNotMatch(finalize, /setGatewayNeeded\(false\)/);
-  assert.match(screen, /if \(data\.gatewayNeeded\) \{\s*setGatewayNeeded\(true\);/);
+  assert.match(live, /if \(data\.gatewayNeeded\) \{\s*workspace\.setGatewayNeeded\(true\);/);
 });
 
 test('the API key card waits until the assistant turn has finished', async () => {
@@ -291,15 +290,15 @@ test('the API key card waits until the assistant turn has finished', async () =>
   // The tool asks mid-stream, but showing the card then greys it out for the
   // last few seconds of copy. Hold it until loading is false so it appears
   // ready to type into.
-  assert.match(screen, /gatewayPrompt=\{gatewayNeeded && !loading \? \{/);
+  assert.match(screen, /gatewayPrompt=\{workspace\.gatewayNeeded && !live\.loading \? \{/);
   assert.match(conversation, /autoFocus/);
   assert.match(conversation, /disabled=\{gatewayBusy\}/);
 });
 
 test('a turn waiting for the API key is completed, not a red error', async () => {
   const [chat, helpers, prompt] = await Promise.all([
-    readFile('agents/_lib/pipelines/chat.ts', 'utf8'),
-    readFile('agents/_lib/pipelines/helpers.ts', 'utf8'),
+    readFile('agents/_lib/turn/chat.ts', 'utf8'),
+    readFile('agents/_lib/turn/checkpoint.ts', 'utf8'),
     readFile('agents/_lib/prompt.ts', 'utf8'),
   ]);
   const pause = chat.slice(
@@ -326,8 +325,8 @@ test('a turn waiting for the API key is completed, not a red error', async () =>
 
 test('the host writes .env from a chat sentence, not only from the card', async () => {
   const [chat, tasks, prompt] = await Promise.all([
-    readFile('agents/_lib/pipelines/chat.ts', 'utf8'),
-    readFile('agents/_lib/chat-tasks.ts', 'utf8'),
+    readFile('agents/_lib/turn/chat.ts', 'utf8'),
+    readFile('agents/_lib/session/task.ts', 'utf8'),
     readFile('agents/_lib/prompt.ts', 'utf8'),
   ]);
   assert.match(chat, /resolveGatewayUserTurn\(message, options\.apiKey\)/);

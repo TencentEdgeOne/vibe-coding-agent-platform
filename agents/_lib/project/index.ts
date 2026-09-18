@@ -23,5 +23,5 @@ export {
   assertPreviewServerReady,
 } from './preview.ts';
 export { createProjectArchive, restoreProjectArchive } from './archive.ts';
-export { resolveMakersProjectName } from './makers-deploy.ts';
+export { resolveMakersProjectName } from '../makers/project.ts';
 export { restorePersistedProject } from './persistence.ts';

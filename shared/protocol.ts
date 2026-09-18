@@ -85,7 +85,6 @@ type ActiveChatTask = {
   id: string;
   message: string;
   status: 'queued' | 'running';
-  resetProject?: boolean;
   createdAt?: number;
   startedAt?: number;
 };
@@ -137,7 +136,6 @@ export type ChatStreamEvent =
         status?: 'queued' | 'running' | 'completed' | 'failed' | 'stopped';
       };
     }
-  | { type: 'status'; message?: string }
   | { type: 'result'; data?: ChatResponse }
   | { type: 'agent'; data?: Pick<ChatResponse, 'ok' | 'reply' | 'error'> }
   | { type: 'file_tree'; data?: FileTree }
@@ -174,7 +172,7 @@ export type ChatStreamEvent =
   | {
       type: 'tool_result';
       data?: {
-        tool_use_id?: string;
+        id?: string;
         toolName?: string;
         command?: string;
         ok?: boolean;
@@ -194,12 +192,6 @@ export type ChatStreamEvent =
       };
     }
   | { type: 'error'; error?: string }
-  | {
-      type: 'log';
-      phase?: 'scaffold' | 'agent';
-      stream?: 'status' | 'stdout' | 'stderr';
-      message?: string;
-    }
   | { type: 'ping'; ts?: number };
 
 export type ResumeStreamEvent =

@@ -1,11 +1,11 @@
 import { tool as defineClaudeTool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import { ensureProjectScaffold } from '../project/index.ts';
-import { buildNpmWarmupCommand } from '../../../shared/npm-install.ts';
+import { buildNpmWarmupCommand } from '../makers/npm-install.ts';
 import {
   ensureMakersAgentDeclarations,
   ensureMakersFrameworkAdapter,
-} from '../project/makers-declarations.ts';
+} from '../makers/declarations.ts';
 import type { ScaffoldOutcome } from '../project/scaffold.ts';
 import type { ClaudeMcpTool, ProjectState, ScaffoldLog } from '../types.ts';
 import { getBlockedProjectWriteReason, toAppRelPath } from '../utils/paths.ts';

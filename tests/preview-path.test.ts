@@ -10,7 +10,7 @@ import {
   buildGeneratedApiSmokeScript,
   buildGeneratedChatSmokeScript,
   buildPreviewProxyScript,
-} from '../shared/makers-dev.ts';
+} from '../agents/_lib/makers/cli-dev.ts';
 import { agentRoutesFromListing, generatedRoutesFromListing } from '../agents/_lib/project/preview.ts';
 import { previewDisplayPathFromPath } from '../shared/preview-display-path.ts';
 
@@ -51,9 +51,9 @@ test('preview address chip hides the gateway prefix and access_token', () => {
 // the route the preview opened with for as long as the tests stayed green. So
 // run the real proxy against a stub upstream and read what reaches the browser.
 test('the preview proxy feeds the route mirror the parent listens for', async () => {
-  const screen = await readFile('app/features/workspace/workspace-screen.tsx', 'utf8');
-  assert.match(screen, /__edgeonePreviewPath/);
-  assert.match(screen, /addEventListener\('message'/);
+  const preview = await readFile('app/features/workspace/hooks/use-preview-surface.ts', 'utf8');
+  assert.match(preview, /__edgeonePreviewPath/);
+  assert.match(preview, /addEventListener\('message'/);
 
   const upstream = http.createServer((req, res) => {
     if ((req.url || '').startsWith('/asset.js')) {
@@ -160,7 +160,8 @@ async function waitForServer(url: string) {
 
 test('sandbox preview strips the public prefix before forwarding to makers-dev', async () => {
   const preview = await readFile('agents/_lib/project/preview.ts', 'utf8');
-  const makersDev = await readFile('shared/makers-dev.ts', 'utf8');
+  const makersDev = await readFile('agents/_lib/makers/cli-dev.ts', 'utf8');
+  const proxySource = await readFile('agents/_lib/makers/preview-proxy-source.ts', 'utf8');
   assert.match(preview, /makers-dev/);
   assert.match(preview, /buildMakersDevLaunchCommand/);
   assert.match(preview, /assertMakersProjectCompatible/);
@@ -169,7 +170,7 @@ test('sandbox preview strips the public prefix before forwarding to makers-dev',
   assert.match(makersDev, /skip-env-sync/);
   assert.match(makersDev, /skip-ai-gateway-sync/);
   assert.match(makersDev, /buildPreviewProxyScript/);
-  assert.match(makersDev, /server\.on\('upgrade'/);
+  assert.match(proxySource, /server\.on\('upgrade'/);
   assert.match(preview, /PREVIEW_PATH_PREFIX/);
   assert.doesNotMatch(preview, /python3 -m http\.server/);
 });
@@ -177,7 +178,7 @@ test('sandbox preview strips the public prefix before forwarding to makers-dev',
 test('agent chat previews are smoke-tested before being published', async () => {
   const [preview, makersDev] = await Promise.all([
     readFile('agents/_lib/project/preview.ts', 'utf8'),
-    readFile('shared/makers-dev.ts', 'utf8'),
+    readFile('agents/_lib/makers/cli-dev.ts', 'utf8'),
   ]);
   assert.match(preview, /assertGeneratedAgentChatReady/);
   assert.match(preview, /buildGeneratedChatSmokeScript/);
@@ -472,19 +473,22 @@ test('cold preview probes do not throw on curl connection refused', async () => 
 });
 
 test('expired preview credentials never fall back to the stale iframe URL', async () => {
-  const screen = await readFile('app/features/workspace/workspace-screen.tsx', 'utf8');
+  const [screen, preview] = await Promise.all([
+    readFile('app/features/workspace/workspace-screen.tsx', 'utf8'),
+    readFile('app/features/workspace/hooks/use-preview-surface.ts', 'utf8'),
+  ]);
 
-  assert.match(screen, /PREVIEW_CREDENTIAL_REFRESH_MS/);
-  assert.match(screen, /isMakersPreviewRef/);
-  assert.match(screen, /setPreviewRefreshFailed\(true\)/);
+  assert.match(preview, /PREVIEW_CREDENTIAL_REFRESH_MS/);
+  assert.match(preview, /isMakersPreviewRef/);
+  assert.match(preview, /setPreviewRefreshFailed\(true\)/);
   assert.match(screen, /previewUnavailable/);
   assert.doesNotMatch(
-    screen,
+    preview,
     /setActivePreviewUrl\(previousActiveUrl\)/,
     'a failed credential remint must not reveal the gateway auth response',
   );
   assert.doesNotMatch(
-    screen,
+    preview,
     /reload the current iframe src \(same token\)/,
     'manual refresh must not retry an expired access token',
   );

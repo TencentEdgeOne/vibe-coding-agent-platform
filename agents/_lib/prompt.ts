@@ -5,8 +5,8 @@ import {
   PREVIEW_PUBLIC_PORT,
   PREVIEW_SERVER_PORT,
 } from './constants.ts';
-import type { ConversationMessage, ProjectState } from './types.ts';
-import { resolveConversationPublishArea } from './project/makers-deploy.ts';
+import type { ProjectState } from './types.ts';
+import { resolveConversationPublishArea } from './makers/project.ts';
 
 // The system prompt is split into named sections so each rule has an obvious
 // owner. The dividing line is deliberate: platform knowledge (handler
@@ -16,11 +16,10 @@ import { resolveConversationPublishArea } from './project/makers-deploy.ts';
 // the product's narration and reply style. Restating platform rules here would
 // create a second source of truth that silently drifts when the skills update.
 //
-// Nothing that changes between turns belongs in here. The request and the
-// history travel as the turn's own message (buildTurnPrompt), which keeps this
-// text identical for every turn of a conversation — a prefix that changes on
-// each turn can never be cached, and the request arriving twice leaves two
-// copies with no way to say which one is authoritative.
+// Nothing that changes between turns belongs in here. The request travels as
+// the SDK user message, and resume loads history from the transcript, which
+// keeps this text identical for every turn of a conversation — a prefix that
+// changes on each turn can never be cached.
 
 /** Headings, so a 40-rule prompt reads as sections rather than as a wall. */
 function section(title: string, body: readonly string[], spaced = false) {
@@ -338,7 +337,7 @@ const FINAL_REPLY = [
  *
  * Everything here is either constant or fixed for the life of the conversation,
  * which is what lets the model provider reuse the prefix instead of re-reading
- * twenty thousand characters per turn. The request itself is buildTurnPrompt's.
+ * twenty thousand characters per turn. The request itself is the SDK user message.
  */
 export function buildPrompt(
   state: ProjectState,
@@ -375,22 +374,3 @@ export function buildPrompt(
   ].join('\n\n');
 }
 
-/**
- * The turn itself: what the user asked, and enough of the conversation to read
- * it in context.
- *
- * This is the SDK's `prompt`, so the request reaches the model exactly once.
- * Passing it here rather than in the system prompt is also what keeps the rules
- * above byte-identical between turns.
- */
-export function buildTurnPrompt(userMessage: string, history: ConversationMessage[]) {
-  const recentHistory = history
-    .slice(-8)
-    .map((item) => `${item.role === 'user' ? 'User' : 'Assistant'}: ${item.content}`)
-    .join('\n');
-
-  return [
-    recentHistory ? `Recent conversation:\n${recentHistory}` : '',
-    `Current user request: ${userMessage}`,
-  ].filter(Boolean).join('\n\n');
-}

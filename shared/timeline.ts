@@ -1,0 +1,643 @@
+/**
+ * Conversation timeline: sanitizing, tool presentation, live-event folding.
+ * One module for the agent runtime and the browser so resume and live SSE
+ * cannot disagree about a turn.
+ */
+
+import type { AssistantActivity, ChatStreamEvent, PersistedActivityTurn } from './protocol.ts';
+import { WEB_SEARCH_TOOL_NAME } from './web-search.ts';
+
+export function sanitizeAssistantText(input: string): string {
+  if (!input) return '';
+  let text = input;
+  text = stripControls(text);
+  text = stripThinkBlocks(text);
+  text = stripJsonBlocksMatching(text, /\{\s*"type"\s*:\s*"(?:tool_use|tool_result)"/);
+  return text.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+export function sanitizeNarrationText(input: string) {
+  if (!input) return '';
+  return stripControls(input)
+    .replace(/<think\b[^>]*>/gi, '')
+    .replace(/<\/think>/gi, '')
+    .replace(/\n{4,}/g, '\n\n\n');
+}
+
+export function sanitizeThinkingContent(value: string) {
+  return sanitizeNarrationText(value)
+    .replace(/<t(?:h(?:i(?:n(?:k(?:\b[^>]*)?)?)?)?)?$/i, '');
+}
+
+function stripControls(text: string) {
+  return text
+    .replace(/\x1b\[[0-9;?]*[~A-Za-z]/g, '')
+    .replace(/\[20[01]~/g, '')
+    .replace(/\x1b\][^\x07]*\x07/g, '')
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '');
+}
+
+function stripThinkBlocks(text: string): string {
+  return text
+    .replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, '')
+    .replace(/<think\b[^>]*>[\s\S]*$/i, '');
+}
+
+function stripJsonBlocksMatching(text: string, startPattern: RegExp): string {
+  let out = '';
+  let index = 0;
+  while (index < text.length) {
+    const rest = text.slice(index);
+    const match = rest.match(startPattern);
+    if (!match || match.index === undefined) {
+      out += rest;
+      break;
+    }
+    out += rest.slice(0, match.index);
+    const start = index + match.index;
+    const end = findJsonObjectEnd(text, start);
+    if (end < 0) break;
+    index = end + 1;
+  }
+  return out;
+}
+
+function findJsonObjectEnd(text: string, start: number): number {
+  if (text[start] !== '{') return -1;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < text.length; index += 1) {
+    const character = text[index];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (character === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (character === '"') inString = false;
+      continue;
+    }
+    if (character === '"') {
+      inString = true;
+      continue;
+    }
+    if (character === '{') depth += 1;
+    if (character === '}' && --depth === 0) return index;
+  }
+  return -1;
+}
+
+const MIN_RESEND_PREFIX = 8;
+
+export type NarrationEmitState = {
+  currentTextBlock: string;
+  emittedNarration: string;
+};
+
+export function resolveNarrationEmit(
+  state: NarrationEmitState,
+  rawText: string,
+  complete = false,
+): { state: NarrationEmitState; text: string | null } {
+  const text = sanitizeNarrationText(rawText);
+  if (!text) return { state, text: null };
+
+  if (complete) {
+    const trimmed = text.trim();
+    if (!trimmed) return { state, text: null };
+    const streamed = state.currentTextBlock;
+    const streamedTrimmed = streamed.trimEnd();
+    if (streamed.includes(trimmed) || streamedTrimmed === trimmed) {
+      return { state, text: null };
+    }
+    let nextChunk = trimmed;
+    if (streamed && trimmed.startsWith(streamed)) {
+      nextChunk = trimmed.slice(streamed.length);
+    } else if (streamedTrimmed && trimmed.startsWith(streamedTrimmed)) {
+      nextChunk = trimmed.slice(streamedTrimmed.length);
+    } else if (streamed) {
+      return { state, text: null };
+    } else {
+      if (state.emittedNarration.trimEnd().endsWith(trimmed)) {
+        return { state, text: null };
+      }
+      nextChunk = trimmed;
+    }
+    nextChunk = sanitizeNarrationText(nextChunk);
+    if (!nextChunk.trim()) return { state, text: null };
+    return {
+      state: {
+        currentTextBlock: sanitizeNarrationText(`${streamed}${nextChunk}`),
+        emittedNarration: sanitizeNarrationText(`${state.emittedNarration}${nextChunk}`),
+      },
+      text: nextChunk,
+    };
+  }
+
+  if (state.currentTextBlock.length >= MIN_RESEND_PREFIX && text.startsWith(state.currentTextBlock)) {
+    const remainder = text.slice(state.currentTextBlock.length);
+    if (!remainder) return { state, text: null };
+    return {
+      state: {
+        currentTextBlock: sanitizeNarrationText(`${state.currentTextBlock}${remainder}`),
+        emittedNarration: sanitizeNarrationText(`${state.emittedNarration}${remainder}`),
+      },
+      text: remainder,
+    };
+  }
+
+  return {
+    state: {
+      currentTextBlock: sanitizeNarrationText(`${state.currentTextBlock}${text}`),
+      emittedNarration: sanitizeNarrationText(`${state.emittedNarration}${text}`),
+    },
+    text,
+  };
+}
+
+const SUMMARY_LIMIT = 2_000;
+const SENSITIVE_KEY = /(authorization|cookie|password|passwd|secret|token|api[_-]?key|private[_-]?key|credential)/i;
+
+function truncate(value: string, limit = SUMMARY_LIMIT) {
+  const normalized = value.replace(/\x1b\[[0-9;?]*[~A-Za-z]/g, '').trim();
+  return normalized.length > limit ? `${normalized.slice(0, limit)}\n... truncated` : normalized;
+}
+
+function redactInlineSecrets(value: string) {
+  return value
+    .replace(/(authorization\s*:\s*)(?:bearer\s+)?[^"'\s]+(?:\s+[^"'\s]+)?/gi, '$1[REDACTED]')
+    .replace(/((?:authorization|cookie|password|passwd|secret|token|api[_-]?key|private[_-]?key)\s*[:=]\s*)([^\s,;]+)/gi, '$1[REDACTED]')
+    .replace(/(bearer\s+)[A-Za-z0-9._~+\/-]+/gi, '$1[REDACTED]');
+}
+
+function safeValue(value: unknown, projectDir: string, depth = 0): unknown {
+  if (depth > 4) return '[nested value omitted]';
+  if (typeof value === 'string') {
+    const withoutProjectPath = projectDir ? value.split(projectDir).join('<project>') : value;
+    return truncate(redactInlineSecrets(withoutProjectPath), 600);
+  }
+  if (typeof value === 'number' || typeof value === 'boolean' || value == null) return value;
+  if (Array.isArray(value)) return value.slice(0, 20).map((item) => safeValue(item, projectDir, depth + 1));
+  if (typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .slice(0, 30)
+        .map(([key, child]) => [
+          key,
+          SENSITIVE_KEY.test(key) ? '[REDACTED]' : safeValue(child, projectDir, depth + 1),
+        ]),
+    );
+  }
+  return String(value);
+}
+
+export function summarizeToolInput(name: string, input: unknown, projectDir = '') {
+  const record = input && typeof input === 'object' ? input as Record<string, unknown> : {};
+  const shortName = name.replace(/^mcp__[^_]+__/, '');
+
+  if (shortName === 'Skill' || shortName === 'load_makers_skill') {
+    const skill = typeof record.skill === 'string' ? record.skill : '';
+    const ref = typeof record.ref === 'string' ? record.ref.trim() : '';
+    return truncate(ref ? JSON.stringify({ skill, ref }) : skill, 200);
+  }
+  if (shortName === 'write_project_file' || shortName === 'files_write' || shortName === 'write_files') {
+    if (typeof record.path !== 'string' && typeof record.content !== 'string') return '';
+    const path = typeof record.path === 'string' ? record.path : '<pending path>';
+    const length = typeof record.content === 'string' ? record.content.length : 0;
+    return `${path} (${length.toLocaleString('en-US')} chars)`;
+  }
+  if (shortName === 'commands') {
+    const command = typeof record.command === 'string'
+      ? record.command
+      : typeof record.cmd === 'string'
+        ? record.cmd
+        : '';
+    return truncate(redactInlineSecrets(projectDir ? command.split(projectDir).join('<project>') : command));
+  }
+  if (
+    shortName === 'files_make_dir'
+    || shortName === 'files_remove'
+    || shortName === 'files_exists'
+    || shortName === 'files_read'
+    || shortName === 'files_list'
+  ) {
+    const path = typeof record.path === 'string'
+      ? record.path
+      : typeof record.file_path === 'string'
+        ? record.file_path
+        : '';
+    return path ? truncate(projectDir ? path.split(projectDir).join('<project>') : path) : '';
+  }
+
+  return truncate(JSON.stringify(safeValue(record, projectDir), null, 2));
+}
+
+export function summarizeToolOutput(value: string, projectDir = '', name = '') {
+  if (name.replace(/^mcp__[^_]+__/, '') === 'Skill' && /^launching skill:/i.test(value.trim())) {
+    return '';
+  }
+  if (name.replace(/^mcp__[^_]+__/, '') === 'load_makers_skill' && /^---\s*\nname:/i.test(value.trim())) {
+    return '';
+  }
+  const withoutProjectPath = projectDir ? value.split(projectDir).join('<project>') : value;
+  return truncate(redactInlineSecrets(withoutProjectPath));
+}
+
+export type ToolAction =
+  | 'Environment Preparing'
+  | 'Glob'
+  | 'Read file'
+  | 'Write file'
+  | 'Edit file'
+  | 'Create folder'
+  | 'Delete file'
+  | 'Create preview'
+  | 'Deploy project'
+  | 'Load skill'
+  | 'Search web'
+  | 'Run command';
+
+export type ReferenceTopic =
+  | 'platform'
+  | 'structure'
+  | 'serverApi'
+  | 'edgeApi'
+  | 'aiEndpoint'
+  | 'storage'
+  | 'middleware'
+  | 'migration'
+  | 'cli'
+  | 'deployment'
+  | 'environment'
+  | 'framework';
+
+export const REFERENCE_TOPICS: Readonly<Record<string, ReferenceTopic>> = {
+  'edgeone-makers-tools': 'platform',
+  'makers-recipes': 'structure',
+  'makers-cloud-functions': 'serverApi',
+  'makers-edge-functions': 'edgeApi',
+  'makers-agents': 'aiEndpoint',
+  'makers-storage': 'storage',
+  'makers-middleware': 'middleware',
+  'makers-migration': 'migration',
+  'makers-cli': 'cli',
+  'makers-deploy': 'deployment',
+  'makers-env-adaption': 'environment',
+  'makers-frameworks': 'framework',
+};
+
+export type ToolPresentation = {
+  action: ToolAction;
+  target?: string;
+  topic?: ReferenceTopic;
+  detailed?: boolean;
+};
+
+const PLATFORM_ACTIONS = new Set<ToolAction>(['Load skill', 'Create preview', 'Deploy project']);
+
+export function toolActionTier(action: ToolAction): 'platform' | 'file' {
+  return PLATFORM_ACTIONS.has(action) ? 'platform' : 'file';
+}
+
+const MIN_REPLAY_CHUNK = 24;
+
+export function appendNarrationChunk(
+  activities: readonly AssistantActivity[],
+  text: string,
+): AssistantActivity[] {
+  const list = [...activities];
+  const last = list.at(-1);
+  if (last?.kind !== 'text') {
+    list.push({ kind: 'text', content: text });
+    return list;
+  }
+  const trimmed = text.trim();
+  if (trimmed.length >= MIN_REPLAY_CHUNK && last.content.includes(trimmed)) {
+    return list;
+  }
+  list[list.length - 1] = { ...last, content: `${last.content}${text}` };
+  return list;
+}
+
+function withoutUrls(text: string) {
+  return text.replace(/https?:\/\/\S+/g, '').replace(/\s+/g, '');
+}
+
+export function dropTrailingSummaryEcho<T extends { kind: string; content?: string }>(
+  activities: readonly T[],
+  finalContent: string,
+): T[] {
+  const list = [...activities];
+  const last = list.at(-1);
+  if (!last || last.kind !== 'text') return list;
+  const echoes = (narration: string, summary: string) => Boolean(narration)
+    && Boolean(summary)
+    && (summary.includes(narration) || narration.includes(summary));
+  const content = last.content || '';
+  if (
+    echoes(content.replace(/\s+/g, ''), finalContent.replace(/\s+/g, ''))
+    || echoes(withoutUrls(content), withoutUrls(finalContent))
+  ) {
+    list.pop();
+  }
+  return list;
+}
+
+function shortToolName(name: string) {
+  return name.replace(/^mcp__[^_]+__/, '').replaceAll('_', ' ');
+}
+
+function cleanSummaryTarget(summary = '') {
+  const firstLine = summary.trim().split('\n')[0] || '';
+  return firstLine
+    .replace(/^<project>\/?/, '')
+    .replace(/\s+\([\d,.]+ chars\)$/, '')
+    .trim();
+}
+
+function readStructuredTarget(summary = '') {
+  const trimmed = summary.trim();
+  if (!trimmed.startsWith('{')) return '';
+  try {
+    const input = JSON.parse(trimmed) as Record<string, unknown>;
+    for (const key of ['path', 'file_path', 'pattern', 'glob', 'query', 'command', 'cmd', 'skill']) {
+      if (typeof input[key] === 'string') return cleanSummaryTarget(input[key]);
+    }
+  } catch {
+    return '';
+  }
+  return '';
+}
+
+function readReferenceRequest(summary = '') {
+  const trimmed = summary.trim();
+  if (!trimmed.startsWith('{')) {
+    return { skill: cleanSummaryTarget(trimmed), ref: '' };
+  }
+  try {
+    const input = JSON.parse(trimmed) as Record<string, unknown>;
+    return {
+      skill: typeof input.skill === 'string' ? input.skill : '',
+      ref: typeof input.ref === 'string' ? input.ref.trim() : '',
+    };
+  } catch {
+    return { skill: '', ref: '' };
+  }
+}
+
+export function presentToolActivity(
+  activity: { name: string; inputSummary?: string },
+  previouslyReadPaths: ReadonlySet<string> = new Set(),
+): ToolPresentation {
+  const name = shortToolName(activity.name).toLowerCase();
+  const structuredTarget = readStructuredTarget(activity.inputSummary);
+  const target = structuredTarget || cleanSummaryTarget(activity.inputSummary);
+
+  if (name.includes('ensure project scaffold') || name.includes('environment')) {
+    return { action: 'Environment Preparing' };
+  }
+  if (name === 'skill' || name === 'load makers skill') {
+    const request = readReferenceRequest(activity.inputSummary);
+    return {
+      action: 'Load skill',
+      topic: REFERENCE_TOPICS[request.skill] || 'platform',
+      detailed: Boolean(request.ref),
+    };
+  }
+  if (name === shortToolName(WEB_SEARCH_TOOL_NAME)) {
+    return { action: 'Search web', target };
+  }
+  if (name.includes('glob') || name.includes('files list') || name.includes('folder search')) {
+    return { action: 'Glob', target: target || '**/*' };
+  }
+  if (name.includes('make dir') || name.includes('mkdir')) {
+    return { action: 'Create folder', target };
+  }
+  if (name.includes('files remove') || name.includes('files delete')) {
+    return { action: 'Delete file', target };
+  }
+  if (name.includes('read') || name.includes('files exists')) {
+    return { action: 'Read file', target };
+  }
+  if (name.includes('write project file') || name.includes('files write') || name.includes('write files')) {
+    return { action: previouslyReadPaths.has(target) ? 'Edit file' : 'Write file', target };
+  }
+  if (name === 'commands' || name.includes('command')) {
+    if (/\bedgeone\s+makers\s+deploy\b/i.test(target)) return { action: 'Deploy project' };
+    if (/\bedgeone\s+makers\s+dev\b/i.test(target)) return { action: 'Create preview' };
+    return { action: 'Run command', target };
+  }
+  return { action: 'Run command', target: target || shortToolName(activity.name) };
+}
+
+export type DeployOfferKind = 'first' | 'again';
+
+export type DeployOfferActivity = {
+  kind?: string;
+  status?: string;
+  name?: string;
+  inputSummary?: string;
+};
+
+export type DeployOfferMessage = {
+  id?: string;
+  role: string;
+  status?: string;
+  activities?: DeployOfferActivity[];
+};
+
+export function isDeployProjectActivity(activity: DeployOfferActivity) {
+  if (activity.kind !== 'tool' || !activity.name) return false;
+  return presentToolActivity({
+    name: activity.name,
+    inputSummary: activity.inputSummary,
+  }).action === 'Deploy project';
+}
+
+export function lastFinishedAssistant<T extends DeployOfferMessage>(messages: readonly T[]) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const item = messages[index];
+    if (item.role === 'assistant' && item.status && item.status !== 'running') {
+      return item;
+    }
+  }
+  return undefined;
+}
+
+export function resolveDeployOffer(
+  messages: readonly DeployOfferMessage[],
+  options: {
+    canDownload: boolean;
+    loading: boolean;
+    hasLiveDeployment?: boolean;
+  },
+): DeployOfferKind | null {
+  if (options.loading || !options.canDownload) return null;
+  const last = lastFinishedAssistant(messages);
+  if (!last || last.status !== 'done') return null;
+  const lastActivities = last.activities ?? [];
+  const hasSuccessfulDeploy = (activities: readonly DeployOfferActivity[]) =>
+    activities.some((activity) => isDeployProjectActivity(activity) && activity.status === 'completed');
+  const hasFailedDeploy = lastActivities.some((activity) => (
+    isDeployProjectActivity(activity)
+    && (activity.status === 'failed' || activity.status === 'stopped')
+  ));
+  if (hasSuccessfulDeploy(lastActivities) || hasFailedDeploy) return null;
+  if (lastActivities.some((activity) => isDeployProjectActivity(activity))) return null;
+  const everPublished = Boolean(options.hasLiveDeployment)
+    || messages.some((message) => hasSuccessfulDeploy(message.activities ?? []));
+  if (lastActivities.some((activity) => activity.kind === 'tool' && !isDeployProjectActivity(activity))) {
+    return everPublished ? 'again' : 'first';
+  }
+  const anyTools = messages.some((message) => (
+    (message.activities ?? []).some((activity) => activity.kind === 'tool')
+  ));
+  if (!everPublished && !anyTools) return 'first';
+  return null;
+}
+
+type ToolActivity = Extract<AssistantActivity, { kind: 'tool' }>;
+
+export type AssistantTimelineTextBlock = {
+  kind: 'text';
+  index: number;
+  content: string;
+};
+
+export type AssistantTimelineToolItem = {
+  index: number;
+  activity: ToolActivity;
+  repeats: ToolActivity[];
+};
+
+export type AssistantTimelineToolBlock = {
+  kind: 'tools';
+  items: AssistantTimelineToolItem[];
+};
+
+export type AssistantTimelineBlock = AssistantTimelineTextBlock | AssistantTimelineToolBlock;
+
+export function normalizeTimelineText(value: string) {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function referenceRowKey(activity: ToolActivity) {
+  const { topic, detailed } = presentToolActivity(activity);
+  return topic ? `${topic}:${detailed ? 'detail' : 'overview'}` : '';
+}
+
+export function buildAssistantTimeline(activities: AssistantActivity[]): AssistantTimelineBlock[] {
+  const blocks: AssistantTimelineBlock[] = [];
+  const referenceRows = new Map<string, AssistantTimelineToolItem>();
+
+  for (let index = 0; index < activities.length; index += 1) {
+    const activity = activities[index];
+    if (activity.kind === 'text') {
+      if (!activity.content.trim()) continue;
+      blocks.push({ kind: 'text', index, content: activity.content });
+      continue;
+    }
+
+    let chain = blocks.at(-1);
+    if (chain?.kind !== 'tools') {
+      const opened: AssistantTimelineToolBlock = { kind: 'tools', items: [] };
+      blocks.push(opened);
+      referenceRows.clear();
+      chain = opened;
+    }
+
+    const key = referenceRowKey(activity);
+    const open = key ? referenceRows.get(key) : undefined;
+    if (open) {
+      open.repeats.push(activity);
+      continue;
+    }
+
+    const item: AssistantTimelineToolItem = { index, activity, repeats: [] };
+    if (key) referenceRows.set(key, item);
+    chain.items.push(item);
+  }
+  return blocks;
+}
+
+export function lastTimelineText(blocks: AssistantTimelineBlock[]) {
+  for (let index = blocks.length - 1; index >= 0; index -= 1) {
+    const block = blocks[index];
+    if (block.kind === 'text') return block;
+  }
+  return undefined;
+}
+
+export function trailingTimelineContent(
+  lastText: string | undefined,
+  finalContent: string,
+  status?: 'running' | 'done' | 'error' | 'stopped',
+) {
+  const trailing = finalContent.trim();
+  if (!trailing || status === 'running') return '';
+  if (status === 'error' || !lastText?.trim()) return trailing;
+  const left = normalizeTimelineText(lastText);
+  const right = normalizeTimelineText(trailing);
+  if (left === right) return '';
+  if (right.startsWith(left)) return right.slice(left.length).trimStart();
+  return trailing;
+}
+
+export function applyStreamEvent(
+  turn: PersistedActivityTurn,
+  event: ChatStreamEvent,
+): PersistedActivityTurn {
+  if (event.type === 'text_segment' && event.data?.text) {
+    return {
+      ...turn,
+      activities: appendNarrationChunk(turn.activities, event.data.text),
+    };
+  }
+  if (event.type === 'tool_use' && event.data?.id) {
+    const existing = turn.activities.find(
+      (item): item is Extract<AssistantActivity, { kind: 'tool' }> =>
+        item.kind === 'tool' && item.toolUseId === event.data?.id,
+    );
+    if (existing) {
+      existing.name = event.data.name || existing.name;
+      existing.inputSummary = event.data.inputSummary || existing.inputSummary;
+      existing.outputSummary = event.data.outputSummary || existing.outputSummary;
+      return { ...turn, activities: [...turn.activities] };
+    }
+    return {
+      ...turn,
+      activities: [
+        ...turn.activities,
+        {
+          kind: 'tool',
+          toolUseId: event.data.id,
+          name: event.data.name || 'tool',
+          status: 'running',
+          inputSummary: event.data.inputSummary,
+          outputSummary: event.data.outputSummary,
+          startedAt: event.data.startedAt || Date.now(),
+        },
+      ],
+    };
+  }
+  if (event.type === 'tool_result' && event.data?.id) {
+    return {
+      ...turn,
+      activities: turn.activities.map((activity) => (
+        activity.kind === 'tool' && activity.toolUseId === event.data?.id
+          ? {
+              ...activity,
+              status: event.data.status || (event.data.ok ? 'completed' : 'failed'),
+              outputSummary: event.data.outputSummary || event.data.preview || activity.outputSummary,
+              endedAt: event.data.endedAt || Date.now(),
+            }
+          : activity
+      )),
+    };
+  }
+  return turn;
+}

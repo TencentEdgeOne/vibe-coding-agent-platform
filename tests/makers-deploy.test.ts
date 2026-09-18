@@ -20,15 +20,15 @@ import {
   parseMakersDeployProgress,
   readMakersDeployOutcome,
   redactSecret,
-} from '../shared/makers-deploy.ts';
-import { shellQuote } from '../shared/shell.ts';
+} from '../agents/_lib/makers/cli-deploy.ts';
+import { shellQuote } from '../agents/_lib/utils/shell.ts';
 import {
   ensureMakersPublishProject,
   parsePublishableDotEnv,
   resolveConversationPublishArea,
   resolveMakersProjectName,
   syncSandboxEnvToMakersProject,
-} from '../agents/_lib/project/makers-deploy.ts';
+} from '../agents/_lib/makers/project.ts';
 import { projectState } from './helpers/fixtures.ts';
 
 test('builds a non-interactive direct CLI deploy command', () => {
@@ -591,18 +591,19 @@ test('each conversation owns one project, for preview and deploy alike', () => {
 // about the name, whichever ran first would pin the link file and the other
 // would either be silently ignored or repoint it mid-conversation.
 test('preview and deploy resolve the project through the same function', async () => {
-  const [previewSource, commandSource] = await Promise.all([
+  const [previewSource, commandSource, sessionSource] = await Promise.all([
     readFile('agents/_lib/project/preview.ts', 'utf8'),
     readFile('agents/_lib/tools/commands-wrap.ts', 'utf8'),
+    readFile('agents/_lib/makers/session.ts', 'utf8'),
   ]);
 
-  assert.match(previewSource, /resolveMakersProjectName\(context, state\)/);
-  assert.match(commandSource, /resolveMakersProjectName\(lifecycle\.context, lifecycle\.state\)/);
-  // One resolution per command, reused by both branches.
-  assert.equal(commandSource.match(/resolveMakersProjectName\(/g)?.length, 1);
-  for (const source of [previewSource, commandSource]) {
+  assert.match(previewSource, /prepareMakersSession\(context, state\)/);
+  assert.match(commandSource, /prepareMakersSession\(lifecycle\.context, lifecycle\.state/);
+  assert.match(sessionSource, /resolveMakersProjectName\(context, state\)/);
+  assert.match(sessionSource, /ensureMakersPublishProject\(/);
+  assert.equal(sessionSource.match(/resolveMakersProjectName\(/g)?.length, 1);
+  for (const source of [previewSource, commandSource, sessionSource]) {
     assert.doesNotMatch(source, /vibe-coding-playground/);
-    assert.match(source, /ensureMakersPublishProject/);
   }
 });
 
@@ -789,42 +790,34 @@ test('deploy does not copy .env when there is no master token', async () => {
 });
 
 test('deploy copies .env with the runtime master token, not the sandbox tenant token', async () => {
-  const [deploy, wrap, helper] = await Promise.all([
-    readFile('agents/_lib/pipelines/deploy.ts', 'utf8'),
+  const [session, wrap, helper] = await Promise.all([
+    readFile('agents/_lib/makers/session.ts', 'utf8'),
     readFile('agents/_lib/tools/commands-wrap.ts', 'utf8'),
-    readFile('agents/_lib/project/makers-deploy.ts', 'utf8'),
+    readFile('agents/_lib/makers/project.ts', 'utf8'),
   ]);
 
   assert.match(helper, /masterToken: string/);
   assert.match(
-    deploy,
+    session,
     /syncSandboxEnvToMakersProject\(\s*context,\s*state,\s*masterToken,/,
   );
-  assert.match(
-    wrap,
-    /syncSandboxEnvToMakersProject\(\s*lifecycle\.context,\s*lifecycle\.state,\s*masterToken,/,
-  );
+  assert.match(wrap, /prepareMakersSession\(/);
   assert.doesNotMatch(
-    deploy,
+    session,
     /syncSandboxEnvToMakersProject\(\s*context,\s*state,\s*sandboxToken,/,
   );
-  assert.doesNotMatch(
-    wrap,
-    /syncSandboxEnvToMakersProject\(\s*lifecycle\.context,\s*lifecycle\.state,\s*sandboxToken,/,
-  );
-  assert.match(deploy, /ensureMakersPublishProject\(\s*sandboxToken,/);
-  assert.match(wrap, /ensureMakersPublishProject\(\s*sandboxToken,/);
+  assert.match(session, /ensureMakersPublishProject\(\s*sandboxToken,/);
 });
 
 test('uses the sandbox-provided CLI without installing or prewarming it', async () => {
   const paths = [
-    'shared/makers-deploy.ts',
+    'agents/_lib/makers/cli-deploy.ts',
     'agents/_lib/tools/commands-wrap.ts',
-    'agents/_lib/project/makers-deploy.ts',
+    'agents/_lib/makers/project.ts',
     'agents/_lib/project/preview.ts',
     'agents/_lib/project/scaffold.ts',
-    'agents/_lib/pipelines/chat.ts',
-    'agents/_lib/pipelines/resume.ts',
+    'agents/_lib/turn/chat.ts',
+    'agents/_lib/session/resume.ts',
   ];
   const source = (await Promise.all(paths.map((path) => readFile(path, 'utf8')))).join('\n');
 

@@ -1,5 +1,5 @@
-import { resolveSandboxCommandOptions } from '../../../shared/sandbox-command.ts';
-import { parseEchoedExitCode, stripEchoedExit, withExitCodeEcho } from '../utils/tool-phase.ts';
+import { resolveSandboxCommandOptions } from '../project/sandbox-command.ts';
+import { parseEchoedExitCode, stripEchoedExit, withExitCodeEcho } from '../makers/tool-phase.ts';
 
 export { resolveSandboxCommandOptions };
 

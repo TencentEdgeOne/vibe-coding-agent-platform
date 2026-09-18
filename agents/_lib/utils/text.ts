@@ -1,4 +1,4 @@
-export { sanitizeAssistantText } from '../../../shared/sanitize-assistant-text.ts';
+export { sanitizeAssistantText } from '../../../shared/timeline.ts';
 
 export function stringifyToolResult(result: unknown) {
   if (typeof result === 'string') {

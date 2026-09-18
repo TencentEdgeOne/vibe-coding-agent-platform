@@ -11,7 +11,7 @@ import {
 const LIVE_URL = 'https://vibe-coding-playground.edgeone.app/?eo_token=abc123def456&eo_time=1787882262';
 
 test('Chinese fallback stays concise and localized', async () => {
-  const source = await readFile('agents/_lib/pipelines/helpers.ts', 'utf8');
+  const source = await readFile('agents/_lib/turn/checkpoint.ts', 'utf8');
   assert.match(source, /已按你的需求完成/);
   assert.match(source, /右侧预览已就绪/);
 });
@@ -31,11 +31,11 @@ test('successful replies keep only the user-facing outcome paragraph', () => {
 });
 
 test('step narration is streamed to the user while the summary stays compact', async () => {
-  const chat = await readFile('agents/_lib/pipelines/chat.ts', 'utf8');
+  const chat = await readFile('agents/_lib/turn/chat.ts', 'utf8');
   const prompt = await readFile('agents/_lib/prompt.ts', 'utf8');
   assert.match(chat, /if \(event\.type === 'text_segment'\)/);
   assert.match(chat, /recordProgress\(narration\)/);
-  assert.match(chat, /send\(narration as unknown as Record<string, unknown>\)/);
+  assert.match(chat, /send\(narration\)/);
   assert.match(prompt, /Keep narrating as you work/);
   assert.match(prompt, /always write it in the user language/);
 });
@@ -197,7 +197,7 @@ test('the live URL is guaranteed in the reply, in the reply language', () => {
 // state.deployment survives the turn that created it, so an unrelated later
 // reply must not pick up a stale address.
 test('only the deployment from the current turn reaches the reply', async () => {
-  const chat = await readFile('agents/_lib/pipelines/chat.ts', 'utf8');
+  const chat = await readFile('agents/_lib/turn/chat.ts', 'utf8');
   assert.match(chat, /modelResult\.deploymentTouched\s*\n?\s*&& state\.deployment\?\.status === 'success'/);
   assert.match(chat, /withLiveDeploymentUrl\(/);
 });

@@ -5,10 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import test from 'node:test';
-import {
-  buildMakersCompatibilityScript,
-  loadMakersValidationRules,
-} from '../agents/_lib/project/makers-compat.ts';
+import { buildMakersCompatibilityScript } from '../agents/_lib/makers/compat/lint-script.ts';
+import { loadMakersFrameworkProfiles, loadMakersValidationRules } from '../agents/_lib/makers/compat/skill-rules.ts';
 import {
   ensureMakersAgentDeclarations,
   inferMakersAgentFramework,
@@ -16,8 +14,7 @@ import {
   withAgentFramework,
   withFrameworkAdapter,
   type ProjectFileRead,
-} from '../agents/_lib/project/makers-declarations.ts';
-import { loadMakersFrameworkProfiles } from '../agents/_lib/project/makers-compat.ts';
+} from '../agents/_lib/makers/declarations.ts';
 import { buildWriteProjectFileTool } from '../agents/_lib/tools/project-tools.ts';
 import { projectState } from './helpers/fixtures.ts';
 
