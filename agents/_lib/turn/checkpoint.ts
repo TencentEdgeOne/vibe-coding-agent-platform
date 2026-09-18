@@ -4,7 +4,6 @@ import { runSandboxCommand } from '../project/commands.ts';
 import type { FileTreeItem, ProjectState, StreamSend } from '../types.ts';
 export {
   compactUserFacingReply,
-  GATEWAY_CREDENTIALS_USER_REPLY,
   replyLocaleFor,
   resolveFinishedTurn,
   STOPPED_TURN_REPLY,

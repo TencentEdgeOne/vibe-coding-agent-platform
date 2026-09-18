@@ -14,6 +14,7 @@ import { createSSEResponse, sseEvent } from '../runtime/sse.ts';
 import { resolveConversationId } from '../runtime/request.ts';
 import { resolveGatewayUserTurn } from '../../../shared/gateway-secret.ts';
 import type { ChatStreamEvent } from '../../../shared/protocol.ts';
+import { unbindLiveWorkspace } from './live-workspace.ts';
 
 type SequencedEvent = {
   sequence: number;
@@ -260,6 +261,8 @@ async function executeLiveTask(context: AgentContext, liveTask: LiveChatTask) {
       publish(liveTask, { type: 'error', error });
       finalEvent = { type: 'error', error };
     }
+  } finally {
+    unbindLiveWorkspace(liveTask.conversationId);
   }
 
   const current = liveTask.task;

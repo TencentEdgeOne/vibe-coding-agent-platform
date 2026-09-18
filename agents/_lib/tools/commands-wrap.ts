@@ -1,7 +1,11 @@
 import type { ClaudeMcpTool } from '../types.ts';
 import { startPreviewServer } from '../project/preview.ts';
 import { assertMakersProjectCompatible } from '../makers/compat/run.ts';
-import { pauseForGatewayCredentialsIfNeeded } from '../project/gateway.ts';
+import {
+  askUserForGatewayCredentials,
+  pauseForGatewayCredentialsIfNeeded,
+  shouldPauseForGatewayCredentials,
+} from '../project/gateway.ts';
 import {
   buildEdgeoneVersionCheckCommand,
   forbiddenSandboxCommandReason,
@@ -89,19 +93,30 @@ export function wrapSandboxTools(
           | undefined;
         if (lifecycle && isMakersCommand) {
           try {
-            const pause = await pauseForGatewayCredentialsIfNeeded(
-              lifecycle.context,
-              lifecycle.state,
-              {
-                conversationId: lifecycle.conversationId,
-                send: lifecycle.send,
-              },
-            );
-            if (pause) {
-              return {
-                content: [{ type: 'text' as const, text: pause }],
-                isError: true,
-              };
+            if (isDeploymentCommand) {
+              const pause = await pauseForGatewayCredentialsIfNeeded(
+                lifecycle.context,
+                lifecycle.state,
+                {
+                  conversationId: lifecycle.conversationId,
+                  send: lifecycle.send,
+                },
+              );
+              if (pause) {
+                return {
+                  content: [{ type: 'text' as const, text: pause }],
+                  isError: true,
+                };
+              }
+            } else if (await shouldPauseForGatewayCredentials(lifecycle.context, lifecycle.state)) {
+              await askUserForGatewayCredentials(
+                lifecycle.context,
+                lifecycle.state,
+                {
+                  conversationId: lifecycle.conversationId,
+                  send: lifecycle.send,
+                },
+              );
             }
             await assertMakersProjectCompatible(lifecycle.context, lifecycle.state);
             makers = await prepareMakersCommand(args, command, lifecycle);

@@ -115,33 +115,35 @@ export function rewritePreviewAccessToken(existingUrl: string, token: string) {
 export async function startPreviewServer(
   context: AgentContext,
   state: ProjectState,
-  options: { verifyRoutes?: boolean } = {},
+  options: { verifyRoutes?: boolean; forceRestart?: boolean } = {},
 ) {
   const verifyRoutes = options.verifyRoutes !== false;
   await assertMakersProjectCompatible(context, state);
   const projectName = resolveMakersProjectName(context, state);
   const area = resolveConversationPublishArea(state);
   const launchCommand = buildMakersDevLaunchCommand(MAKERS_DEV_PORT, projectName, { area });
-  let forceRestart = false;
+  let forceRestart = options.forceRestart === true;
 
   // makers-dev watches project files. On resume, keep a healthy process rather
   // than starting a second CLI instance on the same port.
-  const warm = await runCommandCapturingExit(
-    context,
-    probePreviewReadyCommand(),
-    { timeout: 5 },
-  );
-  if (warm.exitCode === 0) {
-    try {
-      if (verifyRoutes) {
-        await assertGeneratedRoutesReady(context, state);
+  if (!forceRestart) {
+    const warm = await runCommandCapturingExit(
+      context,
+      probePreviewReadyCommand(),
+      { timeout: 5 },
+    );
+    if (warm.exitCode === 0) {
+      try {
+        if (verifyRoutes) {
+          await assertGeneratedRoutesReady(context, state);
+        }
+        return previewServerInfo(launchCommand);
+      } catch (error) {
+        // A warm port that fails to answer is a stale server, not a preview. One
+        // that answers wrongly is a code bug the restart would only delay.
+        if (!previewFailureWarrantsRestart(error)) throw error;
+        forceRestart = true;
       }
-      return previewServerInfo(launchCommand);
-    } catch (error) {
-      // A warm port that fails to answer is a stale server, not a preview. One
-      // that answers wrongly is a code bug the restart would only delay.
-      if (!previewFailureWarrantsRestart(error)) throw error;
-      forceRestart = true;
     }
   }
 
@@ -454,6 +456,18 @@ export async function publishRunningPreview(
     sandboxDebugUrl: links.sandboxDebugUrl,
     kind: 'sandbox' as const,
   };
+}
+
+export async function isPreviewServerReady(
+  context: AgentContext,
+  readyPath = PREVIEW_PATH_PREFIX,
+) {
+  const result = await runCommandCapturingExit(
+    context,
+    probePreviewReadyCommand(readyPath),
+    { timeout: 5 },
+  );
+  return result.exitCode === 0;
 }
 
 export async function assertPreviewServerReady(

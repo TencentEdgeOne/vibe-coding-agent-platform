@@ -43,6 +43,7 @@ import {
 } from './checkpoint.ts';
 import { createTurnLifecycle } from './lifecycle.ts';
 import { prepareProjectWorkspace } from '../project/workspace.ts';
+import { bindLiveWorkspace } from '../session/live-workspace.ts';
 import { sendTurnResult } from './result.ts';
 
 /** Used when an API caller asks to publish without wording the request itself. */
@@ -83,14 +84,14 @@ const COPY = {
     noProject: '还没有可部署的项目，请先生成一个项目。',
     success: '已发布到线上。',
     failedPrefix: '部署失败：',
-    needGateway: '请先在下方填写 Models API Key，填写后我会继续部署。',
+    needGateway: '请先添加 API 密钥，添加后我会继续部署。',
   },
   en: {
     missingConversation: 'Missing conversationId, so this project cannot be deployed.',
     noProject: 'There is no project to deploy yet. Generate one first.',
     success: 'The project is live.',
     failedPrefix: 'Deploy failed: ',
-    needGateway: 'Enter a Models API Key below. I will continue the deploy after that.',
+    needGateway: 'Add an API key below. I will continue the deploy after that.',
   },
 } as const;
 
@@ -228,6 +229,7 @@ export async function runDeployPipeline(
     return;
   }
 
+  bindLiveWorkspace(conversationId, state, send);
   const inboundGateway = resolveGatewayUserTurn(request, options.apiKey);
   if (inboundGateway.apiKey || options.gatewaySkip) {
     await applyUserGatewayDecision(

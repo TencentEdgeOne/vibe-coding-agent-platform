@@ -1,9 +1,5 @@
 import { createSdkMcpServer } from '@anthropic-ai/claude-agent-sdk';
 import { SANDBOX_MCP_SERVER_NAME } from '../constants.ts';
-import {
-  buildRequestGatewayCredentialsTool,
-  REQUEST_GATEWAY_CREDENTIALS_TOOL,
-} from '../project/gateway.ts';
 import type { AgentContext } from '../runtime/context.ts';
 import type {
   ClaudeMcpTool,
@@ -77,6 +73,12 @@ export function assembleAgentTools(session: LiveSessionHandle) {
     && !isGenericProjectWriteToolName(name)
     && (webSearchAvailable || !isWebSearchToolName(name));
 
+  const gatewayPrompt = {
+    conversationId: session.conversationId,
+    get send() {
+      return session.getCallbacks().send;
+    },
+  };
   const writeProjectFileTool = buildWriteProjectFileTool(
     context,
     session.getState(),
@@ -85,6 +87,7 @@ export function assembleAgentTools(session: LiveSessionHandle) {
       session.flags.filesWritten = true;
       await session.getCallbacks().onProjectFilesChanged?.({ path: written, content });
     },
+    gatewayPrompt,
   );
   const sandboxTools = wrapWebSearchTool(wrapSandboxTools(
     (edgeoneMcp.tools as ClaudeMcpTool[]).filter((tool) => offerSandboxTool(tool.name)),
@@ -112,9 +115,7 @@ export function assembleAgentTools(session: LiveSessionHandle) {
   ));
   const mcpTools = [
     ...sandboxTools,
-    buildLoadMakersSkillTool(),
-    writeProjectFileTool,
-    buildRequestGatewayCredentialsTool({
+    buildLoadMakersSkillTool({
       context,
       get state() {
         return session.getState();
@@ -123,13 +124,13 @@ export function assembleAgentTools(session: LiveSessionHandle) {
       get send() {
         return session.getCallbacks().send;
       },
-    } as any),
+    }),
+    writeProjectFileTool,
   ];
   const mcpAllowedTools = [
     ...edgeoneMcp.allowedTools.filter(offerSandboxTool),
     `mcp__${mcpServerName}__load_makers_skill`,
     `mcp__${mcpServerName}__write_project_file`,
-    `mcp__${mcpServerName}__${REQUEST_GATEWAY_CREDENTIALS_TOOL}`,
     'Skill',
   ];
 

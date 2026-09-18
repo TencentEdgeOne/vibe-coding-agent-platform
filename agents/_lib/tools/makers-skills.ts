@@ -2,7 +2,9 @@ import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tool as defineClaudeTool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
-import type { ClaudeMcpTool } from '../types.ts';
+import { askUserForGatewayCredentials, type GatewayPromptOptions } from '../project/gateway.ts';
+import type { AgentContext } from '../runtime/context.ts';
+import type { ClaudeMcpTool, ProjectState } from '../types.ts';
 
 export const MAKERS_REFERENCE_SKILL_NAMES = [
   'makers-agents',
@@ -126,7 +128,10 @@ function formatUnknownReference(
   ].join('\n');
 }
 
-export function buildLoadMakersSkillTool() {
+export function buildLoadMakersSkillTool(gateway?: {
+  context: AgentContext;
+  state: ProjectState;
+} & GatewayPromptOptions) {
   return defineClaudeTool(
     'load_makers_skill',
     [
@@ -150,6 +155,12 @@ export function buildLoadMakersSkillTool() {
       try {
         const skill = makersReferenceSkillSchema.parse(input.skill);
         const ref = typeof input.ref === 'string' ? input.ref.trim() : '';
+        if (skill === 'makers-agents' && gateway) {
+          await askUserForGatewayCredentials(gateway.context, gateway.state, {
+            conversationId: gateway.conversationId,
+            send: gateway.send,
+          }).catch(() => undefined);
+        }
 
         if (!ref) {
           const [content, refs] = await Promise.all([

@@ -166,7 +166,15 @@ export function useSessionResume(options: {
       });
 
       live.setMessages(nextMessages);
-      workspace.setGatewayNeeded(Boolean(data.gatewayNeeded));
+      if (data.gatewayNeeded) {
+        workspace.setGatewayNeeded(true);
+        workspace.setGatewayDeferred(false);
+      } else if (data.gatewaySkipped) {
+        workspace.setGatewayNeeded(false);
+        workspace.setGatewayDeferred(true);
+      } else {
+        workspace.setGatewayNeeded(false);
+      }
       workspace.setDeployment(data.deployment ?? null);
       if (data.hasProject || data.needsWorkspace || activeTask) {
         if (data.hasProject || data.needsWorkspace) {
@@ -182,7 +190,12 @@ export function useSessionResume(options: {
     };
 
     const applyWorkspace = (data: ResumeData) => {
-      if (data.gatewayNeeded) workspace.setGatewayNeeded(true);
+      if (data.gatewayNeeded) {
+        workspace.setGatewayNeeded(true);
+        workspace.setGatewayDeferred(false);
+      } else if (data.gatewaySkipped) {
+        workspace.setGatewayDeferred(true);
+      }
       snapshot.applySnapshot(data);
     };
 
@@ -208,7 +221,9 @@ export function useSessionResume(options: {
           if (cancelled || workspaceEpoch !== workspaceEpochRef.current || event.type === 'ping') return;
 
           if (event.type === 'session_prep' && event.data?.stage) {
-            setPrepStage(event.data.stage);
+            if (event.data.status === 'running' || event.data.stage === 'ready') {
+              setPrepStage(event.data.stage);
+            }
             return;
           }
 
@@ -219,8 +234,9 @@ export function useSessionResume(options: {
               clearCachedConversationId();
               conversationIdRef.current = null;
               setConversationId(null);
+              setResumeChecked(true);
+              setPrepStage(null);
             }
-            setResumeChecked(true);
 
             if (liveTaskId) {
               const conversationForRun = historyData.conversation_id || existing;

@@ -19,7 +19,6 @@ import { toAppRelPath } from '../utils/paths.ts';
 import { sanitizeAssistantText } from '../../../shared/timeline.ts';
 import { resolveConversationId, resolveRequestSiteDomain } from '../runtime/request.ts';
 import {
-  GATEWAY_CREDENTIALS_USER_REPLY,
   compactUserFacingReply,
   createFileTreePushController,
   createProjectCheckpointController,
@@ -33,12 +32,10 @@ import {
   withLiveDeploymentUrl,
   buildRequirementConclusionFallback,
 } from './checkpoint.ts';
+import { bindLiveWorkspace } from '../session/live-workspace.ts';
 import { createTurnLifecycle } from './lifecycle.ts';
 import { prepareProjectWorkspace } from '../project/workspace.ts';
-import {
-  applyUserGatewayDecision,
-  isRequestGatewayCredentialsTool,
-} from '../project/gateway.ts';
+import { applyUserGatewayDecision } from '../project/gateway.ts';
 import { resolveGatewayUserTurn } from '../../../shared/gateway-secret.ts';
 import { runAutoFixTurn } from './auto-fix.ts';
 import { sendTurnResult } from './result.ts';
@@ -110,7 +107,7 @@ export async function runChatPipeline(
       send,
     );
   }
-  const hiddenToolUseIds = new Set<string>();
+  bindLiveWorkspace(conversationId, state, send);
   const activityTurnId = options.turnId
     || String(context?.run_id || `${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
@@ -129,16 +126,6 @@ export async function runChatPipeline(
   const finalizeTurn = turn.finalize;
 
   const forwardProgress = (event: AgentProgressEvent) => {
-    if (event.type === 'tool_use') {
-      const name = event.data?.name || '';
-      if (isRequestGatewayCredentialsTool(name)) {
-        hiddenToolUseIds.add(event.data?.id || '');
-        return;
-      }
-    }
-    if (event.type === 'tool_result' && hiddenToolUseIds.has(event.data?.id || '')) {
-      return;
-    }
     if (event.type === 'text_segment') {
       const text = state.previewUrl
         ? stripReturnedPreviewLinks(event.data?.text || '', state.previewUrl)
@@ -255,35 +242,6 @@ export async function runChatPipeline(
     return;
   }
 
-  if (state.gatewayPromptPending) {
-    const pauseReply = GATEWAY_CREDENTIALS_USER_REPLY[replyLocale];
-    send({
-      type: 'gateway_credentials',
-      data: { status: 'needed' },
-    });
-    send({
-      type: 'agent',
-      data: {
-        ok: true,
-        reply: pauseReply,
-      },
-    });
-
-    if (modelResult.projectTouched) {
-      await fileTreePush.flush('Failed to read the file list.');
-    }
-    await finalizeTurn(pauseReply, 'completed', {
-      withSnapshot: false,
-    });
-    sendTurnResult(send, slimResult(conversationId, {
-      ok: true,
-      reply: pauseReply,
-    }));
-    if (modelResult.projectTouched) {
-      void checkpoint.flush();
-    }
-    return;
-  }
   const sanitizedModelOutput = modelResult.success && modelResult.output
     ? sanitizeAssistantText(modelResult.output)
     : '';

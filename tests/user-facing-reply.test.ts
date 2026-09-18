@@ -3,7 +3,6 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import {
   compactUserFacingReply,
-  GATEWAY_CREDENTIALS_USER_REPLY,
   resolveFinishedTurn,
   withLiveDeploymentUrl,
 } from '../shared/user-facing-reply.ts';
@@ -71,22 +70,14 @@ test('a turn that stopped to ask a question is not a preview that failed', () =>
   assert.equal(outcome.reply, QUESTION_TURN);
 });
 
-test('skipping a Models API key still offers preview and deploy', () => {
-  assert.equal(
-    GATEWAY_CREDENTIALS_USER_REPLY.zh,
-    '项目已经写好。要调用大模型请在下方输入 Models API Key；跳过也可以先预览和部署。',
-  );
-  assert.match(GATEWAY_CREDENTIALS_USER_REPLY.en, /skip to preview and deploy first/);
-});
-
-test('waiting for an API key is not a preview that failed', () => {
+test('waiting for a clarifying question is not a preview that failed', () => {
   const outcome = resolveFinishedTurn({
     filesWritten: true,
     previewUrl: '',
     buildFailed: false,
     waitingForUser: true,
     modelReply: 'AI 聊天助手已经做好了：支持流式输出、多轮对话。',
-    fallbackReply: GATEWAY_CREDENTIALS_USER_REPLY.zh,
+    fallbackReply: '已按你的需求完成。',
     failureReply: '项目已生成，但预览暂时不可用，请重试。',
   });
 

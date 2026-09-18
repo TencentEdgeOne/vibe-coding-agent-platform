@@ -126,6 +126,8 @@ export type ResumeData = {
   language?: 'zh' | 'en';
   /** Resume should show the Models API key card. */
   gatewayNeeded?: boolean;
+  /** User deferred the key; resume should show the reopen chip. */
+  gatewaySkipped?: boolean;
   error?: string;
 };
 

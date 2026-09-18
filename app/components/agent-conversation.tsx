@@ -54,6 +54,7 @@ export type DeployOfferCopy = {
 
 export type GatewayPromptCopy = {
   title: string;
+  description?: string;
   docs: string;
   docsUrl: string;
   apiKey: string;
@@ -310,9 +311,12 @@ export function AgentConversation({
   onDeployOffer,
   onDismissDeployOffer,
   gatewayPrompt,
+  gatewayChip,
+  gatewaySaved,
   gatewayBusy,
   onGatewaySubmit,
   onGatewaySkip,
+  onGatewayReopen,
 }: {
   messages: ConversationMessage[];
   input: string;
@@ -330,9 +334,12 @@ export function AgentConversation({
   onDeployOffer?: () => void;
   onDismissDeployOffer?: () => void;
   gatewayPrompt?: GatewayPromptCopy | null;
+  gatewayChip?: string | null;
+  gatewaySaved?: string | null;
   gatewayBusy?: boolean;
   onGatewaySubmit?: (values: { apiKey: string }) => void;
   onGatewaySkip?: () => void;
+  onGatewayReopen?: () => void;
 }) {
   const [gatewayApiKey, setGatewayApiKey] = useState('');
   const gatewayInputRef = useRef<HTMLInputElement | null>(null);
@@ -343,8 +350,6 @@ export function AgentConversation({
       setGatewayApiKey('');
       return;
     }
-    // The card mounts only after the assistant turn has finished, so focus
-    // can land immediately instead of waiting on a disabled input.
     const node = gatewayInputRef.current;
     if (!node || node.disabled) return;
     node.focus();
@@ -406,6 +411,9 @@ export function AgentConversation({
           >
             <div className="gateway-prompt-copy">
               <p className="gateway-prompt-title">{gatewayPrompt.title}</p>
+              {gatewayPrompt.description && (
+                <p className="gateway-prompt-description">{gatewayPrompt.description}</p>
+              )}
               <p className="gateway-prompt-docs">
                 <a
                   href={gatewayPrompt.docsUrl}
@@ -447,6 +455,18 @@ export function AgentConversation({
               </button>
             </div>
           </form>
+        )}
+        {!gatewayPrompt && gatewayChip && (
+          <button
+            type="button"
+            className="gateway-prompt-chip"
+            onClick={onGatewayReopen}
+          >
+            {gatewayChip}
+          </button>
+        )}
+        {!gatewayPrompt && !gatewayChip && gatewaySaved && (
+          <p className="gateway-prompt-saved" role="status">{gatewaySaved}</p>
         )}
         {deployOffer && (
           <div className="deploy-offer" role="status">

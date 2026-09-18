@@ -297,10 +297,12 @@ test('publishing leaves the composer and the files panel alone', async () => {
   const body = live.slice(start, live.indexOf('function stopCurrentTask(', start));
 
   assert.ok(start >= 0 && body.length > 0);
-  assert.match(body, /const isStartingFromHome = !isDeploy && !isGatewayCard/);
+  assert.match(body, /const isStartingFromHome = !isDeploy/);
   assert.match(body, /if \(isStartingFromHome\) \{[\s\S]*?openSessionStream/);
   assert.match(body, /startPromptTurn\(/);
   assert.match(body, /startDeployTurn\(/);
   assert.match(body, /if \(!isDeploy\) \{\s*workspace\.setFilesRefreshing\(true\);/);
-  assert.match(body, /if \(!isGatewayCard\) setInput\(''\)/);
+  assert.match(body, /setInput\(''\)/);
+  assert.doesNotMatch(body, /isGatewayCard/);
+  assert.doesNotMatch(body, /gatewaySkip/);
 });

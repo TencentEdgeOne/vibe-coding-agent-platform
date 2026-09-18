@@ -1,17 +1,14 @@
 /**
  * Models API key collection for a generated AI project.
  *
- * `.env.example` declares the names. The agent checks before preview or deploy
- * and asks the user when `.env` has no key. The host shows the input card; the
- * next user turn carries the key (masked in the transcript) or a skip, and
- * this module writes `.env` so the CLI can load it.
+ * `.env.example` declares the names. The host shows the input card as soon as
+ * it sees an AI project. Generation and preview keep going; submitting a key
+ * writes `.env` without opening a coding-agent turn.
  */
 
-import { tool as defineClaudeTool } from '@anthropic-ai/claude-agent-sdk';
 import { persistWorkspace, setGatewayPending, setGatewaySkipped } from './workspace-store.ts';
 import { requireSandbox, type AgentContext, type SandboxCapable } from '../runtime/context.ts';
-import type { ClaudeMcpTool, ProjectState, StreamSend } from '../types.ts';
-import { stringifyToolResult } from '../utils/text.ts';
+import type { ProjectState, StreamSend } from '../types.ts';
 import { getFileTree } from './fs.ts';
 import { AGENT_GATEWAY_ENV_KEYS } from '../makers/declarations.ts';
 
@@ -29,19 +26,12 @@ export function gatewayBaseUrlForAgentFramework(framework?: string | null) {
   return framework === 'claude-agent-sdk' ? AI_GATEWAY_ORIGIN : DEFAULT_AI_GATEWAY_BASE_URL;
 }
 
-export const REQUEST_GATEWAY_CREDENTIALS_TOOL = 'request_gateway_credentials';
-
 export const GATEWAY_CREDENTIALS_PAUSE_MESSAGE = [
   'AI_GATEWAY_API_KEY is not set in the project .env.',
   'The user has been shown the API key input card.',
-  'End this turn now. Do not run preview or deploy, and do not call this again.',
-  'A later turn will continue after they provide a key or skip.',
+  'Do not run edgeone makers deploy until they provide a key or skip.',
+  'A missing key is not a preview failure, but a live publish still needs the card answered.',
 ].join(' ');
-
-export function isRequestGatewayCredentialsTool(name: string) {
-  return name === REQUEST_GATEWAY_CREDENTIALS_TOOL
-    || name.endsWith(`__${REQUEST_GATEWAY_CREDENTIALS_TOOL}`);
-}
 
 export function declaredGatewayKeys(content: string): string[] {
   return AGENT_GATEWAY_ENV_KEYS.filter((key) => (
@@ -185,20 +175,49 @@ export type GatewayPromptOptions = {
   send?: StreamSend;
 };
 
-export async function askUserForGatewayCredentials(
-  context: AgentContext,
-  state: ProjectState,
-  options: GatewayPromptOptions = {},
-) {
-  setGatewayPending(state, true);
-  await persistGatewayState(context, options.conversationId || '', state);
-  options.send?.({
+function emitGatewayNeeded(send: StreamSend | undefined) {
+  send?.({
     type: 'gateway_credentials',
     data: {
       status: 'needed',
       keys: [...AGENT_GATEWAY_ENV_KEYS],
     },
   });
+}
+
+function emitGatewayResolved(send: StreamSend | undefined, skipped = false) {
+  send?.({
+    type: 'gateway_credentials',
+    data: {
+      status: 'resolved',
+      ...(skipped ? { skipped: true } : {}),
+    },
+  });
+}
+
+export async function askUserForGatewayCredentials(
+  context: AgentContext,
+  state: ProjectState,
+  options: GatewayPromptOptions = {},
+) {
+  if (state.gatewaySkipped) return;
+  if (await sandboxGatewayKeyIsSet(context, state)) return;
+  if (state.gatewayPromptPending) {
+    emitGatewayNeeded(options.send);
+    return;
+  }
+  setGatewayPending(state, true);
+  await persistGatewayState(context, options.conversationId || '', state);
+  emitGatewayNeeded(options.send);
+}
+
+export function writeSuggestsAiGatewayProject(relPath: string, content: string) {
+  const path = relPath.replace(/^\.?\//, '');
+  if (path === 'agents' || path.startsWith('agents/')) return true;
+  if (path === '.env.example' || path.endsWith('/.env.example')) {
+    return declaredGatewayKeys(content).length > 0;
+  }
+  return false;
 }
 
 export async function shouldPauseForGatewayCredentials(
@@ -244,6 +263,7 @@ export async function applyUserGatewayDecision(
   if (decision.skip) {
     setGatewaySkipped(state, true);
     await persistGatewayState(context, conversationId, state);
+    emitGatewayResolved(send, true);
     return {};
   }
 
@@ -261,78 +281,6 @@ export async function applyUserGatewayDecision(
   setGatewaySkipped(state, false);
   await persistGatewayState(context, conversationId, state);
   await publishFileTreeAfterEnvWrite(context, state, send);
+  emitGatewayResolved(send);
   return values;
-}
-
-export function buildRequestGatewayCredentialsTool(options: {
-  context: AgentContext;
-  state: ProjectState;
-  conversationId?: string;
-  send?: StreamSend;
-}): ClaudeMcpTool {
-  const { context, state, conversationId, send } = options;
-  return defineClaudeTool(
-    REQUEST_GATEWAY_CREDENTIALS_TOOL,
-    [
-      'Before preview or deploy of an AI project, check whether .env has a non-empty AI_GATEWAY_API_KEY.',
-      'If the key is already set, not required, or the user already skipped, continue with preview or deploy.',
-      'If the key is missing, this shows the user the API key input card and you must end the turn.',
-      'Do not run edgeone makers dest or deploy after this tool says the user has been asked.',
-    ].join(' '),
-    {},
-    async () => {
-      if (state.gatewaySkipped) {
-        return {
-          content: [{
-            type: 'text' as const,
-            text: stringifyToolResult({
-              needed: true,
-              configured: false,
-              skipped: true,
-              instruction: 'The user already skipped the API key. Continue preview or deploy without writing .env. A missing key is not a preview or deploy failure.',
-            }),
-          }],
-        };
-      }
-
-      const needed = await projectNeedsGatewayKey(context, state);
-      if (!needed) {
-        return {
-          content: [{
-            type: 'text' as const,
-            text: stringifyToolResult({
-              needed: false,
-              instruction: 'This project does not need a Models API key. Continue.',
-            }),
-          }],
-        };
-      }
-
-      if (await sandboxGatewayKeyIsSet(context, state)) {
-        return {
-          content: [{
-            type: 'text' as const,
-            text: stringifyToolResult({
-              needed: true,
-              configured: true,
-              instruction: 'AI_GATEWAY_API_KEY is already set. Continue preview or deploy. Do not quote the value.',
-            }),
-          }],
-        };
-      }
-
-      await askUserForGatewayCredentials(context, state, { conversationId, send });
-      return {
-        content: [{
-          type: 'text' as const,
-          text: stringifyToolResult({
-            needed: true,
-            configured: false,
-            askedUser: true,
-            instruction: GATEWAY_CREDENTIALS_PAUSE_MESSAGE,
-          }),
-        }],
-      };
-    },
-  ) as ClaudeMcpTool;
 }

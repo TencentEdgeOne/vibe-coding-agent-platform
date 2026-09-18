@@ -1,4 +1,5 @@
 import type { AgentContext } from './_lib/runtime/context.ts';
+import { applyGatewayDecisionAndRespond } from './_lib/session/gateway-apply.ts';
 import { createChatTaskAndStreamResponse } from './_lib/session/task.ts';
 import { resolveRequestedModel } from './_lib/models.ts';
 import { getRequestBody } from './_lib/runtime/request.ts';
@@ -7,6 +8,14 @@ import { getRequestBody } from './_lib/runtime/request.ts';
 export async function onRequestPost(context: AgentContext) {
   const body = getRequestBody(context);
   const message = String(body.message || '').trim();
+  const apiKey = String(body.apiKey || '').trim();
+  const gatewaySkip = body.gatewaySkip === true;
+  if (!message && (apiKey || gatewaySkip)) {
+    return applyGatewayDecisionAndRespond(context, {
+      ...(apiKey ? { apiKey } : {}),
+      ...(gatewaySkip ? { skip: true } : {}),
+    });
+  }
   if (!message) {
     return new Response(JSON.stringify({
       ok: false,
@@ -18,14 +27,12 @@ export async function onRequestPost(context: AgentContext) {
   }
 
   try {
-    const apiKey = String(body.apiKey || '').trim();
     return await createChatTaskAndStreamResponse(context, message, {
       kind: 'prompt',
       turnId: String(body.turnId || '').trim() || undefined,
       model: resolveRequestedModel(context, body.model),
       language: String(body.language || '').trim() || undefined,
       ...(apiKey ? { apiKey } : {}),
-      ...(body.gatewaySkip === true ? { gatewaySkip: true } : {}),
     });
   } catch (error) {
     return new Response(JSON.stringify({

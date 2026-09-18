@@ -7,6 +7,11 @@ import {
   ensureMakersAgentDeclarations,
   ensureMakersFrameworkAdapter,
 } from '../makers/declarations.ts';
+import {
+  askUserForGatewayCredentials,
+  writeSuggestsAiGatewayProject,
+  type GatewayPromptOptions,
+} from '../project/gateway.ts';
 import type { ClaudeMcpTool, ProjectState } from '../types.ts';
 import { getBlockedProjectWriteReason, toAppRelPath } from '../utils/paths.ts';
 import { stringifyToolResult } from '../utils/text.ts';
@@ -24,6 +29,7 @@ export function buildWriteProjectFileTool(
   // The content is handed back so the pipeline can push it straight to the
   // frontend, which then renders the file without a /file round trip.
   onResult?: (result: { written: string; content: string }) => void | Promise<void>,
+  gateway?: GatewayPromptOptions,
 ) {
   return defineClaudeTool(
     'write_project_file',
@@ -55,9 +61,9 @@ export function buildWriteProjectFileTool(
         await onResult?.({ written: relPath, content: file.content });
         // An agents/ project needs agents.framework and .env.example declared,
         // and meeting that at the preview gate instead costs the user a failed
-        // attempt. Values for those keys are collected in a later user turn,
-        // not written here. Best effort: the lint remains the authority, so a
-        // failure here costs the old behaviour and nothing more.
+        // attempt. The host collects values for those keys on its own card.
+        // Best effort: the lint remains the authority, so a failure here costs
+        // the old behaviour and nothing more.
         let adapterAdded = false;
         const declared = relPath.startsWith('agents/')
           ? await ensureMakersAgentDeclarations(context, state).catch(() => [])
@@ -83,6 +89,12 @@ export function buildWriteProjectFileTool(
         }
         for (const declaration of declared) {
           await onResult?.({ written: declaration.path, content: declaration.content });
+        }
+        if (
+          writeSuggestsAiGatewayProject(relPath, file.content)
+          || declared.some((declaration) => writeSuggestsAiGatewayProject(declaration.path, declaration.content))
+        ) {
+          await askUserForGatewayCredentials(context, state, gateway).catch(() => undefined);
         }
         return {
           content: [{

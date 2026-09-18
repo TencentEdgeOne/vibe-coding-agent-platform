@@ -338,6 +338,13 @@
   line-height: 1.4;
 }
 
+.gateway-prompt-description {
+  margin: 6px 0 0;
+  color: var(--n-700);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
 .gateway-prompt-docs {
   margin: 4px 0 0;
   font-size: var(--fs-sm);
@@ -386,6 +393,33 @@
   justify-content: flex-end;
   align-items: center;
   gap: 8px;
+}
+
+.gateway-prompt-chip,
+.gateway-prompt-saved {
+  align-self: flex-start;
+  margin: 0;
+  border: 1px solid var(--n-150);
+  border-radius: 999px;
+  background: var(--card);
+  padding: 6px 12px;
+  color: var(--n-800);
+  font-size: var(--fs-sm);
+  line-height: 1.3;
+}
+
+.gateway-prompt-chip {
+  cursor: pointer;
+}
+
+.gateway-prompt-chip:hover,
+.gateway-prompt-chip:focus-visible {
+  background: var(--n-50);
+  color: var(--n-900);
+}
+
+.gateway-prompt-saved {
+  color: var(--n-700);
 }
 
 .conversation-composer {

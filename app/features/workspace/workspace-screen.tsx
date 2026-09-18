@@ -40,13 +40,13 @@ import {
   getTemplateDeployUrl,
 } from '@/app/lib/conversation';
 import { LANGUAGE_STORAGE_KEY, TRANSLATIONS, type Locale } from '@/app/i18n';
-import { maskApiKey } from '../../../shared/gateway-secret';
 import { previewDisplayPathFromPath } from '../../../shared/preview-display-path';
 import type { ModelOption } from '../../../shared/models';
 import { HomeStage } from './components/home-stage';
 import { PreviewControls } from './components/preview-controls';
 import { PreviewFrame } from './components/preview-frame';
 import { SiteHeader } from './components/site-header';
+import { SessionPrepLoading } from './components/session-prep-loading';
 import { WorkspaceErrorBar } from './components/workspace-error-bar';
 import { fetchModelCatalog } from './workspace-api';
 import { useLiveTurn } from './hooks/use-live-turn';
@@ -290,6 +290,10 @@ export function WorkspaceScreen() {
 
   function handleDeployProject() {
     if (!canDeployProject) return;
+    if (!workspace.gatewayConfigured && (workspace.gatewayNeeded || workspace.gatewayDeferred)) {
+      workspace.setGatewayPromptVariant('deploy');
+      workspace.setGatewayNeeded(true);
+    }
     if (deployOfferTurnId) {
       workspace.setDismissedDeployTurnId(deployOfferTurnId);
     }
@@ -309,6 +313,8 @@ export function WorkspaceScreen() {
     setConversationId(null);
     live.setMessages([]);
     live.setLoading(false);
+    live.setSessionPreparing(false);
+    live.setPrepStage(null);
     live.setInput('');
     workspace.resetWorkspace();
     preview.resetPreview();
@@ -331,19 +337,15 @@ export function WorkspaceScreen() {
     startNewProject();
   }
 
-  if (!resume.resumeChecked) {
+  const prepStage = live.prepStage || resume.prepStage
+    || (live.sessionPreparing ? 'conversation' : null);
+  if (!resume.resumeChecked || live.sessionPreparing) {
     return (
-      <main className="app-shell flex flex-col items-center justify-center gap-4 text-foreground">
-        <span
-          className="size-8 animate-spin rounded-full border-2 border-primary/30 border-t-primary"
-          aria-hidden="true"
-        />
-        <p className="text-sm text-muted-foreground">
-          {resume.prepStage
-            ? t.workspace.prepStages[resume.prepStage]
-            : t.workspace.resuming}
-        </p>
-      </main>
+      <SessionPrepLoading
+        stage={prepStage}
+        title={live.sessionPreparing ? t.workspace.preparing : t.workspace.resuming}
+        stageLabel={prepStage ? t.workspace.prepStages[prepStage] : t.workspace.resuming}
+      />
     );
   }
 
@@ -421,23 +423,35 @@ export function WorkspaceScreen() {
           onDismissDeployOffer={() => {
             if (deployOfferTurnId) workspace.setDismissedDeployTurnId(deployOfferTurnId);
           }}
-          gatewayPrompt={workspace.gatewayNeeded && !live.loading ? {
+          gatewayPrompt={workspace.gatewayNeeded ? {
             title: t.workspace.gatewayPromptTitle,
+            description: workspace.gatewayPromptVariant === 'deploy'
+              ? `${t.workspace.gatewayPromptDescription} ${t.workspace.gatewayPromptDeployHint}`
+              : t.workspace.gatewayPromptDescription,
             docs: t.workspace.gatewayPromptDocs,
             docsUrl: makersModelsDocsUrl,
             apiKey: t.workspace.gatewayPromptApiKey,
             continue: t.workspace.gatewayPromptContinue,
             skip: t.workspace.gatewayPromptSkip,
           } : null}
+          gatewayChip={workspace.gatewayDeferred && !workspace.gatewayNeeded
+            ? t.workspace.gatewayPromptChip
+            : null}
+          gatewaySaved={workspace.gatewayConfigured && !workspace.gatewayNeeded
+            ? t.workspace.gatewayPromptSaved
+            : null}
           gatewayBusy={workspace.gatewayBusy}
           onGatewaySubmit={(values) => {
             const apiKey = values.apiKey.trim();
-            if (!apiKey || live.loading || workspace.gatewayBusy) return;
-            void live.sendMessage(`${t.workspace.gatewayPromptApiKey}: ${maskApiKey(apiKey)}`, { apiKey });
+            if (!apiKey || workspace.gatewayBusy) return;
+            void live.applyGateway({ apiKey });
           }}
           onGatewaySkip={() => {
-            if (live.loading || workspace.gatewayBusy) return;
-            void live.sendMessage(t.workspace.gatewayPromptSkip, { gatewaySkip: true });
+            if (workspace.gatewayBusy) return;
+            void live.applyGateway({ skip: true });
+          }}
+          onGatewayReopen={() => {
+            workspace.setGatewayNeeded(true);
           }}
         />}
 

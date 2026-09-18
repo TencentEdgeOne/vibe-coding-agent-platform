@@ -27,6 +27,9 @@ export function useWorkspaceState() {
   const [resultPanelOpen, setResultPanelOpen] = useState(false);
   const [dismissedDeployTurnId, setDismissedDeployTurnId] = useState('');
   const [gatewayNeeded, setGatewayNeeded] = useState(false);
+  const [gatewayDeferred, setGatewayDeferred] = useState(false);
+  const [gatewayConfigured, setGatewayConfigured] = useState(false);
+  const [gatewayPromptVariant, setGatewayPromptVariant] = useState<'default' | 'deploy'>('default');
   const [gatewayBusy, setGatewayBusy] = useState(false);
 
   const resetWorkspace = useCallback(() => {
@@ -39,6 +42,9 @@ export function useWorkspaceState() {
     setResultPanelOpen(false);
     setDismissedDeployTurnId('');
     setGatewayNeeded(false);
+    setGatewayDeferred(false);
+    setGatewayConfigured(false);
+    setGatewayPromptVariant('default');
     setGatewayBusy(false);
     setSandboxTab(null);
   }, []);
@@ -98,6 +104,12 @@ export function useWorkspaceState() {
     setDismissedDeployTurnId,
     gatewayNeeded,
     setGatewayNeeded,
+    gatewayDeferred,
+    setGatewayDeferred,
+    gatewayConfigured,
+    setGatewayConfigured,
+    gatewayPromptVariant,
+    setGatewayPromptVariant,
     gatewayBusy,
     setGatewayBusy,
     resetWorkspace,

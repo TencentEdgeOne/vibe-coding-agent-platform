@@ -20,12 +20,12 @@ import type {
   ChatMessage,
   ChatResponse,
   ChatStreamEvent,
-  SessionPrepData,
   SessionPrepStage,
   SessionStreamEvent,
 } from '@/app/types/workspace';
 import { consumeEventStream } from '../sse';
 import {
+  applyGatewayDecision,
   openSessionStream,
   startDeployTurn,
   startPromptTurn,
@@ -44,49 +44,6 @@ type LiveCopy = {
   agentFlowEnded: string;
 };
 
-type PrepStageCopy = Record<SessionPrepStage, string>;
-
-function sessionPrepToChatEvents(
-  data: SessionPrepData,
-  labels: PrepStageCopy,
-): ChatStreamEvent[] {
-  if (data.stage === 'ready') {
-    return (['conversation', 'sandbox', 'agent'] as const).map((stage) => ({
-      type: 'tool_result' as const,
-      data: {
-        id: `session-prep-${stage}`,
-        ok: true,
-        status: 'completed' as const,
-        endedAt: Date.now(),
-      },
-    }));
-  }
-
-  const id = `session-prep-${data.stage}`;
-  const label = labels[data.stage] || data.stage;
-  if (data.status === 'running') {
-    return [{
-      type: 'tool_use',
-      data: {
-        id,
-        name: 'environment',
-        inputSummary: label,
-        startedAt: Date.now(),
-      },
-    }];
-  }
-
-  return [{
-    type: 'tool_result',
-    data: {
-      id,
-      ok: data.status === 'done',
-      status: data.status === 'failed' ? 'failed' : 'completed',
-      endedAt: Date.now(),
-    },
-  }];
-}
-
 export function useLiveTurn(options: {
   language: Locale;
   model: string;
@@ -94,9 +51,6 @@ export function useLiveTurn(options: {
     response: LiveCopy;
     workspace: {
       deployRequest: string;
-      gatewayPromptApiKey: string;
-      gatewayPromptSkip: string;
-      prepStages: PrepStageCopy;
     };
   };
   workspace: WorkspaceStateApi;
@@ -125,6 +79,8 @@ export function useLiveTurn(options: {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [sessionPreparing, setSessionPreparing] = useState(false);
+  const [prepStage, setPrepStage] = useState<SessionPrepStage | null>(null);
   const messagesRef = useRef<ChatMessage[]>([]);
   const modelRef = useRef(model);
   const chatAbortControllerRef = useRef<AbortController | null>(null);
@@ -264,11 +220,20 @@ export function useLiveTurn(options: {
       if (event.type === 'gateway_credentials') {
         if (event.data?.status === 'needed') {
           workspace.setGatewayNeeded(true);
+          workspace.setGatewayDeferred(false);
           workspace.setGatewayBusy(false);
         }
         if (event.data?.status === 'resolved') {
           workspace.setGatewayNeeded(false);
           workspace.setGatewayBusy(false);
+          if (event.data.skipped) {
+            workspace.setGatewayDeferred(true);
+            workspace.setGatewayConfigured(false);
+          } else {
+            workspace.setGatewayDeferred(false);
+            workspace.setGatewayConfigured(true);
+            workspace.setGatewayPromptVariant('default');
+          }
         }
         return;
       }
@@ -401,22 +366,16 @@ export function useLiveTurn(options: {
 
   async function sendMessage(message: string, sendOptions: {
     deploy?: boolean;
-    apiKey?: string;
-    gatewaySkip?: boolean;
   } = {}) {
     const trimmed = message.trim();
     if (!trimmed || loading) return;
 
-    const extractedKey = sendOptions.apiKey
-      ? undefined
-      : extractApiKeyFromUserText(trimmed);
-    const inboundApiKey = sendOptions.apiKey || extractedKey?.apiKey;
+    const extractedKey = extractApiKeyFromUserText(trimmed);
+    const inboundApiKey = extractedKey?.apiKey;
     const displayMessage = extractedKey?.maskedText || trimmed;
 
     const isDeploy = sendOptions.deploy === true;
-    const isGatewayCard = Boolean(sendOptions.apiKey || sendOptions.gatewaySkip);
-    const isGatewayContinue = Boolean(inboundApiKey || sendOptions.gatewaySkip);
-    const isStartingFromHome = !isDeploy && !isGatewayCard
+    const isStartingFromHome = !isDeploy
       && messages.length === 0
       && !preview.preview
       && !workspace.deployment
@@ -438,8 +397,7 @@ export function useLiveTurn(options: {
     const assistantMessageId = createMessageId('assistant');
     activeTurnIdRef.current = assistantMessageId;
 
-    setMessages((current) => [
-      ...current,
+    const turnMessages: ChatMessage[] = [
       { id: userMessageId, role: 'user', content: displayMessage },
       {
         id: assistantMessageId,
@@ -448,16 +406,20 @@ export function useLiveTurn(options: {
         activities: [],
         status: 'running',
       },
-    ]);
+    ];
+    if (!isStartingFromHome) {
+      setMessages((current) => [...current, ...turnMessages]);
+    }
     if (!isDeploy) {
       workspace.setFilesRefreshing(true);
-      if (!isGatewayCard) setInput('');
+      setInput('');
     }
-    if (isGatewayContinue) {
+    if (inboundApiKey) {
       workspace.setGatewayNeeded(false);
       workspace.setGatewayBusy(false);
     }
     setLoading(true);
+    if (isStartingFromHome) setSessionPreparing(true);
 
     try {
       const requestAbortController = new AbortController();
@@ -481,31 +443,18 @@ export function useLiveTurn(options: {
               && resumeType.includes('text/event-stream')
             ) {
               await consumeEventStream<SessionStreamEvent>(resumeResponse, (event) => {
-                if (event.type !== 'session_prep' || !event.data) return;
-                const prepEvents = sessionPrepToChatEvents(event.data, t.workspace.prepStages);
-                setMessages((current) =>
-                  current.map((item) => {
-                    if (item.id !== assistantMessageId) return item;
-                    let activities = item.activities ?? [];
-                    for (const prepEvent of prepEvents) {
-                      const folded = applyStreamEvent({
-                        id: item.id,
-                        user: '',
-                        assistant: item.content,
-                        status: 'completed',
-                        createdAt: 0,
-                        activities,
-                      } satisfies PersistedActivityTurn, prepEvent);
-                      activities = folded.activities;
-                    }
-                    return { ...item, activities };
-                  }),
-                );
+                if (event.type !== 'session_prep' || !event.data?.stage) return;
+                if (event.data.status === 'running' || event.data.stage === 'ready') {
+                  setPrepStage(event.data.stage);
+                }
               });
             }
           } catch (error) {
             if (error instanceof Error && error.name === 'AbortError') throw error;
           }
+          setMessages(turnMessages);
+          setSessionPreparing(false);
+          setPrepStage(null);
         }
       const response = isDeploy
         ? await startDeployTurn({
@@ -513,7 +462,6 @@ export function useLiveTurn(options: {
             turnId: assistantMessageId,
             language,
             ...(inboundApiKey ? { apiKey: inboundApiKey } : {}),
-            ...(sendOptions.gatewaySkip ? { gatewaySkip: true } : {}),
             signal: requestAbortController.signal,
           })
         : await startPromptTurn({
@@ -523,7 +471,6 @@ export function useLiveTurn(options: {
             model: modelRef.current,
             language,
             ...(inboundApiKey ? { apiKey: inboundApiKey } : {}),
-            ...(sendOptions.gatewaySkip ? { gatewaySkip: true } : {}),
             signal: requestAbortController.signal,
           });
       await attachChatStream({
@@ -534,6 +481,8 @@ export function useLiveTurn(options: {
       });
     } catch (error) {
       if ((error instanceof Error && error.name === 'AbortError') || stoppingRef.current) {
+        setSessionPreparing(false);
+        setPrepStage(null);
         setLoading(false);
         workspace.setFilesRefreshing(false);
         chatAbortControllerRef.current = null;
@@ -554,6 +503,8 @@ export function useLiveTurn(options: {
         ),
       );
       setLoading(false);
+      setSessionPreparing(false);
+      setPrepStage(null);
       workspace.setFilesRefreshing(false);
       chatAbortControllerRef.current = null;
       activeTurnIdRef.current = '';
@@ -569,6 +520,8 @@ export function useLiveTurn(options: {
     const stopped = markLastTurnStopped(messagesRef.current, stoppedText);
     setMessages(stopped.messages);
     setLoading(false);
+    setSessionPreparing(false);
+    setPrepStage(null);
     workspace.setFilesRefreshing(false);
     workspace.setGatewayNeeded(false);
     workspace.setGatewayBusy(false);
@@ -587,6 +540,60 @@ export function useLiveTurn(options: {
     return stopRequest;
   }
 
+  async function applyGateway(decision: { apiKey?: string; skip?: boolean }) {
+    if (workspace.gatewayBusy) return;
+    const cid = conversationIdRef.current || conversationId;
+    if (!cid) return;
+    const apiKey = (decision.apiKey || '').trim();
+    if (!decision.skip && !apiKey) return;
+
+    workspace.setGatewayBusy(true);
+    try {
+      const response = await applyGatewayDecision({
+        conversationId: cid,
+        ...(apiKey ? { apiKey } : {}),
+        ...(decision.skip ? { gatewaySkip: true } : {}),
+      });
+      const data = await response.json().catch(() => null) as {
+        ok?: boolean;
+        live?: boolean;
+        skipped?: boolean;
+        configured?: boolean;
+        preview?: {
+          url?: string;
+          sandboxDebugUrl?: string;
+          kind?: 'sandbox' | 'makers';
+          restarted?: boolean;
+        };
+        download?: { url?: string; filename?: string };
+      } | null;
+      if (!response.ok || !data?.ok) {
+        workspace.setGatewayBusy(false);
+        return;
+      }
+      if (decision.skip) {
+        workspace.setGatewayNeeded(false);
+        workspace.setGatewayDeferred(true);
+        workspace.setGatewayConfigured(false);
+      } else {
+        workspace.setGatewayNeeded(false);
+        workspace.setGatewayDeferred(false);
+        workspace.setGatewayConfigured(true);
+        workspace.setGatewayPromptVariant('default');
+      }
+      workspace.setGatewayBusy(false);
+      if (data.preview && !data.live) {
+        preview.activatePreview(data.preview, new Map());
+      }
+      if (data.download) {
+        workspace.setDownload(data.download);
+      }
+      void snapshot.refresh(cid);
+    } catch {
+      workspace.setGatewayBusy(false);
+    }
+  }
+
   return {
     messages,
     setMessages,
@@ -601,7 +608,12 @@ export function useLiveTurn(options: {
     stoppingRef,
     startLiveChatSessionRef,
     sendMessage,
+    applyGateway,
     stopCurrentTask,
+    sessionPreparing,
+    setSessionPreparing,
+    prepStage,
+    setPrepStage,
   };
 }
 

@@ -13,7 +13,7 @@ import {
   DEFAULT_AI_GATEWAY_BASE_URL,
   GATEWAY_CREDENTIALS_PAUSE_MESSAGE,
   applyUserGatewayDecision,
-  buildRequestGatewayCredentialsTool,
+  askUserForGatewayCredentials,
   declaredGatewayKeys,
   envAssignmentValue,
   gatewayBaseUrlForAgentFramework,
@@ -22,7 +22,10 @@ import {
   readProjectGatewayEnv,
   sandboxGatewayKeyIsSet,
   shouldPauseForGatewayCredentials,
+  writeSuggestsAiGatewayProject,
 } from '../agents/_lib/project/gateway.ts';
+import { buildLoadMakersSkillTool } from '../agents/_lib/tools/makers-skills.ts';
+import { buildWriteProjectFileTool } from '../agents/_lib/tools/project-tools.ts';
 import { projectState } from './helpers/fixtures.ts';
 
 function sandboxFiles(initial: Array<[string, string]>) {
@@ -43,6 +46,10 @@ function sandboxFiles(initial: Array<[string, string]>) {
           exists: async (target: string) => files.has(target) || [...files.keys()].some((path) => (
             path === target || path.startsWith(`${target}/`)
           )),
+          makeDir: async () => undefined,
+        },
+        commands: {
+          run: async () => ({ stdout: '', stderr: '', exitCode: 0 }),
         },
       },
     },
@@ -114,6 +121,13 @@ test('a provided key is written to .env and a skip is not', async () => {
   );
   assert.equal(state.gatewayPromptPending, false);
   assert.equal(state.gatewaySkipped, false);
+  assert.deepEqual(
+    await readProjectGatewayEnv(context, projectState()),
+    {
+      AI_GATEWAY_API_KEY: 'sk-user',
+      AI_GATEWAY_BASE_URL: DEFAULT_AI_GATEWAY_BASE_URL,
+    },
+  );
 
   const skipped = projectState();
   assert.deepEqual(
@@ -151,7 +165,7 @@ test('a claude-agent-sdk project gets the origin without /v1', async () => {
   );
 });
 
-test('preview pauses when an AI project has no key and continues after skip', async () => {
+test('an AI project without a key is offered the card and dest is not blocked', async () => {
   const { context } = sandboxFiles([
     ['projects/demo/app/.env.example', 'AI_GATEWAY_API_KEY=\nAI_GATEWAY_BASE_URL=\n'],
   ]);
@@ -176,76 +190,107 @@ test('preview pauses when an AI project has no key and continues after skip', as
   assert.equal(await pauseForGatewayCredentialsIfNeeded(context, state), '');
 });
 
-test('request_gateway_credentials asks once and does not wait', async () => {
-  const { context } = sandboxFiles([
-    ['projects/demo/app/.env.example', 'AI_GATEWAY_API_KEY=\nAI_GATEWAY_BASE_URL=\n'],
+test('the coding agent has no request_gateway_credentials tool', async () => {
+  const [assemble, gateway, prompt, chat] = await Promise.all([
+    readFile('agents/_lib/tools/assemble.ts', 'utf8'),
+    readFile('agents/_lib/project/gateway.ts', 'utf8'),
+    readFile('agents/_lib/prompt.ts', 'utf8'),
+    readFile('agents/_lib/turn/chat.ts', 'utf8'),
   ]);
+  assert.doesNotMatch(assemble, /request_gateway_credentials/);
+  assert.doesNotMatch(assemble, /buildRequestGatewayCredentialsTool/);
+  assert.doesNotMatch(gateway, /buildRequestGatewayCredentialsTool/);
+  assert.doesNotMatch(gateway, /defineClaudeTool/);
+  assert.doesNotMatch(prompt, /request_gateway_credentials/);
+  assert.doesNotMatch(chat, /isRequestGatewayCredentialsTool/);
+  assert.doesNotMatch(chat, /hiddenToolUseIds/);
+});
+
+test('loading makers-agents offers the gateway card without ending the turn', async () => {
   const events: Array<Record<string, unknown>> = [];
   const state = projectState();
-  const tool = buildRequestGatewayCredentialsTool({
-    context,
+  const tool = buildLoadMakersSkillTool({
+    context: { sandbox: { files: {} } } as never,
     state,
-    conversationId: 'conv-tool',
+    conversationId: 'conv-skill',
     send: (event) => { events.push(event); },
   });
 
-  const first = await tool.handler({}, {});
-  const text = first.content?.[0] && 'text' in first.content[0]
-    ? String(first.content[0].text)
+  const result = await tool.handler({ skill: 'makers-agents' }, {});
+  const text = result.content?.[0] && 'text' in result.content[0]
+    ? String(result.content[0].text)
     : '';
-  assert.match(text, /askedUser/);
-  assert.equal(events.length, 1);
+  assert.match(text, /makers-agents|SKILL/);
+  assert.equal(events[0]?.type, 'gateway_credentials');
+  assert.equal((events[0]?.data as { status?: string })?.status, 'needed');
   assert.equal(state.gatewayPromptPending, true);
-
-  const configured = sandboxFiles([
-    ['projects/demo/app/.env.example', 'AI_GATEWAY_API_KEY=\nAI_GATEWAY_BASE_URL=\n'],
-    ['projects/demo/app/.env', `AI_GATEWAY_API_KEY=sk-user\nAI_GATEWAY_BASE_URL=${DEFAULT_AI_GATEWAY_BASE_URL}\n`],
-  ]);
-  const ready = buildRequestGatewayCredentialsTool({
-    context: configured.context,
-    state: projectState(),
-  });
-  const readyResult = await ready.handler({}, {});
-  const readyText = readyResult.content?.[0] && 'text' in readyResult.content[0]
-    ? String(readyResult.content[0].text)
-    : '';
-  assert.match(readyText, /configured": true/);
-
-  const skippedState = projectState('projects/demo', { gatewaySkipped: true });
-  const skippedTool = buildRequestGatewayCredentialsTool({
-    context,
-    state: skippedState,
-  });
-  const skippedResult = await skippedTool.handler({}, {});
-  const skippedText = skippedResult.content?.[0] && 'text' in skippedResult.content[0]
-    ? String(skippedResult.content[0].text)
-    : '';
-  assert.match(skippedText, /skipped": true/);
-  assert.match(skippedText, /not a preview or deploy failure/);
-  assert.deepEqual(
-    await readProjectGatewayEnv(configured.context, projectState()),
-    {
-      AI_GATEWAY_API_KEY: 'sk-user',
-      AI_GATEWAY_BASE_URL: DEFAULT_AI_GATEWAY_BASE_URL,
-    },
-  );
 });
 
-test('the conversation card asks for API Key and submits a masked chat turn', async () => {
-  const [conversation, screen, live, api] = await Promise.all([
+test('writing agents/ or a gateway .env.example offers the card immediately', async () => {
+  const { context } = sandboxFiles([
+    ['projects/demo/app/package.json', JSON.stringify({ dependencies: { '@openai/agents': 'latest' } })],
+  ]);
+  const events: Array<Record<string, unknown>> = [];
+  const state = projectState();
+  const tool = buildWriteProjectFileTool(
+    context,
+    state,
+    undefined,
+    {
+      conversationId: 'conv-write',
+      send: (event) => { events.push(event); },
+    },
+  );
+
+  assert.equal(writeSuggestsAiGatewayProject('agents/chat.ts', 'export {}'), true);
+  assert.equal(writeSuggestsAiGatewayProject('.env.example', 'AI_GATEWAY_API_KEY=\n'), true);
+  assert.equal(writeSuggestsAiGatewayProject('src/App.tsx', 'export default () => null;\n'), false);
+
+  const result = await tool.handler({
+    path: 'agents/chat.ts',
+    content: 'export async function onRequest() { return new Response("ok"); }\n',
+  }, {});
+  assert.equal(result.isError, undefined);
+  assert.equal(events[0]?.type, 'gateway_credentials');
+  assert.equal(state.gatewayPromptPending, true);
+
+  const later = sandboxFiles([
+    ['projects/demo/app/src/App.tsx', 'export default () => null;\n'],
+  ]);
+  const quietEvents: Array<Record<string, unknown>> = [];
+  const quiet = buildWriteProjectFileTool(
+    later.context,
+    projectState(),
+    undefined,
+    { send: (event) => { quietEvents.push(event); } },
+  );
+  await quiet.handler({ path: 'src/App.tsx', content: 'export default () => null;\n' }, {});
+  assert.equal(quietEvents.length, 0);
+});
+
+test('the conversation card is visible while generating and submits without a chat turn', async () => {
+  const [conversation, screen, live, api, promptRoute, apply] = await Promise.all([
     readFile('app/components/agent-conversation.tsx', 'utf8'),
     readFile('app/features/workspace/workspace-screen.tsx', 'utf8'),
     readFile('app/features/workspace/hooks/use-live-turn.ts', 'utf8'),
     readFile('app/features/workspace/workspace-api.ts', 'utf8'),
+    readFile('agents/prompt.ts', 'utf8'),
+    readFile('agents/_lib/session/gateway-apply.ts', 'utf8'),
   ]);
   const card = conversation.slice(
     conversation.indexOf('className="gateway-prompt"'),
     conversation.indexOf('className="gateway-prompt-actions"'),
   );
 
-  assert.equal(TRANSLATIONS.zh.workspace.gatewayPromptTitle, '集成 Models 调用大模型');
-  assert.equal(TRANSLATIONS.zh.workspace.gatewayPromptDocs, '如何获取');
-  assert.equal(TRANSLATIONS.en.workspace.gatewayPromptDocs, 'How to get them');
+  assert.equal(TRANSLATIONS.zh.workspace.gatewayPromptTitle, '启用 AI 对话');
+  assert.equal(
+    TRANSLATIONS.zh.workspace.gatewayPromptDescription,
+    '添加 Models API 密钥，即可在预览中试用对话。密钥只保存在此项目中，无需登录。',
+  );
+  assert.equal(TRANSLATIONS.zh.workspace.gatewayPromptSkip, '稍后');
+  assert.equal(TRANSLATIONS.zh.workspace.gatewayPromptContinue, '添加');
+  assert.equal(TRANSLATIONS.zh.workspace.gatewayPromptDocs, '如何获取密钥');
+  assert.equal(TRANSLATIONS.en.workspace.gatewayPromptDocs, 'How to get a key');
   assert.equal(
     getMakersModelsDocsUrl('edgeone.dev'),
     'https://pages.edgeone.ai/document/models',
@@ -261,18 +306,38 @@ test('the conversation card asks for API Key and submits a masked chat turn', as
   assert.match(screen, /docsUrl: makersModelsDocsUrl/);
   assert.match(screen, /setMakersModelsDocsUrl\(getMakersModelsDocsUrl\(domain\)\)/);
   assert.match(card, /gatewayPrompt\.title/);
+  assert.match(card, /gatewayPrompt\.description/);
   assert.match(card, /href=\{gatewayPrompt\.docsUrl\}/);
   assert.match(card, /gatewayPrompt\.apiKey/);
   assert.doesNotMatch(card, /gatewayPrompt\.baseUrl/);
   assert.equal(DEFAULT_AI_GATEWAY_BASE_URL, 'https://ai-gateway.edgeone.link/v1');
   assert.equal(AI_GATEWAY_ORIGIN, 'https://ai-gateway.edgeone.link');
-  assert.match(screen, /maskApiKey\(apiKey\)/);
+  assert.match(screen, /gatewayPrompt=\{workspace\.gatewayNeeded \? \{/);
+  assert.doesNotMatch(screen, /gatewayNeeded && !live\.loading/);
+  assert.match(screen, /live\.applyGateway\(\{ apiKey \}\)/);
+  assert.match(screen, /live\.applyGateway\(\{ skip: true \}\)/);
+  assert.doesNotMatch(screen, /sendMessage\(`\$\{t\.workspace\.gatewayPromptApiKey\}/);
+  assert.doesNotMatch(screen, /sendMessage\(t\.workspace\.gatewayPromptSkip/);
+  assert.match(conversation, /className="gateway-prompt-chip"/);
+  assert.match(live, /async function applyGateway/);
+  assert.match(live, /if \(!trimmed \|\| loading\) return/);
   assert.match(live, /extractApiKeyFromUserText\(trimmed\)/);
   assert.match(live, /inboundApiKey \? \{ apiKey: inboundApiKey \}/);
-  assert.match(screen, /sendMessage\(`\$\{t\.workspace\.gatewayPromptApiKey\}: \$\{maskApiKey\(apiKey\)\}`, \{ apiKey \}\)/);
-  assert.match(screen, /sendMessage\(t\.workspace\.gatewayPromptSkip, \{ gatewaySkip: true \}\)/);
-  assert.doesNotMatch(api, /gateway-credentials/);
-  assert.match(api, /options\.apiKey \? \{ apiKey: options\.apiKey \}/);
+  assert.match(api, /function applyGatewayDecision/);
+  const applyClient = api.slice(
+    api.indexOf('export function applyGatewayDecision'),
+    api.indexOf('export function startPromptTurn'),
+  );
+  assert.doesNotMatch(applyClient, /message:/);
+  const promptTurn = api.slice(
+    api.indexOf('export function startPromptTurn'),
+    api.indexOf('export function startDeployTurn'),
+  );
+  assert.doesNotMatch(promptTurn, /gatewaySkip/);
+  assert.match(promptRoute, /!message && \(apiKey \|\| gatewaySkip\)/);
+  assert.match(promptRoute, /applyGatewayDecisionAndRespond/);
+  assert.doesNotMatch(apply, /createChatTask/);
+  assert.match(apply, /getLiveWorkspace/);
   const finalize = live.slice(
     live.indexOf('const finalizeAssistant'),
     live.indexOf('const applyResponse'),
@@ -282,50 +347,27 @@ test('the conversation card asks for API Key and submits a masked chat turn', as
   assert.match(live, /workspace\.setGatewayNeeded\(true\)/);
 });
 
-test('the API key card waits until the assistant turn has finished', async () => {
-  const [conversation, screen] = await Promise.all([
-    readFile('app/components/agent-conversation.tsx', 'utf8'),
-    readFile('app/features/workspace/workspace-screen.tsx', 'utf8'),
-  ]);
-
-  // The tool asks mid-stream, but showing the card then greys it out for the
-  // last few seconds of copy. Hold it until loading is false so it appears
-  // ready to type into.
-  assert.match(screen, /gatewayPrompt=\{workspace\.gatewayNeeded && !live\.loading \? \{/);
-  assert.match(conversation, /autoFocus/);
-  assert.match(conversation, /disabled=\{gatewayBusy\}/);
-});
-
-test('a turn waiting for the API key is completed, not a red error', async () => {
-  const [chat, helpers, prompt] = await Promise.all([
+test('a missing key no longer stops the turn or preview', async () => {
+  const [chat, prompt, commands] = await Promise.all([
     readFile('agents/_lib/turn/chat.ts', 'utf8'),
-    readFile('agents/_lib/turn/checkpoint.ts', 'utf8'),
     readFile('agents/_lib/prompt.ts', 'utf8'),
+    readFile('agents/_lib/tools/commands-wrap.ts', 'utf8'),
   ]);
-  const pause = chat.slice(
-    chat.indexOf('if (state.gatewayPromptPending)'),
-    chat.indexOf('const sanitizedModelOutput'),
-  );
 
-  assert.match(helpers, /GATEWAY_CREDENTIALS_USER_REPLY/);
-  assert.match(pause, /GATEWAY_CREDENTIALS_USER_REPLY\[replyLocale\]/);
-  assert.match(pause, /type: 'gateway_credentials'/);
-  assert.match(pause, /status: 'needed'/);
-  assert.match(pause, /ok: true,\s*\n\s*reply: pauseReply/);
-  // The card is gated on result/loading, so a Blob snapshot that hangs or
-  // fails must not sit in front of that event. Persist after it, unawaited.
-  assert.match(pause, /withSnapshot: false/);
-  assert.match(pause, /void checkpoint\.flush\(\)/);
-  assert.ok(
-    pause.indexOf("type: 'result'") < pause.indexOf('void checkpoint.flush()'),
-    'result must go out before snapshot persist, or the card waits on Blob',
-  );
-  assert.doesNotMatch(pause, /await checkpoint\.flush\(\)/);
-  assert.match(prompt, /do not say the preview is ready/);
-  assert.match(prompt, /preview and deploy must still run/);
+  assert.doesNotMatch(chat, /if \(state\.gatewayPromptPending\)/);
+  assert.doesNotMatch(chat, /GATEWAY_CREDENTIALS_USER_REPLY/);
+  assert.match(chat, /bindLiveWorkspace/);
+  assert.match(prompt, /Do not stop this turn/);
+  assert.doesNotMatch(prompt, /do not say the preview is ready/);
+  assert.doesNotMatch(prompt, /stop this turn: do not start a preview/);
+  assert.doesNotMatch(prompt, /request_gateway_credentials/);
+  assert.match(prompt, /A missing key is not a preview or deploy failure/);
+  assert.match(commands, /isDeploymentCommand/);
+  assert.match(commands, /askUserForGatewayCredentials/);
+  assert.match(commands, /pauseForGatewayCredentialsIfNeeded/);
 });
 
-test('the host writes .env from a chat sentence, not only from the card', async () => {
+test('the host still writes .env from a chat sentence', async () => {
   const [chat, tasks, prompt] = await Promise.all([
     readFile('agents/_lib/turn/chat.ts', 'utf8'),
     readFile('agents/_lib/session/task.ts', 'utf8'),
@@ -335,4 +377,43 @@ test('the host writes .env from a chat sentence, not only from the card', async 
   assert.match(tasks, /resolveGatewayUserTurn\(message, options\.apiKey\)/);
   assert.match(prompt, /natural language/);
   assert.match(prompt, /配置好并重新预览/);
+});
+
+test('applying a key or skip emits gateway_credentials resolved', async () => {
+  const { context } = sandboxFiles([
+    ['projects/demo/app/.env.example', 'AI_GATEWAY_API_KEY=\nAI_GATEWAY_BASE_URL=\n'],
+  ]);
+  const events: Array<Record<string, unknown>> = [];
+  const state = projectState();
+  await applyUserGatewayDecision(context, state, 'conv-resolved', { apiKey: 'sk-user' }, (event) => {
+    events.push(event);
+  });
+  assert.equal(events.some((event) => (
+    event.type === 'gateway_credentials'
+    && (event.data as { status?: string })?.status === 'resolved'
+  )), true);
+
+  const skippedEvents: Array<Record<string, unknown>> = [];
+  await applyUserGatewayDecision(context, projectState(), 'conv-skip', { skip: true }, (event) => {
+    skippedEvents.push(event);
+  });
+  assert.equal((skippedEvents[0]?.data as { skipped?: boolean })?.skipped, true);
+});
+
+test('askUserForGatewayCredentials does not re-ask after skip', async () => {
+  const { context } = sandboxFiles([
+    ['projects/demo/app/.env.example', 'AI_GATEWAY_API_KEY=\nAI_GATEWAY_BASE_URL=\n'],
+  ]);
+  const events: Array<Record<string, unknown>> = [];
+  const state = projectState();
+  await askUserForGatewayCredentials(context, state, {
+    send: (event) => { events.push(event); },
+  });
+  assert.equal(events.length, 1);
+  assert.equal(state.gatewayPromptPending, true);
+  state.gatewaySkipped = true;
+  await askUserForGatewayCredentials(context, state, {
+    send: (event) => { events.push(event); },
+  });
+  assert.equal(events.length, 1);
 });

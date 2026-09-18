@@ -69,6 +69,23 @@ export function fetchModelCatalog(signal?: AbortSignal) {
     .catch(() => null);
 }
 
+export function applyGatewayDecision(options: {
+  conversationId: string;
+  apiKey?: string;
+  gatewaySkip?: boolean;
+  signal?: AbortSignal;
+}) {
+  return fetch('/prompt', {
+    method: 'POST',
+    headers: conversationHeaders(options.conversationId),
+    body: JSON.stringify({
+      ...(options.apiKey ? { apiKey: options.apiKey } : {}),
+      ...(options.gatewaySkip ? { gatewaySkip: true } : {}),
+    }),
+    signal: options.signal,
+  });
+}
+
 export function startPromptTurn(options: {
   conversationId: string;
   message: string;
@@ -76,7 +93,6 @@ export function startPromptTurn(options: {
   model?: string;
   language?: Locale;
   apiKey?: string;
-  gatewaySkip?: boolean;
   signal?: AbortSignal;
 }) {
   return fetch('/prompt', {
@@ -88,7 +104,6 @@ export function startPromptTurn(options: {
       ...(options.model ? { model: options.model } : {}),
       ...(options.language ? { language: options.language } : {}),
       ...(options.apiKey ? { apiKey: options.apiKey } : {}),
-      ...(options.gatewaySkip ? { gatewaySkip: true } : {}),
     }),
     signal: options.signal,
   });
@@ -99,7 +114,6 @@ export function startDeployTurn(options: {
   turnId: string;
   language?: Locale;
   apiKey?: string;
-  gatewaySkip?: boolean;
   signal?: AbortSignal;
 }) {
   return fetch('/deploy', {
@@ -109,7 +123,6 @@ export function startDeployTurn(options: {
       turnId: options.turnId,
       ...(options.language ? { language: options.language } : {}),
       ...(options.apiKey ? { apiKey: options.apiKey } : {}),
-      ...(options.gatewaySkip ? { gatewaySkip: true } : {}),
     }),
     signal: options.signal,
   });

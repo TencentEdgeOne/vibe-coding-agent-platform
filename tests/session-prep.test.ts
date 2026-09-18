@@ -12,6 +12,7 @@ import {
 import { getConversationRecord } from '../agents/_lib/session/store.ts';
 import { sseEvent } from '../agents/_lib/runtime/sse.ts';
 import type { AgentContext } from '../agents/_lib/runtime/context.ts';
+import { prepStageRange } from '../app/features/workspace/session-prep-progress.ts';
 
 function fakeContext() {
   const blobStore = createMemoryBlobStore();
@@ -32,6 +33,18 @@ function fakeContext() {
     made,
   };
 }
+
+test('session prep progress never jumps backward between stages', () => {
+  let previous = 0;
+  for (const stage of ['conversation', 'sandbox', 'agent', 'workspace', 'preview', 'ready'] as const) {
+    const range = prepStageRange(stage);
+    assert.ok(range.floor >= previous, `${stage} floor ${range.floor} went backward from ${previous}`);
+    assert.ok(range.ceiling >= range.floor);
+    previous = range.floor;
+  }
+  assert.equal(prepStageRange('ready').floor, 100);
+  assert.equal(prepStageRange(null).floor, prepStageRange('conversation').floor);
+});
 
 test('session_prep events name the stage and status, not a user-facing sentence', () => {
   const payload = sessionPrepSse('create', 'sandbox', 'running');
@@ -169,20 +182,40 @@ test('frontend copy names each session prep stage in both languages', async () =
   assert.match(i18n, /Creating the conversation/);
   assert.match(i18n, /正在唤醒编码代理/);
   assert.match(i18n, /Waking the coding agent/);
+  assert.match(i18n, /正在准备环境/);
+  assert.match(i18n, /Preparing the environment/);
 });
 
-test('the workspace consumes session_prep instead of draining the stream', async () => {
-  const [api, liveTurn, resume] = await Promise.all([
+test('the workspace consumes session_prep as a loading screen, not a chat turn', async () => {
+  const [api, liveTurn, resume, screen] = await Promise.all([
     readFile('app/features/workspace/workspace-api.ts', 'utf8'),
     readFile('app/features/workspace/hooks/use-live-turn.ts', 'utf8'),
     readFile('app/features/workspace/hooks/use-session-resume.ts', 'utf8'),
+    readFile('app/features/workspace/workspace-screen.tsx', 'utf8'),
   ]);
   assert.match(api, /params\.set\('model'/);
   assert.match(api, /params\.set\('language'/);
   assert.match(api, /params\.set\('mode'/);
   assert.match(liveTurn, /mode: 'create'/);
-  assert.match(liveTurn, /sessionPrepToChatEvents/);
+  assert.match(liveTurn, /setSessionPreparing\(true\)/);
+  assert.match(liveTurn, /setPrepStage\(event\.data\.stage\)/);
+  assert.doesNotMatch(liveTurn, /sessionPrepToChatEvents/);
+  assert.doesNotMatch(liveTurn, /name: 'environment'/);
   assert.doesNotMatch(liveTurn, /consumeEventStream\(resumeResponse, \(\) => \{\}\)/);
   assert.match(resume, /mode: 'restore'/);
   assert.match(resume, /setPrepStage\(event\.data\.stage\)/);
+  assert.match(screen, /live\.sessionPreparing/);
+  assert.match(screen, /SessionPrepLoading/);
+  assert.match(screen, /t\.workspace\.preparing/);
+  const loading = await readFile(
+    'app/features/workspace/components/session-prep-loading.tsx',
+    'utf8',
+  );
+  assert.match(loading, /role="progressbar"/);
+  assert.match(loading, /usePrepProgress/);
+  const css = await readFile('app/styles/workspace.css', 'utf8');
+  assert.match(css, /\.session-prep-bar-fill/);
+  assert.match(css, /@keyframes session-prep-sheen/);
+  assert.match(resume, /if \(!restored\) \{[\s\S]*?setResumeChecked\(true\)/);
+  assert.match(resume, /finally \{[\s\S]*setResumeChecked\(true\)/);
 });

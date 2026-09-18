@@ -29,16 +29,6 @@ export const STOPPED_TURN_REPLY: Readonly<Record<ReplyLocale, string>> = {
   en: 'Generation stopped. You can continue with another change.',
 };
 
-/**
- * A turn that stopped so the user can type a Models API key. Same contract as
- * a question turn: the project may already be on disk, preview is intentionally
- * not up, and that must not read as a failed build.
- */
-export const GATEWAY_CREDENTIALS_USER_REPLY: Readonly<Record<ReplyLocale, string>> = {
-  zh: '项目已经写好。要调用大模型请在下方输入 Models API Key；跳过也可以先预览和部署。',
-  en: 'The project is ready. Enter a Models API key below to call models, or skip to preview and deploy first.',
-};
-
 export function compactUserFacingReply(text: string, fallback: string) {
   const normalized = text.replace(/\r/g, '').trim();
   if (!normalized) return fallback;
@@ -85,8 +75,8 @@ export type FinishedTurn = {
   /** Whether verification failed. */
   buildFailed: boolean;
   /**
-   * The turn stopped to wait for the user (API key card, a clarifying
-   * question). A missing preview is then intentional, not a failed dest.
+   * The turn stopped to wait for the user (a clarifying question).
+   * A missing preview is then intentional, not a failed dest.
    */
   waitingForUser?: boolean;
   /** The model's own reply, empty when it produced nothing usable. */

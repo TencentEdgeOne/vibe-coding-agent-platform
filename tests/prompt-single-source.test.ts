@@ -148,9 +148,11 @@ test('the prompt keeps the sandbox corrections the skills cannot know about', ()
   assert.ok(prompt.includes(makersProjectName));
   assert.match(prompt, /Declare AI_GATEWAY_API_KEY= and AI_GATEWAY_BASE_URL=/);
   assert.match(prompt, /Never write a \.env file yourself/);
-  assert.match(prompt, /request_gateway_credentials/);
+  assert.doesNotMatch(prompt, /request_gateway_credentials/);
   assert.match(prompt, /masked API Key/);
+  assert.match(prompt, /Do not stop this turn/);
   assert.doesNotMatch(prompt, /The host asks the user/);
+  assert.doesNotMatch(prompt, /stop this turn: do not start a preview/);
   assert.match(prompt, /already shaped for OpenAI-compatible clients/);
   assert.match(prompt, /never concatenate \/v1\/chat\/completions/);
   assert.match(

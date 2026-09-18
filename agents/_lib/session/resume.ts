@@ -130,6 +130,7 @@ async function loadProjectResumeHistory(context: AgentContext, conversationId: s
     model,
     language: language || undefined,
     gatewayNeeded: state.gatewayPromptPending === true,
+    gatewaySkipped: state.gatewaySkipped === true,
   };
 }
 
@@ -271,6 +272,7 @@ async function runWorkspaceRestoreBody(context: AgentContext, conversationId: st
     deployment: state.deployment,
     files: { root: state.appDir, items },
     gatewayNeeded: state.gatewayPromptPending === true,
+    gatewaySkipped: state.gatewaySkipped === true,
     ...(hasFileItems ? { download: { url: '/download', filename: 'source.zip' } } : {}),
   };
 }
