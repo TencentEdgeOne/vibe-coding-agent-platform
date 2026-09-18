@@ -303,14 +303,42 @@ export function appendNarrationChunk(
   return list;
 }
 
+export function isBoundarySystemInfo(info: { infoType?: string }) {
+  return info.infoType === 'usage' || info.infoType === 'compact';
+}
+
+/** Token-count pings and other SDK dumps. They are not a step the user asked
+ *  about, and they must not cut a thought into empty rows. */
+export function isPlumbingSystemInfo(info: { infoType?: string; title?: string }) {
+  const infoType = info.infoType || 'sdk';
+  const title = (info.title || '').trim();
+  if (infoType === 'sdk') return true;
+  return /thinking[_-]?tokens/i.test(title) || /thinking[_-]?tokens/i.test(infoType);
+}
+
+function findOpenThinkingIndex(activities: readonly AssistantActivity[]): number {
+  for (let index = activities.length - 1; index >= 0; index -= 1) {
+    const activity = activities[index];
+    if (activity.kind === 'thinking' && !activity.endedAt) return index;
+    if (activity.kind === 'info' && !isBoundarySystemInfo(activity)) continue;
+    break;
+  }
+  return -1;
+}
+
 export function appendThinkingChunk(
   activities: readonly AssistantActivity[],
   text: string,
   at = Date.now(),
 ): AssistantActivity[] {
   const list = [...activities];
-  const last = list.at(-1);
-  if (last?.kind !== 'thinking') {
+  const index = findOpenThinkingIndex(list);
+  if (index < 0) {
+    list.push({ kind: 'thinking', content: text, startedAt: at });
+    return list;
+  }
+  const last = list[index];
+  if (last.kind !== 'thinking') {
     list.push({ kind: 'thinking', content: text, startedAt: at });
     return list;
   }
@@ -318,7 +346,7 @@ export function appendThinkingChunk(
   if (trimmed.length >= MIN_REPLAY_CHUNK && last.content.includes(trimmed)) {
     return list;
   }
-  list[list.length - 1] = { ...last, content: `${last.content}${text}` };
+  list[index] = { ...last, content: `${last.content}${text}` };
   return list;
 }
 
@@ -328,10 +356,12 @@ export function sealOpenThinking(
   activities: readonly AssistantActivity[],
   endedAt = Date.now(),
 ): AssistantActivity[] {
-  const last = activities.at(-1);
-  if (!last || last.kind !== 'thinking' || last.endedAt) return [...activities];
+  const index = findOpenThinkingIndex(activities);
+  if (index < 0) return [...activities];
+  const last = activities[index];
+  if (last.kind !== 'thinking' || last.endedAt) return [...activities];
   const list = [...activities];
-  list[list.length - 1] = { ...last, endedAt };
+  list[index] = { ...last, endedAt };
   return list;
 }
 
@@ -614,10 +644,44 @@ export function lastTimelineText(blocks: AssistantTimelineBlock[]) {
   return undefined;
 }
 
-/** SDK status pings are the agent's plumbing, not a step the user asked about.
- *  Classic keeps them; the reading view does not. */
+function mergeThinkingBlocks(
+  left: AssistantTimelineThinkingBlock,
+  right: AssistantTimelineThinkingBlock,
+): AssistantTimelineThinkingBlock {
+  const trimmed = right.content.trim();
+  const content = trimmed.length >= MIN_REPLAY_CHUNK && left.content.includes(trimmed)
+    ? left.content
+    : `${left.content}${right.content}`;
+  return {
+    ...left,
+    content,
+    startedAt: left.startedAt ?? right.startedAt,
+    endedAt: right.endedAt ?? left.endedAt,
+  };
+}
+
+/** SDK status pings and token meters are the agent's plumbing, not a step the
+ *  user asked about. Classic keeps them; the reading view does not. Thoughts
+ *  that those pings split are stitched back into one row. */
 export function visibleRefinedBlocks(blocks: AssistantTimelineBlock[]): AssistantTimelineBlock[] {
-  return blocks.filter((block) => !(block.kind === 'info' && block.activity.infoType === 'status'));
+  const visible: AssistantTimelineBlock[] = [];
+  for (const block of blocks) {
+    if (
+      block.kind === 'info'
+      && (block.activity.infoType === 'status' || isPlumbingSystemInfo(block.activity))
+    ) {
+      continue;
+    }
+    if (block.kind === 'thinking') {
+      const last = visible.at(-1);
+      if (last?.kind === 'thinking') {
+        visible[visible.length - 1] = mergeThinkingBlocks(last, block);
+        continue;
+      }
+    }
+    visible.push(block);
+  }
+  return visible;
 }
 
 export type AssistantTimelineGroupBlock = {
@@ -729,16 +793,18 @@ export function applyStreamEvent(
     };
   }
   if (event.type === 'system_info' && (event.data?.content || event.data?.title)) {
+    if (isPlumbingSystemInfo(event.data)) return turn;
+    const next = {
+      kind: 'info' as const,
+      infoType: event.data.infoType || 'sdk',
+      title: event.data.title || event.data.infoType || 'sdk',
+      content: event.data.content || '',
+    };
     return {
       ...turn,
       activities: [
-        ...sealOpenThinking(turn.activities),
-        {
-          kind: 'info',
-          infoType: event.data.infoType || 'sdk',
-          title: event.data.title || event.data.infoType || 'sdk',
-          content: event.data.content || '',
-        },
+        ...(isBoundarySystemInfo(next) ? sealOpenThinking(turn.activities) : turn.activities),
+        next,
       ],
     };
   }

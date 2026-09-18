@@ -180,6 +180,50 @@ test('the reading view hides SDK status pings', () => {
   assert.equal(visible[1].kind === 'info' && visible[1].activity.infoType, 'usage');
 });
 
+test('the reading view hides thinking_tokens and stitches the thought back together', () => {
+  const blocks = buildAssistantTimeline([
+    { kind: 'thinking', content: 'Fix the typo first.', startedAt: 1_000, endedAt: 1_000 },
+    {
+      kind: 'info',
+      infoType: 'sdk',
+      title: 'thinking_tokens',
+      content: '{"subtype":"thinking_tokens"}',
+    },
+    { kind: 'thinking', content: ' Then write the page.', startedAt: 1_001, endedAt: 1_400 },
+    { kind: 'info', infoType: 'usage', title: 'Usage', content: 'turns=1' },
+  ]);
+  const visible = visibleRefinedBlocks(blocks);
+  assert.deepEqual(visible.map((block) => block.kind), ['thinking', 'info']);
+  assert.equal(visible[0]?.kind === 'thinking' && visible[0].content, 'Fix the typo first. Then write the page.');
+  assert.equal(visible[0]?.kind === 'thinking' && visible[0].startedAt, 1_000);
+  assert.equal(visible[0]?.kind === 'thinking' && visible[0].endedAt, 1_400);
+});
+
+test('thinking_tokens pings do not split a live thought into empty rows', () => {
+  let turn: PersistedActivityTurn = {
+    id: 't',
+    user: '',
+    assistant: '',
+    status: 'completed',
+    createdAt: 0,
+    activities: [],
+  };
+  turn = applyStreamEvent(turn, { type: 'thinking_segment', data: { text: 'Fix the typo first.' } });
+  turn = applyStreamEvent(turn, {
+    type: 'system_info',
+    data: { infoType: 'sdk', title: 'thinking_tokens', content: '{"output":12}' },
+  });
+  turn = applyStreamEvent(turn, { type: 'thinking_segment', data: { text: ' Then write the page.' } });
+
+  assert.equal(turn.activities.length, 1);
+  assert.equal(turn.activities[0]?.kind, 'thinking');
+  assert.equal(
+    turn.activities[0]?.kind === 'thinking' && turn.activities[0].content,
+    'Fix the typo first. Then write the page.',
+  );
+  assert.equal(turn.activities[0]?.kind === 'thinking' && turn.activities[0].endedAt, undefined);
+});
+
 test('thinking records when it started and when the next step took over', () => {
   let turn: PersistedActivityTurn = {
     id: 't',

@@ -113,6 +113,17 @@ export function formatResultUsage(result: SDKResultMessage) {
   return lines.join('\n');
 }
 
+function isTokenMeterEvent(event: SDKMessage) {
+  const type = String(event.type);
+  if (type === 'system') {
+    const subtype = typeof (event as { subtype?: unknown }).subtype === 'string'
+      ? (event as { subtype: string }).subtype
+      : '';
+    return /thinking[_-]?tokens|(^|_)tokens$/i.test(subtype);
+  }
+  return /thinking[_-]?tokens/i.test(type);
+}
+
 export function describeSdkMessage(event: SDKMessage): SystemInfoPayload | null {
   if (
     event.type === 'stream_event'
@@ -120,6 +131,7 @@ export function describeSdkMessage(event: SDKMessage): SystemInfoPayload | null 
     || event.type === 'user'
     || event.type === 'result'
     || event.type === 'tool_progress'
+    || isTokenMeterEvent(event)
   ) {
     return null;
   }
@@ -219,11 +231,7 @@ export function describeSdkMessage(event: SDKMessage): SystemInfoPayload | null 
         content: [...names, ...failed].join('\n'),
       };
     }
-    return {
-      infoType: 'sdk',
-      title: subtype || 'system',
-      content: compactJson(event),
-    };
+    return null;
   }
 
   if (event.type === 'tool_use_summary') {
@@ -238,11 +246,7 @@ export function describeSdkMessage(event: SDKMessage): SystemInfoPayload | null 
     return { infoType: 'system', title: 'Prompt suggestion', content: suggestion.suggestion || '' };
   }
 
-  return {
-    infoType: 'sdk',
-    title: event.type,
-    content: compactJson(event),
-  };
+  return null;
 }
 
 export type StreamingToolUseBlock = {

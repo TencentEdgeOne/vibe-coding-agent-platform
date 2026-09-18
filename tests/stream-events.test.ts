@@ -20,6 +20,30 @@ test('thinking_delta text is extracted from a stream_event', () => {
   assert.equal(extractVisibleThinkingDelta(event), 'Need a form first.');
 });
 
+test('thinking_tokens pings are not surfaced as system_info', () => {
+  assert.equal(describeSdkMessage({
+    type: 'system',
+    subtype: 'thinking_tokens',
+    uuid: 'u-tokens',
+    session_id: 's1',
+  } as unknown as SDKMessage), null);
+
+  assert.equal(describeSdkMessage({
+    type: 'thinking_tokens',
+    uuid: 'u-tokens-2',
+    session_id: 's1',
+  } as unknown as SDKMessage), null);
+});
+
+test('unmapped SDK events stay off the conversation', () => {
+  assert.equal(describeSdkMessage({
+    type: 'system',
+    subtype: 'some_future_meter',
+    uuid: 'u-unknown',
+    session_id: 's1',
+  } as unknown as SDKMessage), null);
+});
+
 test('compact_boundary and session init become system_info payloads', () => {
   const compact = describeSdkMessage({
     type: 'system',

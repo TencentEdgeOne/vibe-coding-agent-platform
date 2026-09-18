@@ -2,7 +2,7 @@ import type { AgentContext } from '../runtime/context.ts';
 import { persistWorkspace } from '../project/workspace-store.ts';
 import type { AgentProgressEvent, ProjectState } from '../types.ts';
 import type { ProjectCheckpointController } from './checkpoint.ts';
-import { applyStreamEvent } from '../../../shared/timeline.ts';
+import { applyStreamEvent, sealOpenThinking } from '../../../shared/timeline.ts';
 import type { PersistedActivityTurn } from '../../../shared/protocol.ts';
 
 type TurnStatus = 'completed' | 'failed' | 'stopped';
@@ -36,7 +36,7 @@ export function createTurnLifecycle(options: TurnLifecycleOptions) {
     status: TurnStatus,
     finalizeOptions?: { withSnapshot?: boolean; withState?: boolean },
   ) => {
-    turn = { ...turn, assistant, status };
+    turn = { ...turn, assistant, status, activities: sealOpenThinking(turn.activities) };
     if (status === 'stopped') {
       turn = {
         ...turn,
