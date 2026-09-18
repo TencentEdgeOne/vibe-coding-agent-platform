@@ -1,6 +1,6 @@
 import type { AgentContext } from '../runtime/context.ts';
-import { createReadStream, createWriteStream, existsSync, readdirSync } from 'node:fs';
-import { mkdir, stat } from 'node:fs/promises';
+import { createWriteStream, existsSync, readdirSync } from 'node:fs';
+import { mkdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -59,10 +59,9 @@ export async function uploadTranscript(options: {
   }
 
   const store = getBlobStore(options.context);
-  await store.set(
-    transcriptBlobKey(options.sessionId),
-    Readable.toWeb(createReadStream(options.sourcePath)) as unknown as ReadableStream,
-  );
+  // PagesBlob's Node `fetch` PUT omits `duplex: 'half'`, which undici requires
+  // for a ReadableStream body. Buffer the JSONL so the PUT is a string body.
+  await store.set(transcriptBlobKey(options.sessionId), await readFile(options.sourcePath, 'utf8'));
   await patchConversationRecord(options.context, options.conversationId, {
     claudeSessionId: options.sessionId,
     transcriptPath: options.sourcePath,
@@ -70,7 +69,6 @@ export async function uploadTranscript(options: {
 }
 
 export async function readTranscriptText(filePath: string): Promise<string> {
-  const { readFile } = await import('node:fs/promises');
   return readFile(filePath, 'utf8');
 }
 
