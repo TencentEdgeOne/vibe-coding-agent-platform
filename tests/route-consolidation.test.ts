@@ -86,7 +86,9 @@ test('the session tab reads the raw JSONL transcript and does not project it', a
   assert.match(panel, /\{state\.jsonl\}/);
   assert.doesNotMatch(panel, /setInterval|fetchTranscript/);
   assert.doesNotMatch(panel, /projectTranscript|JSON\.stringify\(|JSON\.parse\(/);
-  assert.match(screen, /value="session"/);
+  assert.match(screen, /SHOW_SESSION_TAB = process\.env\.NODE_ENV === 'development'/);
+  assert.match(screen, /SHOW_SESSION_TAB && \([\s\S]*value="session"/);
+  assert.match(screen, /SHOW_SESSION_TAB && workspace\.sandboxTab === 'session'/);
 });
 
 test('file panel performs no automatic or hover prefetch', async () => {

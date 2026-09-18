@@ -172,11 +172,12 @@ export const TRANSLATIONS = {
       preview: '预览',
       code: '代码',
       // The Claude JSONL file is the only history this product keeps. The chat
-      // column is a projection of it; this tab shows the file itself.
+      // column is a projection of it; this tab shows the file itself, and only
+      // in local `next dev`.
       session: '会话',
       showPanel: '展开右侧面板',
       hidePanel: '折叠右侧面板',
-      choosePanel: '选择预览、代码或会话',
+      choosePanel: '选择预览或代码',
       refreshPreview: '刷新预览',
       copyPreviewPath: '复制当前路径',
       previewPathCopied: '已复制当前路径',
@@ -369,7 +370,7 @@ export const TRANSLATIONS = {
       session: 'Session',
       showPanel: 'Show side panel',
       hidePanel: 'Hide side panel',
-      choosePanel: 'Choose Preview, Code, or Session',
+      choosePanel: 'Choose Preview or Code',
       refreshPreview: 'Refresh preview',
       copyPreviewPath: 'Copy current path',
       previewPathCopied: 'Current path copied',

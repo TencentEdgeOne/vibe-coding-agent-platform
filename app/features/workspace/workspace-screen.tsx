@@ -107,6 +107,7 @@ const SessionPanel = dynamic(
   () => import('@/app/components/session-panel').then((mod) => mod.SessionPanel),
   { ssr: false, loading: PanelLoading },
 );
+const SHOW_SESSION_TAB = process.env.NODE_ENV === 'development';
 
 export function WorkspaceScreen() {
   const [language, setLanguage] = useState<Locale>('zh');
@@ -490,10 +491,12 @@ export function WorkspaceScreen() {
                     {t.workspace.code}
                     {workspace.filesRefreshing && <span className="workspace-tab-refreshing">{t.files.refreshing}</span>}
                   </TabsTrigger>
-                  <TabsTrigger value="session" className="workspace-tab">
-                    <ScrollText />
-                    {t.workspace.session}
-                  </TabsTrigger>
+                  {SHOW_SESSION_TAB && (
+                    <TabsTrigger value="session" className="workspace-tab">
+                      <ScrollText />
+                      {t.workspace.session}
+                    </TabsTrigger>
+                  )}
                 </TabsList>
               </Tabs>
             </div>
@@ -610,7 +613,7 @@ export function WorkspaceScreen() {
               </div>
             )}
 
-            {workspace.sandboxTab === 'session' && (
+            {SHOW_SESSION_TAB && workspace.sandboxTab === 'session' && (
               <div className="workspace-panel-pane">
                 <SessionPanel
                   conversationId={conversationId}
