@@ -239,6 +239,7 @@ export async function runChatPipeline(
     onDeploymentStatus: handleDeploymentStatus,
     abortSignal,
     model: options.model,
+    language: options.language,
     send,
   });
 

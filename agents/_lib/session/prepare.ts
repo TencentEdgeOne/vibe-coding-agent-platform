@@ -3,9 +3,10 @@ import { mergeSseGenerators } from '../runtime/merge.ts';
 import { getRequestQueryParam } from '../runtime/request.ts';
 import { sseEvent } from '../runtime/sse.ts';
 import { extendExistingSandboxTimeout } from '../turn/checkpoint.ts';
-import { ensureWorkspaceDirectories } from '../project/workspace.ts';
+import { ensureWorkspaceDirectories, markFreshWorkspace } from '../project/workspace.ts';
 import { getProjectState, patchConversationRecord } from './store.ts';
 import { warmLiveQuery } from './live.ts';
+import { timeStage } from '../utils/timing.ts';
 import type {
   SessionPrepData,
   SessionPrepMode,
@@ -39,10 +40,19 @@ export async function persistConversationPreferences(
   });
 }
 
-export async function prepareSandboxWorkspace(context: AgentContext, conversationId: string) {
+export async function prepareSandboxWorkspace(
+  context: AgentContext,
+  conversationId: string,
+  options: { mode?: SessionPrepMode } = {},
+) {
   await extendExistingSandboxTimeout(context);
   const state = await getProjectState(context, conversationId);
   await ensureWorkspaceDirectories(context, state);
+  // Only a create visit knows the workspace is empty; a restore may still have
+  // a snapshot to pull down, so its first prompt must keep probing.
+  if (options.mode === 'create' && !state.created) {
+    markFreshWorkspace(conversationId, state.appDir);
+  }
   return state;
 }
 
@@ -57,12 +67,21 @@ export async function* iterateConversationPrep(
   },
 ): AsyncGenerator<string> {
   const { mode, signal } = options;
+  const model = (options.model || '').trim();
+  const language = (options.language || '').trim();
   yield sessionPrepSse(mode, 'conversation', 'running');
+  // A restore carries no preferences, so the patch would be a strong-consistency
+  // read plus a write that changes nothing, in front of every later stage.
+  if (!model && !language) {
+    yield sessionPrepSse(mode, 'conversation', 'done');
+    return;
+  }
   try {
-    await persistConversationPreferences(context, conversationId, {
-      model: options.model,
-      language: options.language,
-    });
+    await timeStage(
+      'session:prep',
+      { mode, stage: 'conversation' },
+      () => persistConversationPreferences(context, conversationId, { model, language }),
+    );
     if (signal?.aborted) return;
     yield sessionPrepSse(mode, 'conversation', 'done');
   } catch (error) {
@@ -85,7 +104,11 @@ export async function* iterateSandboxPrepEvents(
   const { mode, signal } = options;
   yield sessionPrepSse(mode, 'sandbox', 'running');
   try {
-    await prepareSandboxWorkspace(context, conversationId);
+    await timeStage(
+      'session:prep',
+      { mode, stage: 'sandbox' },
+      () => prepareSandboxWorkspace(context, conversationId, { mode }),
+    );
     if (signal?.aborted) return;
     yield sessionPrepSse(mode, 'sandbox', 'done');
   } catch (error) {
@@ -104,6 +127,7 @@ export async function* iterateAgentWarmupEvents(
     mode: SessionPrepMode;
     isNewProject: boolean;
     model?: string;
+    language?: string;
     signal?: AbortSignal;
   },
 ): AsyncGenerator<string> {
@@ -111,14 +135,19 @@ export async function* iterateAgentWarmupEvents(
   yield sessionPrepSse(mode, 'agent', 'running');
   try {
     const state = await getProjectState(context, conversationId);
-    const warmed = await warmLiveQuery({
-      context,
-      conversationId,
-      state,
-      isNewProject: options.isNewProject,
-      model: options.model,
-      abortSignal: signal,
-    });
+    const warmed = await timeStage(
+      'session:prep',
+      { mode, stage: 'agent' },
+      () => warmLiveQuery({
+        context,
+        conversationId,
+        state,
+        isNewProject: options.isNewProject,
+        model: options.model,
+        language: options.language,
+        abortSignal: signal,
+      }),
+    );
     if (signal?.aborted) return;
     yield sessionPrepSse(mode, 'agent', warmed.ok ? 'done' : 'failed');
   } catch (error) {
@@ -138,6 +167,7 @@ export async function* iterateSandboxAndAgentPrep(
     mode: SessionPrepMode;
     isNewProject: boolean;
     model?: string;
+    language?: string;
     signal?: AbortSignal;
   },
 ): AsyncGenerator<string> {

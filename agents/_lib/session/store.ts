@@ -96,18 +96,45 @@ export function getBlobStore(context?: PersistCapable): BlobStoreLike {
   });
 }
 
+/**
+ * One wake reads `conv/{id}/state.json` about a dozen times over
+ * strong-consistency Blob. The request `context` is the natural lifetime for a
+ * memo of it — a WeakMap on it cannot outlive the request or leak across
+ * conversations. Writes stay read-modify-write against the blob so a
+ * concurrent request's field is never clobbered, and refresh this entry so a
+ * read after a write in the same request sees the new value.
+ */
+const recordCache = new WeakMap<object, Map<string, ConversationRecord>>();
+
+function recordCacheFor(context: { blobStore?: BlobStoreLike }) {
+  if (!context || typeof context !== 'object') return null;
+  const existing = recordCache.get(context);
+  if (existing) return existing;
+  const created = new Map<string, ConversationRecord>();
+  recordCache.set(context, created);
+  return created;
+}
+
 export async function getConversationRecord(
   context: { blobStore?: BlobStoreLike },
   conversationId: string,
+  /** `refresh` is for callers that poll for another writer's field. */
+  options: { refresh?: boolean } = {},
 ): Promise<ConversationRecord> {
-  const stored = await getBlobStore(context).get(conversationKey(conversationId), { type: 'json' });
-  if (stored && typeof stored === 'object') {
-    const record = stored as ConversationRecord;
-    if (record.projectState && typeof record.projectState === 'object') {
-      return record;
-    }
+  const cache = recordCacheFor(context);
+  if (!options.refresh) {
+    const cached = cache?.get(conversationId);
+    if (cached) return cached;
   }
-  return { projectState: createProjectState(conversationId) };
+  const stored = await getBlobStore(context).get(conversationKey(conversationId), { type: 'json' });
+  const record = stored
+    && typeof stored === 'object'
+    && (stored as ConversationRecord).projectState
+    && typeof (stored as ConversationRecord).projectState === 'object'
+    ? stored as ConversationRecord
+    : { projectState: createProjectState(conversationId) };
+  cache?.set(conversationId, record);
+  return record;
 }
 
 export async function saveConversationRecord(
@@ -116,6 +143,7 @@ export async function saveConversationRecord(
   record: ConversationRecord,
 ) {
   await getBlobStore(context).setJSON(conversationKey(conversationId), record);
+  recordCacheFor(context)?.set(conversationId, record);
 }
 
 export async function patchConversationRecord(
@@ -123,7 +151,7 @@ export async function patchConversationRecord(
   conversationId: string,
   patch: Partial<ConversationRecord>,
 ) {
-  const current = await getConversationRecord(context, conversationId);
+  const current = await getConversationRecord(context, conversationId, { refresh: true });
   const next: ConversationRecord = {
     ...current,
     ...patch,

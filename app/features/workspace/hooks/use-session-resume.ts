@@ -221,7 +221,15 @@ export function useSessionResume(options: {
           if (cancelled || workspaceEpoch !== workspaceEpochRef.current || event.type === 'ping') return;
 
           if (event.type === 'session_prep' && event.data?.stage) {
-            if (event.data.status === 'running' || event.data.stage === 'ready') {
+            if (event.data.stage === 'ready') {
+              // Workspace and preview stages keep streaming after `ready`; the files and
+              // preview panels carry their own loading state, so the full-screen loader
+              // does not have to wait for the stream to close.
+              setResumeChecked(true);
+              setPrepStage(null);
+              return;
+            }
+            if (event.data.status === 'running') {
               setPrepStage(event.data.stage);
             }
             return;

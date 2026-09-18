@@ -197,8 +197,10 @@ export async function createTranscriptStreamResponse(
 
     while (!signal?.aborted && watching) {
       const live = resolveLive(conversationId);
+      // This loop exists to notice the session id another request writes, so
+      // it is the one reader that must bypass the per-request record memo.
       const record = !live?.sessionId || !live?.path
-        ? await getConversationRecord(context, conversationId)
+        ? await getConversationRecord(context, conversationId, { refresh: true })
         : null;
       const sessionId = live?.sessionId || record?.claudeSessionId || '';
       const transcriptPath = resolveClaudeTranscriptPath(sessionId, {

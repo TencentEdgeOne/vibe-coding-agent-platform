@@ -178,3 +178,29 @@ test('the result panel only opens from its toggle, and never picks a tab by itse
   assert.doesNotMatch(resume, /setResultPanelOpen\(/);
   assert.doesNotMatch(resume, /setSandboxTab\(/);
 });
+
+test('the full-screen prep overlay drops on ready while files and preview keep local loading', async () => {
+  const [screen, resume, live] = await Promise.all([
+    surface(WORKSPACE),
+    surface('app/features/workspace/hooks/use-session-resume.ts'),
+    surface(LIVE_TURN),
+  ]);
+
+  assert.match(screen, /if \(!resume\.resumeChecked \|\| live\.sessionPreparing\)/);
+  assert.match(screen, /SessionPrepLoading/);
+  assert.match(screen, /restoring=\{resume\.workspaceRestoring\}/);
+  assert.doesNotMatch(
+    screen,
+    /if \([^)]*workspaceRestoring[^)]*\) \{\s*return \(/,
+    'workspace restore must not keep the full-screen overlay after ready',
+  );
+
+  assert.match(resume, /event\.data\.stage === 'ready'/);
+  assert.match(resume, /setResumeChecked\(true\);\s*setPrepStage\(null\)/);
+  assert.match(resume, /finally \{[\s\S]*setWorkspaceRestoring\(false\)/);
+  assert.match(resume, /finally \{[\s\S]*setFilesRefreshing\(false\)/);
+
+  assert.match(live, /onReady: \(\) => \{/);
+  assert.match(live, /setSessionPreparing\(false\)/);
+  assert.match(live, /options\.onReady\(\)/);
+});

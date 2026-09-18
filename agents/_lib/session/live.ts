@@ -70,8 +70,6 @@ type LiveQuerySession = LiveSessionHandle & {
   idleTimer?: ReturnType<typeof setTimeout>;
 };
 
-/** Give up waiting for the CLI's SessionStart hook and let /prompt reuse the process. */
-export const WARM_LIVE_QUERY_BUDGET_MS = 20_000;
 /** Close a warmed process that never received a turn, so abandoned visits do not leak one. */
 export const LIVE_QUERY_IDLE_MS = 5 * 60 * 1000;
 
@@ -84,6 +82,8 @@ export type StartLiveQueryOptions = {
   isNewProject: boolean;
   abortSignal?: AbortSignal;
   model?: string;
+  /** Passed in rather than read back, so the preference write can run in parallel. */
+  language?: string;
 };
 
 export type RunCodingAgentOptions = StartLiveQueryOptions & {
@@ -163,26 +163,6 @@ function disposeLiveQuery(conversationId: string) {
   }
   session.queue.close();
   return true;
-}
-
-function sleep(ms: number) {
-  return new Promise<void>((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
-
-async function waitForLiveSessionId(
-  session: LiveQuerySession,
-  budgetMs: number,
-  signal?: AbortSignal,
-) {
-  const startedAt = Date.now();
-  while (!session.sessionId && Date.now() - startedAt < budgetMs) {
-    if (signal?.aborted) return false;
-    if (liveQueries.get(session.conversationId) !== session) return false;
-    await sleep(50);
-  }
-  return Boolean(session.sessionId);
 }
 
 async function persistTranscript(session: LiveQuerySession) {
@@ -527,6 +507,11 @@ async function startLiveQuery(options: StartLiveQueryOptions): Promise<LiveQuery
     }
   }
 
+  const requestedLanguage = (options.language || '').trim();
+  const replyLocale = requestedLanguage === 'zh' || requestedLanguage === 'en'
+    ? requestedLanguage
+    : await getLanguagePreference(context, conversationId);
+
   const sdkOptions: Parameters<typeof query>[0]['options'] = {
     model,
     permissionMode: 'dontAsk',
@@ -547,7 +532,7 @@ async function startLiveQuery(options: StartLiveQueryOptions): Promise<LiveQuery
       resolveMakersProjectName(context, session.getState()),
       resolveRunningModelLabel(context, model),
       assembled.webSearchAvailable,
-      await getLanguagePreference(context, conversationId),
+      replyLocale,
     ),
     env: sdkEnv,
     cwd: process.cwd(),
@@ -630,10 +615,12 @@ export async function warmLiveQuery(options: StartLiveQueryOptions): Promise<War
   }
 
   if (!session.turn) scheduleIdleClose(session);
-  await waitForLiveSessionId(session, WARM_LIVE_QUERY_BUDGET_MS, options.abortSignal);
   if (options.abortSignal?.aborted) {
     return { ok: false, reused, error: 'aborted' };
   }
+  // Warm means the process and its PromptQueue exist. The CLI's session id
+  // arrives later through the SessionStart hook, and /prompt never needs it,
+  // so nothing here waits for one.
   return { ok: true, reused };
 }
 

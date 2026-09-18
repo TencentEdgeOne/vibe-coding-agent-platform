@@ -2,8 +2,6 @@ import type { AgentContext } from '../runtime/context.ts';
 import {
   getChatTask,
   getConversationRecord,
-  getLanguagePreference,
-  getModelPreference,
   getProjectState,
 } from './store.ts';
 import { hasLiveChatTask, isChatTaskActive, iterateLiveChatTaskEvents, markOrphanedTaskFailed } from './task.ts';
@@ -31,6 +29,7 @@ import {
   resolveSessionPrepMode,
   sessionPrepSse,
 } from './prepare.ts';
+import { timeStage } from '../utils/timing.ts';
 
 function isMakersPreviewState(state: ProjectState) {
   return state.previewKind === 'makers' || isMakersDeployUrl(state.previewUrl);
@@ -89,12 +88,13 @@ function jsonResponse(obj: Record<string, unknown>, status = 200) {
 }
 
 async function loadProjectResumeHistory(context: AgentContext, conversationId: string) {
-  const [record, jsonl, model, language] = await Promise.all([
+  const [record, jsonl] = await Promise.all([
     getConversationRecord(context, conversationId),
     loadTranscriptJsonl(context, conversationId),
-    getModelPreference(context, conversationId),
-    getLanguagePreference(context, conversationId),
   ]);
+  const model = record.modelPreference?.trim() || '';
+  const storedLanguage = record.languagePreference;
+  const language = storedLanguage === 'zh' || storedLanguage === 'en' ? storedLanguage : '';
   const state = separateLegacyMakersDeployment(record.projectState);
   const activityHistory = projectTranscript(jsonl, state.appDir);
   const messages = turnsToMessages(activityHistory);
@@ -182,12 +182,20 @@ async function republishPreviewOnResume(context: AgentContext, state: ProjectSta
     // Server is not ready — fall through to a full restart.
   }
 
-  const depsReady = await ensureProjectDependencies(context, state);
+  const depsReady = await timeStage(
+    'resume:preview',
+    { phase: 'dependencies' },
+    () => ensureProjectDependencies(context, state),
+  );
   if (!depsReady) {
     throw new Error('Project dependencies are not available for preview resume.');
   }
 
-  const server = await startPreviewServer(context, state);
+  const server = await timeStage(
+    'resume:preview',
+    { phase: 'server' },
+    () => startPreviewServer(context, state),
+  );
   await assertPreviewServerReady(context, server.readyPath);
   const links = await resolvePublicLinks(context);
   if (!links.previewUrl) {
@@ -349,11 +357,11 @@ async function* iterateWorkspaceResumeEvents(
 ): AsyncGenerator<string> {
   yield sessionPrepSse(mode, 'workspace', 'running');
   try {
-    const workspace = await withTimeout(
+    const workspace = await timeStage('session:prep', { mode, stage: 'workspace' }, () => withTimeout(
       runWorkspaceRestoreBody(context, conversationId),
       WORKSPACE_RESUME_BUDGET_MS,
       'workspace resume',
-    );
+    ));
     if (signal?.aborted) return;
     yield sseEvent({ type: 'resume_workspace', data: workspace });
     yield sessionPrepSse(mode, 'workspace', 'done');
@@ -397,49 +405,66 @@ export async function createProjectResumeStreamResponse(context: AgentContext): 
   const language = getRequestQueryParam(context, 'language').value;
 
   return createSSEResponse(async function* (signal) {
-    yield* iterateConversationPrep(context, conversationId, {
-      mode,
-      model,
-      language,
-      signal,
-    });
-    if (signal?.aborted) return;
-
     if (mode === 'create') {
-      yield* iterateSandboxAndAgentPrep(context, conversationId, {
-        mode,
-        isNewProject: true,
-        model,
-        signal,
-      });
+      // The preference write no longer gates the sandbox and the CLI: both are
+      // handed model and language instead of reading them back afterwards.
+      yield* mergeSseGenerators([
+        iterateConversationPrep(context, conversationId, { mode, model, language, signal }),
+        iterateSandboxAndAgentPrep(context, conversationId, {
+          mode,
+          isNewProject: true,
+          model,
+          language,
+          signal,
+        }),
+      ], signal);
       if (!signal?.aborted) yield sessionPrepSse(mode, 'ready', 'done');
       return;
     }
 
-    const history = await loadProjectResumeHistory(context, conversationId);
-    yield sseEvent({ type: 'resume_history', data: history });
+    yield* iterateConversationPrep(context, conversationId, { mode, model, language, signal });
+    if (signal?.aborted) return;
+
+    // The warmup needs isNewProject and the model before the transcript parse
+    // finishes, and the record carries both, so the two now run side by side.
+    const record = await getConversationRecord(context, conversationId);
+    const historyPromise = timeStage(
+      'session:prep',
+      { mode, stage: 'history' },
+      () => loadProjectResumeHistory(context, conversationId),
+    );
+    async function* iterateHistoryEvent(): AsyncGenerator<string> {
+      const loaded = await historyPromise;
+      if (signal?.aborted) return;
+      yield sseEvent({ type: 'resume_history', data: loaded });
+    }
+
+    yield* mergeSseGenerators([
+      iterateSandboxAndAgentPrep(context, conversationId, {
+        mode,
+        isNewProject: !record.projectState.created,
+        model: model || (record.modelPreference || '').trim(),
+        language: language || record.languagePreference || '',
+        signal,
+      }),
+      iterateHistoryEvent(),
+    ], signal);
+    if (signal?.aborted) return;
+
+    // Restarting the preview can cost minutes of npm install and dev server
+    // polling. The client unblocks here and shows local loading for the file
+    // tree and the preview, so neither holds the first screen.
+    yield sessionPrepSse(mode, 'ready', 'done');
+
+    const history = await historyPromise;
+    if (history.needsWorkspace) {
+      yield* iterateWorkspaceResumeEvents(context, conversationId, mode, signal);
+    }
     if (signal?.aborted) return;
 
     const storedTask = await getChatTask(context, conversationId);
-    const liveTask = isChatTaskActive(storedTask) && hasLiveChatTask(conversationId, storedTask.id)
-      ? storedTask
-      : null;
-    const generators: Array<AsyncGenerator<string>> = [
-      iterateSandboxAndAgentPrep(context, conversationId, {
-        mode,
-        isNewProject: !history.hasProject,
-        model: model || history.model,
-        signal,
-      }),
-    ];
-    if (history.needsWorkspace) {
-      generators.push(iterateWorkspaceResumeEvents(context, conversationId, mode, signal));
-    }
-    yield* mergeSseGenerators(generators, signal);
-    if (!signal?.aborted) yield sessionPrepSse(mode, 'ready', 'done');
-
-    if (liveTask && !signal?.aborted) {
-      yield* iterateLiveChatTaskEvents(context, conversationId, liveTask, undefined, signal);
+    if (isChatTaskActive(storedTask) && hasLiveChatTask(conversationId, storedTask.id)) {
+      yield* iterateLiveChatTaskEvents(context, conversationId, storedTask, undefined, signal);
     }
   }, context?.request?.signal);
 }
