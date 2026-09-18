@@ -66,6 +66,7 @@ export function createLiveChatSession(sessionOptions: LiveChatSessionOptions): L
   let sawProjectActivity = false;
   let openedFirstFile = false;
   let pendingFirstFilePath: string | null = null;
+  let gatewayKeyApplied = false;
 
   const revealFirstFile = (path: string) => {
     if (openedFirstFile || !path) return;
@@ -116,6 +117,7 @@ export function createLiveChatSession(sessionOptions: LiveChatSessionOptions): L
     if (event.type === 'ping') return;
     if (event.type === 'gateway_credentials') {
       if (event.data?.status === 'needed') {
+        if (gatewayKeyApplied) return;
         workspace.setGatewayNeeded(true);
         workspace.setGatewayDeferred(false);
         workspace.setGatewayBusy(false);
@@ -126,9 +128,12 @@ export function createLiveChatSession(sessionOptions: LiveChatSessionOptions): L
         if (event.data.skipped) {
           workspace.setGatewayDeferred(true);
           workspace.setGatewayConfigured(false);
+          workspace.setGatewaySavedVisible(false);
         } else {
+          gatewayKeyApplied = true;
           workspace.setGatewayDeferred(false);
           workspace.setGatewayConfigured(true);
+          workspace.setGatewaySavedVisible(true);
           workspace.setGatewayPromptVariant('default');
         }
       }
@@ -188,6 +193,9 @@ export function createLiveChatSession(sessionOptions: LiveChatSessionOptions): L
     }
     if (event.type === 'preview_ready' && event.data) {
       sawProjectActivity = true;
+      if (gatewayKeyApplied) {
+        workspace.setGatewaySavedVisible(false);
+      }
       if (event.data.preview) {
         preview.activatePreview(event.data.preview, activatedPreviewRevisions);
       }

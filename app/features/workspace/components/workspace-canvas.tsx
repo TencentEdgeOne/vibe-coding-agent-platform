@@ -101,7 +101,7 @@ export function WorkspaceCanvas({
           gatewayChip={workspace.gatewayDeferred && !workspace.gatewayNeeded
             ? t.workspace.gatewayPromptChip
             : null}
-          gatewaySaved={workspace.gatewayConfigured && !workspace.gatewayNeeded
+          gatewaySaved={workspace.gatewaySavedVisible && !workspace.gatewayNeeded
             ? t.workspace.gatewayPromptSaved
             : null}
           gatewayBusy={workspace.gatewayBusy}

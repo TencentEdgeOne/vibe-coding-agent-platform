@@ -32,19 +32,17 @@ import {
 } from './live/stream-handlers';
 import { createApplyGateway } from './live/use-gateway';
 
-type LiveCopy = {
-  noDisplay: string;
-  processingFailed: string;
-  requestFailedPrefix: string;
-  unknownError: string;
-  agentFlowEnded: string;
-};
-
 export function useLiveTurn(options: {
   language: Locale;
   model: string;
   t: {
-    response: LiveCopy;
+    response: {
+      noDisplay: string;
+      processingFailed: string;
+      requestFailedPrefix: string;
+      unknownError: string;
+      agentFlowEnded: string;
+    };
     workspace: {
       deployRequest: string;
     };
@@ -186,6 +184,9 @@ export function useLiveTurn(options: {
     }
     if (inboundApiKey) {
       workspace.setGatewayNeeded(false);
+      workspace.setGatewayDeferred(false);
+      workspace.setGatewayConfigured(true);
+      workspace.setGatewaySavedVisible(true);
       workspace.setGatewayBusy(false);
     }
     setLoading(true);
@@ -299,6 +300,7 @@ export function useLiveTurn(options: {
     workspace.setFilesRefreshing(false);
     workspace.setGatewayNeeded(false);
     workspace.setGatewayBusy(false);
+    workspace.setGatewaySavedVisible(false);
 
     const stoppedTurn = {
       id: activeTurnIdRef.current,

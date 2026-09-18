@@ -19,6 +19,26 @@ export function createApplyGateway(options: {
     if (!decision.skip && !apiKey) return;
 
     workspace.setGatewayBusy(true);
+    if (decision.skip) {
+      workspace.setGatewayNeeded(false);
+      workspace.setGatewayDeferred(true);
+      workspace.setGatewayConfigured(false);
+      workspace.setGatewaySavedVisible(false);
+    } else {
+      workspace.setGatewayNeeded(false);
+      workspace.setGatewayDeferred(false);
+      workspace.setGatewayConfigured(true);
+      workspace.setGatewaySavedVisible(true);
+      workspace.setGatewayPromptVariant('default');
+    }
+
+    const revertApply = () => {
+      workspace.setGatewayNeeded(true);
+      workspace.setGatewayConfigured(false);
+      workspace.setGatewaySavedVisible(false);
+      workspace.setGatewayBusy(false);
+    };
+
     try {
       const response = await applyGatewayDecision({
         conversationId: cid,
@@ -39,18 +59,11 @@ export function createApplyGateway(options: {
         download?: { url?: string; filename?: string };
       } | null;
       if (!response.ok || !data?.ok) {
-        workspace.setGatewayBusy(false);
+        revertApply();
         return;
       }
-      if (decision.skip) {
-        workspace.setGatewayNeeded(false);
-        workspace.setGatewayDeferred(true);
-        workspace.setGatewayConfigured(false);
-      } else {
-        workspace.setGatewayNeeded(false);
-        workspace.setGatewayDeferred(false);
-        workspace.setGatewayConfigured(true);
-        workspace.setGatewayPromptVariant('default');
+      if (!decision.skip) {
+        workspace.setGatewaySavedVisible(false);
       }
       workspace.setGatewayBusy(false);
       if (data.preview && !data.live) {
@@ -60,7 +73,7 @@ export function createApplyGateway(options: {
         workspace.setDownload(data.download);
       }
     } catch {
-      workspace.setGatewayBusy(false);
+      revertApply();
     }
   }
 

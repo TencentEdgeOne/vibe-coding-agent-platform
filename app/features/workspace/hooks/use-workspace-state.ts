@@ -29,6 +29,7 @@ export function useWorkspaceState() {
   const [gatewayNeeded, setGatewayNeeded] = useState(false);
   const [gatewayDeferred, setGatewayDeferred] = useState(false);
   const [gatewayConfigured, setGatewayConfigured] = useState(false);
+  const [gatewaySavedVisible, setGatewaySavedVisible] = useState(false);
   const [gatewayPromptVariant, setGatewayPromptVariant] = useState<'default' | 'deploy'>('default');
   const [gatewayBusy, setGatewayBusy] = useState(false);
 
@@ -44,6 +45,7 @@ export function useWorkspaceState() {
     setGatewayNeeded(false);
     setGatewayDeferred(false);
     setGatewayConfigured(false);
+    setGatewaySavedVisible(false);
     setGatewayPromptVariant('default');
     setGatewayBusy(false);
     setSandboxTab('preview');
@@ -108,6 +110,8 @@ export function useWorkspaceState() {
     setGatewayDeferred,
     gatewayConfigured,
     setGatewayConfigured,
+    gatewaySavedVisible,
+    setGatewaySavedVisible,
     gatewayPromptVariant,
     setGatewayPromptVariant,
     gatewayBusy,
