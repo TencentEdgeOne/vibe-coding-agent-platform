@@ -1,11 +1,11 @@
 'use client';
 
 import { memo, useEffect, useState } from 'react';
-import type { SessionCopy } from '../i18n';
-import { consumeEventStream } from '../features/workspace/sse';
-import { openTranscriptStream } from '../features/workspace/workspace-api';
-import type { TranscriptData, TranscriptStreamEvent } from '../../shared/protocol';
-import { Spinner } from './spinner';
+import type { SessionCopy } from '@/app/i18n';
+import { consumeEventStream } from '../sse';
+import { openTranscriptStream } from '../workspace-api';
+import type { TranscriptData, TranscriptStreamEvent } from '../../../../shared/protocol';
+import { Spinner } from '@/app/components/spinner';
 
 type SessionState =
   | { status: 'loading' }

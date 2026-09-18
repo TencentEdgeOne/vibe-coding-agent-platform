@@ -14,9 +14,10 @@ import {
 import { agentRoutesFromListing, generatedRoutesFromListing } from '../agents/_lib/project/preview.ts';
 import { previewDisplayPathFromPath } from '../shared/preview-display-path.ts';
 import { readCommandsWrapSource } from './helpers/fixtures.ts';
+import { LIVE_TURN, PREVIEW_SURFACE, WORKSPACE, surface } from './helpers/source.ts';
 
 test('preview address bar shows the application route without the gateway prefix', async () => {
-  const screen = await readFile('app/features/workspace/workspace-screen.tsx', 'utf8');
+  const screen = await surface(WORKSPACE);
 
   // The address chip renders the mirrored route (previewDisplayPath) rather than
   // the raw shareablePreviewUrl host, so the sandbox domain is never shown.
@@ -52,7 +53,7 @@ test('preview address chip hides the gateway prefix and access_token', () => {
 // the route the preview opened with for as long as the tests stayed green. So
 // run the real proxy against a stub upstream and read what reaches the browser.
 test('the preview proxy feeds the route mirror the parent listens for', async () => {
-  const preview = await readFile('app/features/workspace/hooks/use-preview-surface.ts', 'utf8');
+  const preview = await surface(PREVIEW_SURFACE);
   assert.match(preview, /__edgeonePreviewPath/);
   assert.match(preview, /addEventListener\('message'/);
 
@@ -475,8 +476,8 @@ test('cold preview probes do not throw on curl connection refused', async () => 
 
 test('expired preview credentials never fall back to the stale iframe URL', async () => {
   const [screen, preview] = await Promise.all([
-    readFile('app/features/workspace/workspace-screen.tsx', 'utf8'),
-    readFile('app/features/workspace/hooks/use-preview-surface.ts', 'utf8'),
+    surface(WORKSPACE),
+    surface(PREVIEW_SURFACE),
   ]);
 
   assert.match(preview, /PREVIEW_CREDENTIAL_REFRESH_MS/);
@@ -537,11 +538,11 @@ test('the host starts dest with the workspace and keeps it watching files', asyn
   const [chat, snapshot, live, apply, assemble, resume, preview, prompt] = await Promise.all([
     readFile('agents/_lib/turn/chat.ts', 'utf8'),
     readFile('agents/_lib/project/snapshot.ts', 'utf8'),
-    readFile('app/features/workspace/hooks/use-live-turn.ts', 'utf8'),
-    readFile('app/features/workspace/hooks/use-workspace-snapshot.ts', 'utf8'),
+    surface(LIVE_TURN),
+    surface('app/features/workspace/hooks/use-workspace-snapshot.ts'),
     readFile('agents/_lib/tools/assemble.ts', 'utf8'),
     readFile('agents/_lib/session/resume.ts', 'utf8'),
-    readFile('app/features/workspace/hooks/use-preview-surface.ts', 'utf8'),
+    surface(PREVIEW_SURFACE),
     readFile('agents/_lib/prompt.ts', 'utf8'),
   ]);
 

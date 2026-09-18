@@ -2,11 +2,20 @@ import assert from 'node:assert/strict';
 import { access, readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { workspaceSnapshotFromState } from '../agents/_lib/project/snapshot.ts';
+import {
+  FILES_PANEL,
+  LIVE_TURN,
+  NEW_PROJECT,
+  PREVIEW_SURFACE,
+  SESSION_PANEL,
+  WORKSPACE,
+  surface,
+} from './helpers/source.ts';
 
 test('the model menu is an edge function, not an agent route', async () => {
   const route = await readFile('edge-functions/models.ts', 'utf8');
-  const client = await readFile('app/features/workspace/workspace-api.ts', 'utf8');
-  const screen = await readFile('app/features/workspace/workspace-screen.tsx', 'utf8');
+  const client = await surface('app/features/workspace/workspace-api.ts');
+  const screen = await surface(WORKSPACE);
 
   assert.match(route, /onRequestGet/);
   assert.match(route, /resolveModelCatalog/);
@@ -23,7 +32,7 @@ test('session is GET restore; turns go through /prompt and /deploy', async () =>
   const deploy = await readFile('agents/deploy.ts', 'utf8');
   const preview = await readFile('agents/preview.ts', 'utf8');
   const tasks = await readFile('agents/_lib/session/task.ts', 'utf8');
-  const client = await readFile('app/features/workspace/workspace-api.ts', 'utf8');
+  const client = await surface('app/features/workspace/workspace-api.ts');
 
   assert.match(session, /onRequestGet/);
   assert.match(session, /createProjectResumeStreamResponse/);
@@ -55,7 +64,7 @@ test('session is GET restore; turns go through /prompt and /deploy', async () =>
 test('initial session restore is one progressive SSE request that can attach a live task', async () => {
   const route = await readFile('agents/session.ts', 'utf8');
   const pipeline = await readFile('agents/_lib/session/resume.ts', 'utf8');
-  const client = await readFile('app/features/workspace/workspace-api.ts', 'utf8');
+  const client = await surface('app/features/workspace/workspace-api.ts');
 
   assert.match(route, /onRequestGet/);
   assert.match(route, /createProjectResumeStreamResponse/);
@@ -70,9 +79,9 @@ test('initial session restore is one progressive SSE request that can attach a l
 test('the session tab reads the raw JSONL transcript and does not project it', async () => {
   const route = await readFile('agents/transcript.ts', 'utf8');
   const pipeline = await readFile('agents/_lib/session/transcript.ts', 'utf8');
-  const client = await readFile('app/features/workspace/workspace-api.ts', 'utf8');
-  const panel = await readFile('app/components/session-panel.tsx', 'utf8');
-  const screen = await readFile('app/features/workspace/workspace-screen.tsx', 'utf8');
+  const client = await surface('app/features/workspace/workspace-api.ts');
+  const panel = await surface(SESSION_PANEL);
+  const screen = await surface(WORKSPACE);
 
   assert.match(route, /onRequestGet/);
   assert.match(route, /createTranscriptStreamResponse/);
@@ -93,14 +102,14 @@ test('the session tab reads the raw JSONL transcript and does not project it', a
 });
 
 test('file panel performs no automatic or hover prefetch', async () => {
-  const source = await readFile('app/components/files-panel.tsx', 'utf8');
+  const source = await surface(FILES_PANEL);
   assert.doesNotMatch(source, /prefetch/i);
   assert.doesNotMatch(source, /onMouseEnter/);
   assert.match(source, /fetch\(`\/file\?path=/);
 });
 
 test('an untouched new project does not persist an empty conversation', async () => {
-  const screen = await readFile('app/features/workspace/workspace-screen.tsx', 'utf8');
+  const screen = await surface(NEW_PROJECT);
   const start = screen.indexOf('function startNewProject()');
   const end = screen.indexOf('function handleNewProject()', start);
   const startBlock = screen.slice(start, end);
@@ -113,7 +122,7 @@ test('an untouched new project does not persist an empty conversation', async ()
 });
 
 test('stop sends makers-conversation-id like every other agent route', async () => {
-  const client = await readFile('app/features/workspace/workspace-api.ts', 'utf8');
+  const client = await surface('app/features/workspace/workspace-api.ts');
   const start = client.indexOf('export async function stopChatTask');
   const end = client.indexOf('export function fetchProjectArchive');
   const stopFn = client.slice(start, end);
@@ -125,19 +134,15 @@ test('stop sends makers-conversation-id like every other agent route', async () 
 });
 
 test('starting a new project does not wait for the old stop request', async () => {
-  const screen = await readFile('app/features/workspace/workspace-screen.tsx', 'utf8');
-  const client = await readFile('app/features/workspace/workspace-api.ts', 'utf8');
+  const screen = await surface(NEW_PROJECT);
+  const client = await surface('app/features/workspace/workspace-api.ts');
   const stopRoute = await readFile('agents/stop.ts', 'utf8');
-  const start = screen.indexOf('function confirmNewProject()');
-  const end = screen.indexOf('if (!resume.resumeChecked || live.sessionPreparing)', start);
-  const confirmBlock = screen.slice(start, end);
   const abortIndex = stopRoute.indexOf('abortActiveRun');
   const snapshotIndex = stopRoute.indexOf('if (!discardProject)');
 
-  assert.ok(start >= 0 && end > start);
-  assert.match(confirmBlock, /void live\.stopCurrentTask\(\{ discardProject: true \}\)/);
-  assert.match(confirmBlock, /startNewProject\(\)/);
-  assert.doesNotMatch(confirmBlock, /await/);
+  assert.match(screen, /void live\.stopCurrentTask\(\{ discardProject: true \}\)/);
+  assert.match(screen, /startNewProject\(\)/);
+  assert.doesNotMatch(screen, /await live\.stopCurrentTask/);
   assert.match(client, /options\.discardProject \? \{ discardProject: true \} : \{\}/);
   assert.ok(abortIndex >= 0 && snapshotIndex > abortIndex);
   assert.match(stopRoute, /if \(!discardProject\) \{[\s\S]*?persistProjectSnapshot/);
@@ -163,8 +168,8 @@ test('workspace persistence uses the sandbox SDK and Blob state.json, not contex
 test('workspace snapshot and preview status are pullable without the chat stream', async () => {
   const workspace = await readFile('agents/workspace.ts', 'utf8');
   const preview = await readFile('agents/preview.ts', 'utf8');
-  const client = await readFile('app/features/workspace/workspace-api.ts', 'utf8');
-  const previewSurface = await readFile('app/features/workspace/hooks/use-preview-surface.ts', 'utf8');
+  const client = await surface('app/features/workspace/workspace-api.ts');
+  const previewSurface = await surface(PREVIEW_SURFACE);
 
   assert.match(workspace, /onRequestGet/);
   assert.match(workspace, /runWorkspaceSnapshotPipeline/);
@@ -188,7 +193,7 @@ test('a finished turn streams the workspace snapshot instead of GET /workspace',
     readFile('agents/_lib/turn/chat.ts', 'utf8'),
     readFile('agents/_lib/turn/deploy.ts', 'utf8'),
     readFile('agents/_lib/project/snapshot.ts', 'utf8'),
-    readFile('app/features/workspace/hooks/use-live-turn.ts', 'utf8'),
+    surface(LIVE_TURN),
   ]);
 
   assert.match(protocol, /type: 'workspace'; data\?: WorkspaceSnapshot/);

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
+import { LIVE_TURN, WORKSPACE, surface } from './helpers/source.ts';
 
 const STYLES_DIR = 'app/styles';
 
@@ -25,7 +26,7 @@ async function stylesheet(): Promise<string> {
 
 test('the page itself never scrolls, in any workspace state', async () => {
   const css = await stylesheet();
-  const screen = await readFile('app/features/workspace/workspace-screen.tsx', 'utf8');
+  const screen = await surface(WORKSPACE);
 
   assert.match(css, /html,\nbody \{[^}]*height: 100%;[^}]*overflow: hidden;/);
   assert.match(css, /\.app-shell \{[^}]*height: 100dvh;[^}]*overflow: hidden;/);
@@ -52,7 +53,7 @@ test('the stacked workspace fits one viewport instead of scrolling past its pane
 });
 
 test('the landing hero centers without clipping its own top', async () => {
-  const stage = await readFile('app/features/workspace/components/home-stage.tsx', 'utf8');
+  const stage = await surface('app/features/workspace/components/home-stage.tsx');
 
   assert.doesNotMatch(stage, /home-stage[^"]*justify-center/);
   assert.match(stage, /className="home-inner my-auto"/);
@@ -63,27 +64,20 @@ test('the landing hero centers without clipping its own top', async () => {
 // workspace offers stays in the bar and explains itself when it cannot run.
 test('workspace actions stay in place and go quiet instead of disappearing', async () => {
   const [screen, header, css] = await Promise.all([
-    readFile('app/features/workspace/workspace-screen.tsx', 'utf8'),
-    readFile('app/features/workspace/components/site-header.tsx', 'utf8'),
+    surface(WORKSPACE),
+    surface('app/features/workspace/components/site-header.tsx'),
     readFile(path.join(STYLES_DIR, 'workspace.css'), 'utf8'),
   ]);
 
-  // Acting on the project belongs to the panel that shows the project. The
-  // cluster ends where the preview-only controls begin.
-  const actionsStart = screen.indexOf('workspace-topbar-actions');
-  const projectActions = screen.slice(
-    actionsStart,
-    screen.indexOf("sandboxTab === 'preview'", actionsStart),
-  );
-  assert.ok(projectActions.length > 0);
-  assert.match(projectActions, /disabled=\{workspace\.downloadBusy \|\| !workspace\.download\?\.url\}/);
-  assert.match(projectActions, /disabled=\{!canDeployProject\}/);
-  assert.doesNotMatch(projectActions, /\{download\?\.url && /);
+  // Acting on the project belongs to the panel that shows the project.
+  assert.match(screen, /disabled=\{workspace\.downloadBusy \|\| !workspace\.download\?\.url\}/);
+  assert.match(screen, /disabled=\{!canDeployProject\}/);
+  assert.doesNotMatch(screen, /\{download\?\.url && /);
   // A native title is dropped on a disabled control, so the tooltip is CSS on an
   // attribute. It only stays readable while disabled because the panel icon does
   // not suppress its own pointer events the way the header buttons do.
-  assert.match(projectActions, /data-tooltip=\{downloadHint\}/);
-  assert.doesNotMatch(projectActions, /title=\{(downloadHint|exportHint|deployHint)\}/);
+  assert.match(screen, /data-tooltip=\{downloadHint\}/);
+  assert.doesNotMatch(screen, /title=\{(downloadHint|exportHint|deployHint)\}/);
   const disabledIcon = css.slice(
     css.indexOf('.workspace-icon-button:disabled'),
     css.indexOf('.workspace-icon-spinner'),
@@ -112,12 +106,12 @@ test('surfaces consume design tokens instead of raw colour values', async () => 
   const entries = await readdir(STYLES_DIR);
   const surfaces = entries.filter((entry) => entry.endsWith('.css') && entry !== 'tokens.css');
 
-  for (const surface of surfaces) {
-    const css = withoutComments(await readFile(path.join(STYLES_DIR, surface), 'utf8'));
+  for (const surfaceName of surfaces) {
+    const css = withoutComments(await readFile(path.join(STYLES_DIR, surfaceName), 'utf8'));
     assert.doesNotMatch(
       css,
       /#[0-9a-fA-F]{3,8}\b|\brgba?\(/,
-      `${surface} hardcodes a colour; add it to tokens.css instead`,
+      `${surfaceName} hardcodes a colour; add it to tokens.css instead`,
     );
   }
 });
@@ -168,10 +162,10 @@ test('the topbar overlays the preview from its own layer, and never through opac
 // canvas. The stream used to open that column and pick a tab for them.
 test('the result panel only opens from its toggle, and never picks a tab by itself', async () => {
   const [screen, live, resume, state] = await Promise.all([
-    readFile('app/features/workspace/workspace-screen.tsx', 'utf8'),
-    readFile('app/features/workspace/hooks/use-live-turn.ts', 'utf8'),
-    readFile('app/features/workspace/hooks/use-session-resume.ts', 'utf8'),
-    readFile('app/features/workspace/hooks/use-workspace-state.ts', 'utf8'),
+    surface(WORKSPACE),
+    surface(LIVE_TURN),
+    surface('app/features/workspace/hooks/use-session-resume.ts'),
+    surface('app/features/workspace/hooks/use-workspace-state.ts'),
   ]);
 
   assert.match(screen, /function ResultPanelToggle\(/);

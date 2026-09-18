@@ -1,0 +1,88 @@
+import {
+  applyStreamEvent,
+  dropTrailingSummaryEcho,
+} from '../../../../../shared/timeline.ts';
+import type { PersistedActivityTurn } from '../../../../../shared/protocol.ts';
+import type {
+  AssistantStatus,
+  ChatMessage,
+  ChatStreamEvent,
+} from '../../../../types/workspace.ts';
+
+export function patchAssistant(
+  messages: ChatMessage[],
+  assistantMessageId: string,
+  patch: Partial<ChatMessage>,
+): ChatMessage[] {
+  return messages.map((item) =>
+    item.id === assistantMessageId ? { ...item, ...patch } : item,
+  );
+}
+
+export function foldActivityEvent(
+  messages: ChatMessage[],
+  assistantMessageId: string,
+  event: ChatStreamEvent,
+): ChatMessage[] {
+  return messages.map((item) => {
+    if (item.id !== assistantMessageId) return item;
+    const folded = applyStreamEvent({
+      id: item.id,
+      user: '',
+      assistant: item.content,
+      status: 'completed',
+      createdAt: 0,
+      activities: item.activities ?? [],
+    } satisfies PersistedActivityTurn, event);
+    return { ...item, activities: folded.activities };
+  });
+}
+
+export function finalizeAssistant(
+  messages: ChatMessage[],
+  assistantMessageId: string,
+  finalContent: string,
+  finalStatus: AssistantStatus,
+): ChatMessage[] {
+  return messages.map((item) =>
+    item.id === assistantMessageId
+      ? {
+          ...item,
+          content: finalContent,
+          activities: dropTrailingSummaryEcho(
+            item.activities ?? [],
+            finalContent,
+          ).map((activity) =>
+            activity.kind === 'tool' && activity.status === 'running'
+              ? {
+                  ...activity,
+                  status: finalStatus === 'stopped'
+                    ? 'stopped' as const
+                    : finalStatus === 'error'
+                      ? 'failed' as const
+                      : 'completed' as const,
+                  endedAt: Date.now(),
+                }
+              : activity,
+          ),
+          status: finalStatus,
+        }
+      : item,
+  );
+}
+
+export function settleRunningAssistant(
+  messages: ChatMessage[],
+  assistantMessageId: string,
+  fallbackContent: string,
+): ChatMessage[] {
+  return messages.map((item) =>
+    item.id === assistantMessageId && item.status === 'running'
+      ? {
+          ...item,
+          status: 'done' as const,
+          content: item.content || fallbackContent,
+        }
+      : item,
+  );
+}

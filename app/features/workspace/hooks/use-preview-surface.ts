@@ -4,32 +4,16 @@ import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 
 import { isMakersDeployUrl } from '../../../../shared/makers-url';
 import { previewDeepLink } from '../../../../shared/preview-link';
 import type { LinkInfo } from '@/app/types/workspace';
-import { fetchPreviewRefresh } from '../workspace-api';
+import {
+  isPreviewMessageOrigin,
+  isSamePreviewTarget,
+} from './preview-identity';
+import { usePreviewRefresh } from './use-preview-refresh';
+
+export { isPreviewMessageOrigin, isSamePreviewTarget };
 
 const PREVIEW_CREDENTIAL_REFRESH_MS = 8 * 60_000;
 const PREVIEW_REFRESH_POLL_MS = 60_000;
-
-export function isSamePreviewTarget(a: string, b: string) {
-  try {
-    const left = new URL(a);
-    const right = new URL(b);
-    return left.origin === right.origin && left.pathname === right.pathname;
-  } catch {
-    return false;
-  }
-}
-
-export function isPreviewMessageOrigin(origin: string, previewUrls: readonly string[]) {
-  if (!origin || origin === 'null') return false;
-  return previewUrls.some((url) => {
-    if (!url) return false;
-    try {
-      return new URL(url).origin === origin;
-    } catch {
-      return false;
-    }
-  });
-}
 
 export function usePreviewSurface(options: {
   conversationIdRef: MutableRefObject<string | null>;
@@ -74,134 +58,31 @@ export function usePreviewSurface(options: {
     isMakersPreviewRef.current = preview?.kind === 'makers' || isMakersDeployUrl(preview?.url);
   }, [preview?.url, preview?.kind]);
 
-  useEffect(() => {
-    const applyFreshPreviewUrl = (
-      url: string,
-      sandboxDebugUrl?: string,
-      applyOptions?: { remountIframe?: boolean },
-    ): boolean => {
-      setPreview({ url, sandboxDebugUrl });
-      setPreviewRefreshFailed(false);
-      previewRefreshedAtRef.current = Date.now();
-
-      if (
-        applyOptions?.remountIframe === false
-        && activePreviewUrlRef.current
-        && isSamePreviewTarget(activePreviewUrlRef.current, url)
-      ) {
-        return false;
-      }
-
-      const revision = previewRevisionRef.current + 1;
-      previewRevisionRef.current = revision;
-      activePreviewUrlRef.current = url;
-      activePreviewRevisionRef.current = revision;
-      setActivePreviewUrl(url);
-      setActivePreviewRevision(revision);
-      setActivePreviewLoaded(false);
-      setPendingPreviewUrl('');
-      setPendingPreviewRevision(0);
-      return true;
-    };
-
-    const refreshPreviewLink = async (refreshOptions?: {
-      showLoading?: boolean;
-      remountIframe?: boolean;
-    }) => {
-      const id = options.conversationIdRef.current;
-      if (
-        !id
-        || !hasLivePreviewRef.current
-        || isMakersPreviewRef.current
-        || options.loadingRef.current
-        || options.workspaceRestoringRef.current
-        || previewRefreshInFlightRef.current
-      ) {
-        return false;
-      }
-
-      previewRefreshInFlightRef.current = true;
-      const willRemount = refreshOptions?.remountIframe !== false;
-      const previousActiveUrl = activePreviewUrlRef.current;
-
-      if (refreshOptions?.showLoading) {
-        setPreviewRefreshing(true);
-        setPreviewRefreshFailed(false);
-        setActivePreviewLoaded(false);
-        if (willRemount && previousActiveUrl) {
-          activePreviewUrlRef.current = '';
-          setActivePreviewUrl('');
-          setPendingPreviewUrl('');
-          setPendingPreviewRevision(0);
-        }
-      }
-
-      try {
-        const data = await fetchPreviewRefresh(id);
-        if (data?.ok && data.preview?.url) {
-          applyFreshPreviewUrl(data.preview.url, data.preview.sandboxDebugUrl, {
-            remountIframe: willRemount || data.preview.restarted === true,
-          });
-          void options.refreshWorkspace?.(id);
-          return true;
-        }
-        if (refreshOptions?.showLoading) {
-          setPreviewRefreshFailed(true);
-        }
-        return false;
-      } finally {
-        previewRefreshInFlightRef.current = false;
-        if (refreshOptions?.showLoading) {
-          setPreviewRefreshing(false);
-        }
-      }
-    };
-
-    refreshPreviewLinkRef.current = refreshPreviewLink;
-
-    const onVisibility = () => {
-      if (document.visibilityState !== 'visible') {
-        previewHiddenAtRef.current = Date.now();
-        return;
-      }
-
-      const hiddenFor = previewHiddenAtRef.current
-        ? Date.now() - previewHiddenAtRef.current
-        : 0;
-      previewHiddenAtRef.current = 0;
-      const credentialAge = Date.now() - previewRefreshedAtRef.current;
-      const wentStale = hiddenFor >= PREVIEW_CREDENTIAL_REFRESH_MS
-        || credentialAge >= PREVIEW_CREDENTIAL_REFRESH_MS;
-      if (!wentStale || isMakersPreviewRef.current) return;
-
-      void refreshPreviewLink({
-        remountIframe: true,
-        showLoading: true,
-      });
-    };
-
-    const refreshTimer = window.setInterval(() => {
-      if (
-        document.visibilityState === 'visible'
-        && hasLivePreviewRef.current
-        && !isMakersPreviewRef.current
-        && Date.now() - previewRefreshedAtRef.current >= PREVIEW_CREDENTIAL_REFRESH_MS
-      ) {
-        void refreshPreviewLink({
-          remountIframe: true,
-          showLoading: true,
-        });
-      }
-    }, PREVIEW_REFRESH_POLL_MS);
-
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => {
-      window.clearInterval(refreshTimer);
-      document.removeEventListener('visibilitychange', onVisibility);
-      refreshPreviewLinkRef.current = async () => false;
-    };
-    // Mount-only: conversation, loading, and restore flags are read from refs.
-  }, []);
+  usePreviewRefresh({
+    conversationIdRef: options.conversationIdRef,
+    loadingRef: options.loadingRef,
+    workspaceRestoringRef: options.workspaceRestoringRef,
+    refreshWorkspace: options.refreshWorkspace,
+    credentialRefreshMs: PREVIEW_CREDENTIAL_REFRESH_MS,
+    refreshPollMs: PREVIEW_REFRESH_POLL_MS,
+    setPreview,
+    setPreviewRefreshFailed,
+    setPreviewRefreshing,
+    setActivePreviewUrl,
+    setActivePreviewRevision,
+    setActivePreviewLoaded,
+    setPendingPreviewUrl,
+    setPendingPreviewRevision,
+    activePreviewUrlRef,
+    activePreviewRevisionRef,
+    previewRevisionRef,
+    previewRefreshedAtRef,
+    hasLivePreviewRef,
+    isMakersPreviewRef,
+    previewRefreshInFlightRef,
+    previewHiddenAtRef,
+    refreshPreviewLinkRef,
+  });
 
   const promotePendingPreview = () => {
     if (!pendingPreviewUrl) return;

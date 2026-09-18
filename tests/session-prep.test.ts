@@ -13,6 +13,7 @@ import { getConversationRecord } from '../agents/_lib/session/store.ts';
 import { sseEvent } from '../agents/_lib/runtime/sse.ts';
 import type { AgentContext } from '../agents/_lib/runtime/context.ts';
 import { prepStageRange } from '../app/features/workspace/session-prep-progress.ts';
+import { I18N, LIVE_TURN, WORKSPACE, surface } from './helpers/source.ts';
 
 function fakeContext() {
   const blobStore = createMemoryBlobStore();
@@ -174,7 +175,7 @@ test('the prompt no longer tells the model to prepare the environment', async ()
 });
 
 test('frontend copy names each session prep stage in both languages', async () => {
-  const i18n = await readFile('app/i18n.ts', 'utf8');
+  const i18n = await surface(I18N);
   for (const stage of ['conversation', 'sandbox', 'agent', 'workspace', 'preview', 'ready']) {
     assert.match(i18n, new RegExp(`${stage}: '`));
   }
@@ -188,10 +189,10 @@ test('frontend copy names each session prep stage in both languages', async () =
 
 test('the workspace consumes session_prep as a loading screen, not a chat turn', async () => {
   const [api, liveTurn, resume, screen] = await Promise.all([
-    readFile('app/features/workspace/workspace-api.ts', 'utf8'),
-    readFile('app/features/workspace/hooks/use-live-turn.ts', 'utf8'),
-    readFile('app/features/workspace/hooks/use-session-resume.ts', 'utf8'),
-    readFile('app/features/workspace/workspace-screen.tsx', 'utf8'),
+    surface('app/features/workspace/workspace-api.ts'),
+    surface(LIVE_TURN),
+    surface('app/features/workspace/hooks/use-session-resume.ts'),
+    surface(WORKSPACE),
   ]);
   assert.match(api, /params\.set\('model'/);
   assert.match(api, /params\.set\('language'/);
@@ -207,9 +208,8 @@ test('the workspace consumes session_prep as a loading screen, not a chat turn',
   assert.match(screen, /live\.sessionPreparing/);
   assert.match(screen, /SessionPrepLoading/);
   assert.match(screen, /t\.workspace\.preparing/);
-  const loading = await readFile(
+  const loading = await surface(
     'app/features/workspace/components/session-prep-loading.tsx',
-    'utf8',
   );
   assert.match(loading, /role="progressbar"/);
   assert.match(loading, /usePrepProgress/);

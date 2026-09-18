@@ -16,6 +16,7 @@ import {
   resolveRequestedModel,
   resolveRunningModelLabel,
 } from '../agents/_lib/models.ts';
+import { LIVE_TURN, MODEL_PICKER, WORKSPACE, surface } from './helpers/source.ts';
 
 // The picker renders labels, never ids. The ids are scoped with the platform
 // tier, so a label falling back to its id would print the one word no
@@ -184,7 +185,7 @@ test('a finished run reports the model it asked for against the one it billed', 
 // the mouse is a downgrade from the control it replaced, so the parts the
 // browser used to supply are asserted here.
 test('the model picker keeps what the native select gave it for free', async () => {
-  const picker = await readFile('app/components/model-picker.tsx', 'utf8');
+  const picker = await surface(MODEL_PICKER);
   // The comments explain why the native control is gone, so they name it.
   const code = picker.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
@@ -228,9 +229,9 @@ test('the composer model travels on /prompt, not a session-model route', async (
     task,
     agent,
   ] = await Promise.all([
-    readFile('app/features/workspace/workspace-screen.tsx', 'utf8'),
-    readFile('app/features/workspace/workspace-api.ts', 'utf8'),
-    readFile('app/features/workspace/hooks/use-live-turn.ts', 'utf8'),
+    surface(WORKSPACE),
+    surface('app/features/workspace/workspace-api.ts'),
+    surface(LIVE_TURN),
     readFile('agents/prompt.ts', 'utf8'),
     readFile('agents/_lib/session/task.ts', 'utf8'),
     readFile('agents/_lib/session/live.ts', 'utf8'),

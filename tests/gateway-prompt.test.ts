@@ -27,6 +27,7 @@ import {
 import { buildLoadMakersSkillTool } from '../agents/_lib/tools/makers-skills.ts';
 import { buildWriteProjectFileTool } from '../agents/_lib/tools/project-tools.ts';
 import { projectState } from './helpers/fixtures.ts';
+import { CONVERSATION, LIVE_TURN, WORKSPACE, surface } from './helpers/source.ts';
 
 function sandboxFiles(initial: Array<[string, string]>) {
   const files = new Map<string, string>(initial);
@@ -270,10 +271,10 @@ test('writing agents/ or a gateway .env.example offers the card immediately', as
 
 test('the conversation card is visible while generating and submits without a chat turn', async () => {
   const [conversation, screen, live, api, promptRoute, apply] = await Promise.all([
-    readFile('app/components/agent-conversation.tsx', 'utf8'),
-    readFile('app/features/workspace/workspace-screen.tsx', 'utf8'),
-    readFile('app/features/workspace/hooks/use-live-turn.ts', 'utf8'),
-    readFile('app/features/workspace/workspace-api.ts', 'utf8'),
+    surface(CONVERSATION),
+    surface(WORKSPACE),
+    surface(LIVE_TURN),
+    surface('app/features/workspace/workspace-api.ts'),
     readFile('agents/prompt.ts', 'utf8'),
     readFile('agents/_lib/session/gateway-apply.ts', 'utf8'),
   ]);

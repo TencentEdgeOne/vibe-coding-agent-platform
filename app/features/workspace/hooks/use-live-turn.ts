@@ -1,10 +1,6 @@
 'use client';
 
 import { useEffect, useRef, useState, type MutableRefObject } from 'react';
-import {
-  applyStreamEvent,
-  dropTrailingSummaryEcho,
-} from '../../../../shared/timeline';
 import { extractApiKeyFromUserText } from '../../../../shared/gateway-secret';
 import { STOPPED_TURN_REPLY } from '../../../../shared/user-facing-reply';
 import type { Locale } from '@/app/i18n';
@@ -18,15 +14,9 @@ import {
 import type {
   AssistantStatus,
   ChatMessage,
-  ChatResponse,
-  ChatStreamEvent,
   SessionPrepStage,
-  SessionStreamEvent,
 } from '@/app/types/workspace';
-import { consumeEventStream } from '../sse';
 import {
-  applyGatewayDecision,
-  openSessionStream,
   startDeployTurn,
   startPromptTurn,
   stopChatTask,
@@ -34,7 +24,13 @@ import {
 import type { PreviewSurfaceApi } from './use-preview-surface';
 import type { WorkspaceStateApi } from './use-workspace-state';
 import type { WorkspaceSnapshotApi } from './use-workspace-snapshot';
-import type { PersistedActivityTurn } from '../../../../shared/protocol';
+import { runCreateSessionPrep } from './live/session-prep';
+import {
+  attachChatStream as attachLiveChatStream,
+  createLiveChatSession,
+  type LiveChatSession,
+} from './live/stream-handlers';
+import { createApplyGateway } from './live/use-gateway';
 
 type LiveCopy = {
   noDisplay: string;
@@ -106,10 +102,7 @@ export function useLiveTurn(options: {
     requestConversationId: string;
     assistantMessageId: string;
     abortController: AbortController;
-  }) => {
-    handleStreamEvent: (event: ChatStreamEvent) => void;
-    finish: () => void;
-  }>(() => ({
+  }) => Pick<LiveChatSession, 'handleStreamEvent' | 'finish'>>(() => ({
     handleStreamEvent: () => {},
     finish: () => {},
   }));
@@ -119,253 +112,27 @@ export function useLiveTurn(options: {
     assistantMessageId: string;
     abortController: AbortController;
   }) {
-    const { assistantMessageId } = sessionOptions;
-    const workspaceEpoch = workspaceEpochRef.current;
-    const requestAbortController = sessionOptions.abortController;
-    const activatedPreviewRevisions = new Map<string, number>();
-    let sawProjectActivity = false;
-    let openedFirstFile = false;
-    let pendingFirstFilePath: string | null = null;
-
-    const revealFirstFile = (path: string) => {
-      if (openedFirstFile || !path) return;
-      openedFirstFile = true;
-      pendingFirstFilePath = null;
-      workspace.setFilesFocusPath(path);
-    };
-
-    const patchAssistant = (patch: Partial<ChatMessage>) => {
-      setMessages((current) =>
-        current.map((item) =>
-          item.id === assistantMessageId ? { ...item, ...patch } : item,
-        ),
-      );
-    };
-
-    const foldActivityEvent = (event: ChatStreamEvent) => {
-      setMessages((current) =>
-        current.map((item) => {
-          if (item.id !== assistantMessageId) return item;
-          const folded = applyStreamEvent({
-            id: item.id,
-            user: '',
-            assistant: item.content,
-            status: 'completed',
-            createdAt: 0,
-            activities: item.activities ?? [],
-          } satisfies PersistedActivityTurn, event);
-          return { ...item, activities: folded.activities };
-        }),
-      );
-    };
-
-    const finalizeAssistant = (
-      finalContent: string,
-      finalStatus: AssistantStatus,
-    ) => {
-      workspace.setGatewayBusy(false);
-      setMessages((current) =>
-        current.map((item) =>
-          item.id === assistantMessageId
-            ? {
-                ...item,
-                content: finalContent,
-                activities: dropTrailingSummaryEcho(
-                  item.activities ?? [],
-                  finalContent,
-                ).map((activity) =>
-                  activity.kind === 'tool' && activity.status === 'running'
-                    ? {
-                        ...activity,
-                        status: finalStatus === 'stopped'
-                          ? 'stopped' as const
-                          : finalStatus === 'error'
-                            ? 'failed' as const
-                            : 'completed' as const,
-                        endedAt: Date.now(),
-                      }
-                    : activity,
-                ),
-                status: finalStatus,
-              }
-            : item,
-        ),
-      );
-    };
-
-    const applyResponse = (data: ChatResponse) => {
-      if (data.conversation_id) {
-        cacheConversationId(data.conversation_id);
-        setConversationId(data.conversation_id);
-      }
-      workspace.setFilesRefreshing(false);
-
-      const finalText = data.reply || data.error || t.response.noDisplay;
-      const finalStatus: AssistantStatus = data.stopped ? 'stopped' : data.ok === false ? 'error' : 'done';
-      finalizeAssistant(finalText, finalStatus);
-    };
-
-    const handleStreamEvent = (event: ChatStreamEvent) => {
-      if (workspaceEpoch !== workspaceEpochRef.current) return;
-      if (event.type === 'task_started') {
-        if (event.data?.conversation_id) {
-          cacheConversationId(event.data.conversation_id);
-          setConversationId(event.data.conversation_id);
-        }
-        return;
-      }
-      if (event.type === 'ping') return;
-      if (event.type === 'gateway_credentials') {
-        if (event.data?.status === 'needed') {
-          workspace.setGatewayNeeded(true);
-          workspace.setGatewayDeferred(false);
-          workspace.setGatewayBusy(false);
-        }
-        if (event.data?.status === 'resolved') {
-          workspace.setGatewayNeeded(false);
-          workspace.setGatewayBusy(false);
-          if (event.data.skipped) {
-            workspace.setGatewayDeferred(true);
-            workspace.setGatewayConfigured(false);
-          } else {
-            workspace.setGatewayDeferred(false);
-            workspace.setGatewayConfigured(true);
-            workspace.setGatewayPromptVariant('default');
-          }
-        }
-        return;
-      }
-      if (event.type === 'workspace' && event.data) {
-        snapshot.applySnapshot(event.data);
-        workspace.setFilesRefreshing(false);
-        return;
-      }
-      if (event.type === 'result' && event.data) {
-        applyResponse(event.data);
-        setLoading(false);
-        return;
-      }
-      if (event.type === 'agent' && event.data) {
-        const agentData = event.data;
-        const text = agentData.reply || agentData.error || t.response.noDisplay;
-        if (!sawProjectActivity) {
-          finalizeAssistant(text, agentData.ok === false ? 'error' : 'done');
-          return;
-        }
-        patchAssistant({ content: text });
-        return;
-      }
-      if (event.type === 'text_segment' || event.type === 'thinking_segment' || event.type === 'system_info' || event.type === 'tool_use' || event.type === 'tool_result') {
-        if (event.type === 'tool_use' || event.type === 'tool_result') sawProjectActivity = true;
-        foldActivityEvent(event);
-        return;
-      }
-      if (event.type === 'file_changed' && event.data?.paths?.length) {
-        sawProjectActivity = true;
-        const paths = event.data.paths.filter(Boolean);
-        const cid = conversationIdRef.current || sessionOptions.requestConversationId;
-        if (cid && paths.length > 0) {
-          void snapshot.pullFiles(cid, paths).then(() => {
-            if (!openedFirstFile && paths[0]) revealFirstFile(paths[0]);
-          });
-        } else if (!openedFirstFile && paths[0]) {
-          pendingFirstFilePath = paths[0];
-        }
-        return;
-      }
-      if (event.type === 'file_tree' && event.data) {
-        sawProjectActivity = true;
-        workspace.setFileTree(event.data);
-        workspace.setFilesRefreshing(false);
-        if (pendingFirstFilePath) {
-          revealFirstFile(pendingFirstFilePath);
-        }
-        return;
-      }
-      if (event.type === 'deployment_status' && event.data) {
-        sawProjectActivity = true;
-        workspace.setDeployment(event.data);
-        return;
-      }
-      if (event.type === 'preview_ready' && event.data) {
-        sawProjectActivity = true;
-        if (event.data.preview) {
-          preview.activatePreview(event.data.preview, activatedPreviewRevisions);
-        }
-        if (event.data.download) {
-          workspace.setDownload(event.data.download);
-        }
-        return;
-      }
-      if (event.type === 'error') {
-        finalizeAssistant(event.error || t.response.processingFailed, 'error');
-        setLoading(false);
-      }
-    };
-
-    const finish = () => {
-      const ownsActiveWorkspace = workspaceEpoch === workspaceEpochRef.current
-        && chatAbortControllerRef.current === requestAbortController;
-      if (ownsActiveWorkspace) {
-        if (!stoppingRef.current) {
-          setMessages((current) =>
-            current.map((item) =>
-              item.id === assistantMessageId && item.status === 'running'
-                ? {
-                    ...item,
-                    status: 'done',
-                    content: item.content || t.response.agentFlowEnded,
-                  }
-                : item,
-            ),
-          );
-        }
-        setLoading(false);
-        workspace.setFilesRefreshing(false);
-        chatAbortControllerRef.current = null;
-        if (!stoppingRef.current) {
-          activeTurnIdRef.current = '';
-        }
-        stoppingRef.current = false;
-      }
-    };
-
-    return { handleStreamEvent, finish, applyResponse, finalizeAssistant };
+    return createLiveChatSession({
+      ...sessionOptions,
+      workspaceEpoch: workspaceEpochRef.current,
+      workspaceEpochRef,
+      conversationIdRef,
+      chatAbortControllerRef,
+      stoppingRef,
+      activeTurnIdRef,
+      noDisplay: t.response.noDisplay,
+      processingFailed: t.response.processingFailed,
+      agentFlowEnded: t.response.agentFlowEnded,
+      workspace,
+      preview,
+      snapshot,
+      setConversationId,
+      setMessages,
+      setLoading,
+    });
   }
 
   startLiveChatSessionRef.current = startLiveChatSession;
-
-  async function attachChatStream(attachOptions: {
-    requestConversationId: string;
-    assistantMessageId: string;
-    response: Response;
-    abortController: AbortController;
-  }) {
-    const session = startLiveChatSession(attachOptions);
-    try {
-      chatAbortControllerRef.current = attachOptions.abortController;
-      stoppingRef.current = false;
-
-      const contentType = attachOptions.response.headers.get('content-type') || '';
-      if (!attachOptions.response.body || !contentType.includes('text/event-stream')) {
-        session.applyResponse((await attachOptions.response.json().catch(() => ({
-          ok: false,
-          error: `${attachOptions.response.status}`,
-        }))) as ChatResponse);
-        return;
-      }
-
-      await consumeEventStream<ChatStreamEvent>(attachOptions.response, session.handleStreamEvent);
-    } catch (error) {
-      if ((error instanceof Error && error.name === 'AbortError') || stoppingRef.current) {
-        return;
-      }
-      const msg = `${t.response.requestFailedPrefix}${error instanceof Error ? error.message : t.response.unknownError}`;
-      session.finalizeAssistant(msg, 'error');
-    } finally {
-      session.finish();
-    }
-  }
 
   async function sendMessage(message: string, sendOptions: {
     deploy?: boolean;
@@ -429,32 +196,19 @@ export function useLiveTurn(options: {
       chatAbortControllerRef.current = requestAbortController;
       stoppingRef.current = false;
         if (isStartingFromHome) {
-          try {
-            const resumeResponse = await openSessionStream(
-              requestConversationId,
-              requestAbortController.signal,
-              {
-                model: modelRef.current,
-                language,
-                mode: 'create',
-              },
-            );
-            const resumeType = resumeResponse.headers.get('content-type') || '';
-            if (
-              resumeResponse.ok
-              && resumeResponse.body
-              && resumeType.includes('text/event-stream')
-            ) {
-              await consumeEventStream<SessionStreamEvent>(resumeResponse, (event) => {
-                if (event.type !== 'session_prep' || !event.data?.stage) return;
-                if (event.data.status === 'running' || event.data.stage === 'ready') {
-                  setPrepStage(event.data.stage);
-                }
-              });
-            }
-          } catch (error) {
-            if (error instanceof Error && error.name === 'AbortError') throw error;
-          }
+          await runCreateSessionPrep({
+            conversationId: requestConversationId,
+            signal: requestAbortController.signal,
+            model: modelRef.current,
+            language,
+            setPrepStage,
+            // `ready` can precede the end of the prep stream; drop the overlay there
+            // instead of waiting for the remaining stages to close it.
+            onReady: () => {
+              setMessages(turnMessages);
+              setSessionPreparing(false);
+            },
+          });
           setMessages(turnMessages);
           setSessionPreparing(false);
           setPrepStage(null);
@@ -476,11 +230,28 @@ export function useLiveTurn(options: {
             ...(inboundApiKey ? { apiKey: inboundApiKey } : {}),
             signal: requestAbortController.signal,
           });
-      await attachChatStream({
+      await attachLiveChatStream({
         requestConversationId,
         assistantMessageId,
         response,
         abortController: requestAbortController,
+        requestFailedPrefix: t.response.requestFailedPrefix,
+        unknownError: t.response.unknownError,
+        workspaceEpoch: workspaceEpochRef.current,
+        workspaceEpochRef,
+        conversationIdRef,
+        chatAbortControllerRef,
+        stoppingRef,
+        activeTurnIdRef,
+        noDisplay: t.response.noDisplay,
+        processingFailed: t.response.processingFailed,
+        agentFlowEnded: t.response.agentFlowEnded,
+        workspace,
+        preview,
+        snapshot,
+        setConversationId,
+        setMessages,
+        setLoading,
       });
     } catch (error) {
       if ((error instanceof Error && error.name === 'AbortError') || stoppingRef.current) {
@@ -543,58 +314,12 @@ export function useLiveTurn(options: {
     return stopRequest;
   }
 
-  async function applyGateway(decision: { apiKey?: string; skip?: boolean }) {
-    if (workspace.gatewayBusy) return;
-    const cid = conversationIdRef.current || conversationId;
-    if (!cid) return;
-    const apiKey = (decision.apiKey || '').trim();
-    if (!decision.skip && !apiKey) return;
-
-    workspace.setGatewayBusy(true);
-    try {
-      const response = await applyGatewayDecision({
-        conversationId: cid,
-        ...(apiKey ? { apiKey } : {}),
-        ...(decision.skip ? { gatewaySkip: true } : {}),
-      });
-      const data = await response.json().catch(() => null) as {
-        ok?: boolean;
-        live?: boolean;
-        skipped?: boolean;
-        configured?: boolean;
-        preview?: {
-          url?: string;
-          sandboxDebugUrl?: string;
-          kind?: 'sandbox' | 'makers';
-          restarted?: boolean;
-        };
-        download?: { url?: string; filename?: string };
-      } | null;
-      if (!response.ok || !data?.ok) {
-        workspace.setGatewayBusy(false);
-        return;
-      }
-      if (decision.skip) {
-        workspace.setGatewayNeeded(false);
-        workspace.setGatewayDeferred(true);
-        workspace.setGatewayConfigured(false);
-      } else {
-        workspace.setGatewayNeeded(false);
-        workspace.setGatewayDeferred(false);
-        workspace.setGatewayConfigured(true);
-        workspace.setGatewayPromptVariant('default');
-      }
-      workspace.setGatewayBusy(false);
-      if (data.preview && !data.live) {
-        preview.activatePreview(data.preview, new Map());
-      }
-      if (data.download) {
-        workspace.setDownload(data.download);
-      }
-    } catch {
-      workspace.setGatewayBusy(false);
-    }
-  }
+  const applyGateway = createApplyGateway({
+    workspace,
+    preview,
+    conversationId,
+    conversationIdRef,
+  });
 
   return {
     messages,

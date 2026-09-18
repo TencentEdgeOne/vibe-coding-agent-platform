@@ -2,7 +2,7 @@
 
 import { Check, ChevronDown } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
-import type { ModelOption } from '../../shared/models';
+import type { ModelOption } from '../../../../shared/models';
 
 /**
  * Model switcher for both composers.

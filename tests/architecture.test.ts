@@ -124,6 +124,44 @@ test('retired session-truth modules stay gone', async () => {
   }
 });
 
+test('app/components only holds shared UI primitives', async () => {
+  const names = await readdir('app/components');
+  for (const name of [
+    'agent-conversation.tsx',
+    'files-panel.tsx',
+    'session-panel.tsx',
+    'model-picker.tsx',
+  ]) {
+    assert.ok(
+      !names.includes(name),
+      `${name} belongs under app/features/workspace/components, not app/components/`,
+    );
+  }
+});
+
+test('workspace feature component directories expose index.tsx', async () => {
+  const root = path.join('app', 'features', 'workspace', 'components');
+  for (const name of ['conversation', 'files', 'result-panel']) {
+    await access(path.join(root, name, 'index.tsx'));
+  }
+});
+
+test('app source files stay within size limits', async () => {
+  for (const file of await sourceFiles('app')) {
+    if (file.startsWith(`app${path.sep}components${path.sep}ui${path.sep}`)) continue;
+    if (file.startsWith(`app${path.sep}i18n${path.sep}`)) continue;
+    const source = await readFile(file, 'utf8');
+    const lines = source.split(/\r?\n/).filter((line, index, all) => (
+      index < all.length - 1 || line !== ''
+    )).length;
+    const limit = file.endsWith('.tsx') ? 300 : 350;
+    assert.ok(
+      lines <= limit,
+      `${file} has ${lines} lines (limit ${limit})`,
+    );
+  }
+});
+
 test('session kernel and makers CLI live under agents/_lib', async () => {
   for (const target of [
     'agents/_lib/session/store.ts',

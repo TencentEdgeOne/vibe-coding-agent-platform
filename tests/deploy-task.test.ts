@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { presentToolActivity } from '../app/lib/tool-activity.ts';
 import { readCommandsWrapSource } from './helpers/fixtures.ts';
+import { CONVERSATION, I18N, LIVE_TURN, NEW_PROJECT, WORKSPACE, surface } from './helpers/source.ts';
 
 // Publishing and generating both drive the same sandbox, so they share the one
 // task slot: whichever starts first makes the other wait, and a refresh
@@ -12,7 +13,7 @@ test('publishing occupies the chat task slot instead of a route of its own', asy
     readFile('agents/_lib/session/task.ts', 'utf8'),
     readFile('agents/deploy.ts', 'utf8'),
     readFile('agents/_lib/session/resume.ts', 'utf8'),
-    readFile('app/features/workspace/workspace-api.ts', 'utf8'),
+    surface('app/features/workspace/workspace-api.ts'),
   ]);
 
   assert.match(tasks, /kind === 'deploy'[\s\S]*?runDeployPipeline/);
@@ -123,10 +124,10 @@ test('publishing restarts the preview without paying for the smoke gates again',
 // server.
 test('a publish closes the routes out of the preview without covering it', async () => {
   const [screen, frame, controls, i18n] = await Promise.all([
-    readFile('app/features/workspace/workspace-screen.tsx', 'utf8'),
-    readFile('app/features/workspace/components/preview-frame.tsx', 'utf8'),
-    readFile('app/features/workspace/components/preview-controls.tsx', 'utf8'),
-    readFile('app/i18n.ts', 'utf8'),
+    surface(WORKSPACE),
+    surface('app/features/workspace/components/preview-frame.tsx'),
+    surface('app/features/workspace/components/preview-controls.tsx'),
+    surface(I18N),
   ]);
 
   // The frame is not told a publish is running, which is the whole of it: with
@@ -190,10 +191,10 @@ test('a publish reads as one row in the transcript, whoever started it', () => {
 
 test('publish is offered above the composer after a finished project turn', async () => {
   const [screen, conversation, styles, i18n] = await Promise.all([
-    readFile('app/features/workspace/workspace-screen.tsx', 'utf8'),
-    readFile('app/components/agent-conversation.tsx', 'utf8'),
+    surface(WORKSPACE),
+    surface(CONVERSATION),
     readFile('app/styles/conversation.css', 'utf8'),
-    readFile('app/i18n.ts', 'utf8'),
+    surface(I18N),
   ]);
 
   assert.match(screen, /resolveDeployOffer/);
@@ -208,8 +209,8 @@ test('publish is offered above the composer after a finished project turn', asyn
 
 test('the deploy button is disabled until a project exists and nothing is running', async () => {
   const [screen, live] = await Promise.all([
-    readFile('app/features/workspace/workspace-screen.tsx', 'utf8'),
-    readFile('app/features/workspace/hooks/use-live-turn.ts', 'utf8'),
+    surface(WORKSPACE),
+    surface(LIVE_TURN),
   ]);
 
   assert.match(screen, /const hasDeployableProject = Boolean\(workspace\.download\?\.url\)/);
@@ -226,10 +227,7 @@ test('the deploy button is disabled until a project exists and nothing is runnin
   assert.match(screen, /className="workspace-icon-button is-publish"/);
   assert.doesNotMatch(screen, /is-running/);
   assert.match(screen, /<Rocket className="size-3\.5" \/>/);
-  assert.doesNotMatch(
-    screen.slice(screen.indexOf('handleDeployProject'), screen.indexOf('handleDownload')),
-    /workspace-icon-spinner/,
-  );
+  assert.match(screen, /className="workspace-icon-button is-publish"[\s\S]*?<Rocket className="size-3\.5" \/>\s*<\/button>/);
   assert.match(screen, /data-tooltip=\{deployHint\}/);
   assert.match(
     screen,
@@ -243,8 +241,8 @@ test('the deploy button is disabled until a project exists and nothing is runnin
 // never disabled and never reads the project state.
 test('the header ships the template, the panel ships the project', async () => {
   const [screen, header] = await Promise.all([
-    readFile('app/features/workspace/workspace-screen.tsx', 'utf8'),
-    readFile('app/features/workspace/components/site-header.tsx', 'utf8'),
+    surface(WORKSPACE),
+    surface('app/features/workspace/components/site-header.tsx'),
   ]);
 
   assert.match(header, /href=\{templateDeployUrl\}/);
@@ -259,7 +257,7 @@ test('the header ships the template, the panel ships the project', async () => {
 // it on presence, a URL published in an earlier session stayed on screen through a
 // session that never published anything.
 test('resumed history decides the deployment card, including when there is none', async () => {
-  const resume = await readFile('app/features/workspace/hooks/use-session-resume.ts', 'utf8');
+  const resume = await surface('app/features/workspace/hooks/use-session-resume.ts');
   const start = resume.indexOf('const applyHistory = (data: ResumeData)');
   const body = resume.slice(start, resume.indexOf('const applyWorkspace = (data: ResumeData) => {', start));
 
@@ -273,8 +271,8 @@ test('resumed history decides the deployment card, including when there is none'
 // previous conversation — id, history and deployment — over the fresh one.
 test('starting a new project stops the resume that was already in flight', async () => {
   const [screen, resume] = await Promise.all([
-    readFile('app/features/workspace/workspace-screen.tsx', 'utf8'),
-    readFile('app/features/workspace/hooks/use-session-resume.ts', 'utf8'),
+    surface(NEW_PROJECT),
+    surface('app/features/workspace/hooks/use-session-resume.ts'),
   ]);
   const reset = screen.slice(
     screen.indexOf('function startNewProject() {'),
@@ -292,13 +290,14 @@ test('starting a new project stops the resume that was already in flight', async
 // The composer is a text field the user may be mid-sentence in, and the Files
 // panel is not waiting on anything a publish does.
 test('publishing leaves the composer and the files panel alone', async () => {
-  const live = await readFile('app/features/workspace/hooks/use-live-turn.ts', 'utf8');
+  const live = await surface(LIVE_TURN);
   const start = live.indexOf('async function sendMessage(');
   const body = live.slice(start, live.indexOf('function stopCurrentTask(', start));
 
   assert.ok(start >= 0 && body.length > 0);
   assert.match(body, /const isStartingFromHome = !isDeploy/);
-  assert.match(body, /if \(isStartingFromHome\) \{[\s\S]*?openSessionStream/);
+  assert.match(body, /if \(isStartingFromHome\) \{[\s\S]*?runCreateSessionPrep/);
+  assert.match(live, /openSessionStream/);
   assert.match(body, /startPromptTurn\(/);
   assert.match(body, /startDeployTurn\(/);
   assert.match(body, /if \(!isDeploy\) \{\s*workspace\.setFilesRefreshing\(true\);/);

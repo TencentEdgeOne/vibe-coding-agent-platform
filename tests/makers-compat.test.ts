@@ -8,6 +8,7 @@ import {
   resolveMakersSkillDirectory,
 } from '../agents/_lib/tools/makers-skills.ts';
 import { readCommandsWrapSource } from './helpers/fixtures.ts';
+import { surface } from './helpers/source.ts';
 
 const skillsRoot = '.claude/skills';
 
@@ -116,7 +117,7 @@ test('specific Makers skill loader reads official references without changing th
 
 test('cold resume restores project dependencies without managing the sandbox CLI', async () => {
   const resume = await readFile('agents/_lib/session/resume.ts', 'utf8');
-  const client = await readFile('app/features/workspace/workspace-api.ts', 'utf8');
+  const client = await surface('app/features/workspace/workspace-api.ts');
   assert.match(resume, /const depsReady = await ensureProjectDependencies\(context, state\)/);
   assert.doesNotMatch(resume, /prewarmEdgeoneCli|npm install -g edgeone/);
   assert.match(resume, /WORKSPACE_RESUME_BUDGET_MS = 600_000/);
