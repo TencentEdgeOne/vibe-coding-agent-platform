@@ -20,6 +20,7 @@ import {
   parseMakersDevExitCode,
   previewCanonicalRedirect,
   previewPrefixProbe,
+  previewPrefixProbeIsHome,
   previewProxyRevision,
   previewRestoredUrl,
   previewTrailingSlashFollow,
@@ -802,6 +803,14 @@ test('a 404 on the stripped path asks whether the prefixed one exists', () => {
   assert.equal(previewPrefixProbe('/preview/', '/', 404, '/'), undefined);
 });
 
+test('only the stripped homepage is the probe that can be asked again', () => {
+  assert.equal(previewPrefixProbeIsHome('/'), true);
+  assert.equal(previewPrefixProbeIsHome('/?access_token=x'), true);
+  assert.equal(previewPrefixProbeIsHome('/missing'), false);
+  assert.equal(previewPrefixProbeIsHome('/blog'), false);
+  assert.equal(previewPrefixProbeIsHome(undefined), false);
+});
+
 /**
  * Run the real proxy script against an upstream that behaves like Vite with
  * `base` set, which is the case no framework config can fix.
@@ -978,6 +987,32 @@ test('a genuinely missing page is probed once and changes nothing', async () => 
   });
 
   assert.deepEqual(seen, ['/missing', `${PREFIX}/missing`, '/', '/missing/two']);
+});
+
+// The failure this exists for: the readiness poll hits /preview/ while Astro
+// is still compiling, both the stripped path and the probe 404, and a latch
+// then keeps stripping after the server is up — reported as a preview that
+// never came up against a process that is answering.
+test('a homepage 404 can be probed again after the upstream finishes compiling', async () => {
+  let requests = 0;
+  const seen = await withProxiedUpstream((url) => {
+    requests += 1;
+    if (requests <= 2) return { status: 404, body: 'compiling' };
+    if (url === PREFIX || url.startsWith(`${PREFIX}/`)) {
+      return { status: 200, body: '<html><head></head><body>astro</body></html>' };
+    }
+    return { status: 404, body: 'not found' };
+  }, async (port) => {
+    const base = `http://127.0.0.1:${port}`;
+    const first = await fetch(`${base}${PREVIEW_PATH_PREFIX}`, { redirect: 'manual' });
+    assert.equal(first.status, 404);
+
+    const second = await fetch(`${base}${PREVIEW_PATH_PREFIX}`, { redirect: 'manual' });
+    assert.equal(second.status, 200);
+    assert.match(await second.text(), /astro/);
+  });
+
+  assert.deepEqual(seen, ['/', `${PREFIX}/`, '/', `${PREFIX}/`]);
 });
 
 // Measured against the sandbox that produced the report: /preview/articles came

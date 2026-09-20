@@ -548,6 +548,9 @@ test('the host starts dest with the workspace and keeps it watching files', asyn
 
   assert.match(chat, /const startHostPreview = async/);
   assert.match(chat, /if \(state\.created\) \{\s*\n\s*void startHostPreview\('\[preview\] workspace ready:'\)/);
+  // A failed dest used to warn only. The empty panel then had nothing to show
+  // but the placeholder, over a model sentence that claimed the preview worked.
+  assert.match(chat, /preview:\s*\{\s*error:\s*message\s*\}/);
   assert.doesNotMatch(chat, /onWorkspaceReady/);
   assert.match(chat, /state\.created && !state\.previewUrl/);
   assert.match(chat, /await persistWorkspace\(context, conversationId, state\)/);

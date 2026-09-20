@@ -352,6 +352,10 @@ test('the asset prefix is told to the framework, whichever framework it is', () 
   assert.doesNotMatch(prompt, /next\.config\.(?:js|mjs|ts)\b/);
   assert.match(prompt, /base in vite\.config for Vite and everything built on it/);
   assert.match(prompt, /TanStack Start/);
+  // Astro reads `base` from astro.config, not vite.config — naming only the
+  // Vite file sent the model to a file the scaffolder does not write.
+  assert.match(prompt, /base in astro\.config for Astro/);
+  assert.doesNotMatch(prompt, /astro\.config\.(?:js|mjs|ts)\b/);
   // Always the variable, never the literal.
   assert.match(prompt, new RegExp(`the value is always process\\.env\\.${PREVIEW_ASSET_PREFIX_ENV}`));
   assert.match(prompt, /Omit the option entirely when the variable is unset/);

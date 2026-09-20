@@ -237,7 +237,10 @@ export function previewUpstreamClaimsPrefix(
  * it is the retry's own status. Anything but a second 404 means the prefixed
  * path is a route the upstream knows and the stripped one was not, and the
  * proxy stops stripping. Two 404s mean the page is simply absent, the second
- * answer is served, and nothing is remembered.
+ * answer is served, and nothing is remembered — except on the homepage, where
+ * the same pair of 404s is also what a server still compiling looks like. The
+ * readiness poll asks for `/` every second, so a once-per-process latch there
+ * would spend the whole launch budget on a server that later answers 200.
  *
  * Returns the path to re-request, or undefined when this is not that case —
  * including when nothing was stripped, where the retry would be the same
@@ -256,6 +259,19 @@ export function previewPrefixProbe(
   const path = requestUrl.split('?')[0];
   if (path !== normalizedPrefix && !path.startsWith(`${normalizedPrefix}/`)) return undefined;
   return requestUrl;
+}
+
+/**
+ * Whether a 404 probe is for the readiness document itself.
+ *
+ * Subpath 404s stay latched after one miss so a missing page is not asked
+ * twice. The homepage cannot be: the first pair of 404s is often "not compiled
+ * yet", and locking that answer is how an Astro preview never comes up.
+ */
+export function previewPrefixProbeIsHome(forwardedPath: string | undefined) {
+  if (!forwardedPath) return false;
+  const path = forwardedPath.split('?')[0];
+  return path === '/' || path === '';
 }
 
 /**

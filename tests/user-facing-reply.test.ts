@@ -100,12 +100,29 @@ test('a preview that was attempted and never came up is still a failure', () => 
   assert.equal(outcome.reply, '项目已生成，但预览暂时不可用，请重试。');
 });
 
-// The canned line names a generated project and an attempted preview. When the
-// model has said something, both of those claims are guesses next to it.
-test('the canned failure line never replaces what the model said', () => {
+// The model is required to say whether the preview works and cannot see the
+// iframe. That sentence must not survive a turn that never published a URL.
+test('a missing preview is not reported as ready just because the model said so', () => {
   const outcome = resolveFinishedTurn({
     filesWritten: true,
     previewUrl: '',
+    buildFailed: false,
+    modelReply: 'Astro 博客站点已经搭好，构建已验证通过。右侧预览可以直接查看。',
+    fallbackReply: '已按你的需求生成项目：Astro 博客。',
+    failureReply: '项目已生成，但预览暂时不可用，请重试。',
+  });
+
+  assert.equal(outcome.failed, true);
+  assert.equal(outcome.previewMissing, true);
+  assert.equal(outcome.reply, '项目已生成，但预览暂时不可用，请重试。');
+});
+
+// A build failure with a live preview still keeps the model's own words —
+// those name the check that failed, which the canned line cannot.
+test('a build failure keeps what the model said when a preview is already up', () => {
+  const outcome = resolveFinishedTurn({
+    filesWritten: true,
+    previewUrl: 'https://sandbox.example.com/preview/',
     buildFailed: true,
     modelReply: '构建失败：edgeone.json 缺少 agents.framework，我正在补上。',
     fallbackReply: '已按你的需求生成项目：全栈项目。',
@@ -113,6 +130,7 @@ test('the canned failure line never replaces what the model said', () => {
   });
 
   assert.equal(outcome.failed, true);
+  assert.equal(outcome.previewMissing, false);
   assert.match(outcome.reply, /缺少 agents\.framework/);
 });
 

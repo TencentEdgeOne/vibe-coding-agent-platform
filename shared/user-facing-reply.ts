@@ -102,6 +102,16 @@ export function resolveFinishedTurn(turn: FinishedTurn) {
   // user is the same: dest was skipped on purpose until they answer.
   const previewMissing = !turn.waitingForUser && turn.filesWritten && !turn.previewUrl;
   const failed = turn.buildFailed || previewMissing;
+  // The model is told to say whether the preview works and cannot see the
+  // iframe. Keeping that sentence when dest never published a URL is how an
+  // Astro turn ended with "右侧预览可以直接查看" over an empty panel.
+  if (previewMissing) {
+    return {
+      reply: turn.failureReply,
+      failed,
+      previewMissing,
+    };
+  }
   if (!turn.modelReply) {
     return {
       reply: failed ? turn.failureReply : turn.fallbackReply,
@@ -113,6 +123,8 @@ export function resolveFinishedTurn(turn: FinishedTurn) {
     // Compaction keeps the first paragraph's first two sentences. That is right
     // for an outcome and wrong for anything the user has to act on: it cut a
     // question down to its preamble and dropped the options underneath it.
+    // A build failure with a live preview still keeps the model's own words —
+    // those name the check that failed, which the canned line cannot.
     reply: turn.filesWritten
       ? compactUserFacingReply(turn.modelReply, turn.fallbackReply)
       : turn.modelReply,

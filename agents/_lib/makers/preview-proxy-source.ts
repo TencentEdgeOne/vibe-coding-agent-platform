@@ -27,11 +27,13 @@ const HEALTH_PATH = '/__edgeone_preview_proxy_health';
 // prefix knob expect.
 let prefixAware = false;
 
-// The 404-shaped form of the same claim, tried once per proxy — see
-// previewPrefixProbe. Once, because an upstream that really does serve at the
-// root answers a genuinely missing page with a 404 too, and re-asking on every
-// one of those would double the requests to re-learn what the first probe
-// already established.
+// The 404-shaped form of the same claim. Subpaths are tried once per proxy —
+// see previewPrefixProbe — because a page that is simply missing answers 404
+// too, and re-asking on every one of those would double the requests to
+// re-learn what the first probe already established. The homepage is asked
+// every time: the readiness poll hits it while the framework is still
+// compiling, and latching that pair of 404s is how an Astro preview never
+// comes up.
 let prefixProbed = false;
 
 function rewritePath(url) {
@@ -88,6 +90,13 @@ function prefixProbe(requestUrl, forwardedPath, statusCode) {
   const probePath = requestUrl.split('?')[0];
   if (probePath !== PREFIX && probePath.indexOf(PREFIX + '/') !== 0) return null;
   return requestUrl;
+}
+
+// Mirrors previewPrefixProbeIsHome in shared/makers-dev.ts.
+function prefixProbeIsHome(forwardedPath) {
+  if (!forwardedPath) return false;
+  const path = forwardedPath.split('?')[0];
+  return path === '/' || path === '';
 }
 
 // Mirrors previewTrailingSlashFollow in shared/makers-dev.ts.
@@ -377,15 +386,18 @@ function forward(req, res, path, mayRetry, mayFollow, probing) {
     }
     // The same claim made as a 404, which is how Astro states it. Asked rather
     // than concluded: the retry's status is what tells a base-mounted app apart
-    // from a page that is simply not there.
+    // from a page that is simply not there. The homepage is re-asked on every
+    // miss so a compile-time 404 cannot latch; other paths stay once.
+    const probeTarget = prefixProbe(req.url, path, upstream.statusCode);
+    const homeProbe = Boolean(probeTarget) && prefixProbeIsHome(path);
     if (
       mayRetry
       && !prefixAware
-      && !prefixProbed
+      && (homeProbe || !prefixProbed)
       && (req.method === 'GET' || req.method === 'HEAD')
-      && prefixProbe(req.url, path, upstream.statusCode)
+      && probeTarget
     ) {
-      prefixProbed = true;
+      if (!homeProbe) prefixProbed = true;
       upstream.resume();
       forward(req, res, req.url, false, true, true);
       return;
