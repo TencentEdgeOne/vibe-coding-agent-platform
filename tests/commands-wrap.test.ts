@@ -556,3 +556,92 @@ test('direct makers deploy surfaces the captured CLI failure', async () => {
   assert.match(output, /Project name conflict/);
   assert.match(output, /"exitCode":1/);
 });
+
+/**
+ * The wrapper has to register a command before it runs and drop it after, and
+ * the only thing that ties a chunk of sandbox output to a row is the tool-use
+ * id the agent loop put in the MCP request `_meta`. Both halves are exercised
+ * here through the real sink, because a chunk that arrives for a command the
+ * wrapper never registered is silently discarded.
+ */
+test('live sandbox output patches the row of the command that produced it', async () => {
+  const { installCommandOutputStream } = await import('../agents/_lib/tools/command-stream.ts');
+  const sink: { handler?: (chunk: unknown) => void } = {};
+  const context = {
+    env: {},
+    tools: {
+      toClaudeMcpServer: () => ({ tools: [], allowedTools: [] }),
+      setCommandOutputHandler: (handler: (chunk: unknown) => void) => {
+        sink.handler = handler;
+      },
+    },
+    sandbox: {
+      files: { write: async () => {} },
+      commands: { run: async () => ({ stdout: '', stderr: '', exitCode: 0 }) },
+    },
+  };
+  const state = projectState();
+  const sent: { type: string; data?: Record<string, unknown> }[] = [];
+  const commandsTool = {
+    name: 'commands',
+    description: 'run',
+    inputSchema: {},
+    handler: async (args: { command?: string }, extra: unknown) => {
+      const toolUseId = (extra as { _meta?: Record<string, string> })._meta?.['claudecode/toolUseId'];
+      // The runtime emits with the id it read off the same request.
+      sink.handler?.({ stream: 'stdout', data: 'Compiling…\n', command: args.command, toolUseId });
+      sink.handler?.({ stream: 'stderr', data: 'warning: large chunk\n', command: args.command, toolUseId });
+      return { content: [{ type: 'text', text: 'ok' }] };
+    },
+  } as unknown as ClaudeMcpTool;
+
+  const stream = installCommandOutputStream({
+    context: context as never,
+    getSend: () => (event) => sent.push(event as never),
+    getProjectDir: () => state.appDir,
+    intervalMs: 0,
+  });
+  const [wrapped] = wrapSandboxTools([commandsTool], {
+    context: context as never,
+    state,
+    commandStream: stream,
+  });
+
+  await wrapped.handler({ command: 'npm run build' }, {
+    _meta: { 'claudecode/toolUseId': 'toolu_live' },
+  });
+
+  const patches = sent.filter((event) => event.type === 'tool_use');
+  assert.ok(patches.length >= 1, 'the running command repainted its row');
+  const last = patches.at(-1);
+  assert.equal(last?.data?.id, 'toolu_live');
+  assert.match(String(last?.data?.outputSummary), /Compiling/);
+
+  // Registered for exactly as long as the process lived: a chunk that arrives
+  // after the call returned belongs to no row.
+  sent.length = 0;
+  sink.handler?.({ stream: 'stdout', data: 'late\n', command: 'npm run build', toolUseId: 'toolu_live' });
+  assert.equal(sent.length, 0);
+});
+
+test('a command run without an output sink still executes', async () => {
+  let received = '';
+  const commandsTool = {
+    name: 'commands',
+    description: 'run',
+    inputSchema: {},
+    handler: async (args: { command?: string }) => {
+      received = args.command || '';
+      return { content: [{ type: 'text', text: 'ok' }] };
+    },
+  } as unknown as ClaudeMcpTool;
+
+  const [wrapped] = wrapSandboxTools([commandsTool], {
+    context: { env: {} } as never,
+    state: projectState(),
+    commandStream: null,
+  });
+  const result = await wrapped.handler({ command: 'ls -la' }, {});
+  assert.equal(received, 'ls -la');
+  assert.equal(result.isError, undefined);
+});

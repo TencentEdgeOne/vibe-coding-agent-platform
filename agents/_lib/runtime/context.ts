@@ -61,6 +61,17 @@ export type AgentContext = {
       tools: unknown[];
       allowedTools: string[];
     };
+    /**
+     * Routes sandbox command output to a handler while the command runs, as
+     * `{ stream, data, command, toolUseId }` chunks. Absent on a runtime that
+     * predates it, which leaves commands unstreamed rather than broken.
+     */
+    setCommandOutputHandler?: (handler: (chunk: {
+      stream?: 'stdout' | 'stderr';
+      data?: string;
+      command?: string;
+      toolUseId?: string;
+    }) => void) => unknown;
   };
   utils?: {
     abortActiveRun?: (conversationId: string) => Promise<{ aborted?: boolean } | undefined>;
