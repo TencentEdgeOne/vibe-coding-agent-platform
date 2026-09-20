@@ -10,6 +10,7 @@ import type {
   StreamSend,
 } from '../types.ts';
 import { wrapSandboxTools, type MakersCommandLifecycle } from './commands-wrap.ts';
+import { installCommandOutputStream } from './command-stream.ts';
 import { wrapWebSearchTool } from './web-search-wrap.ts';
 import {
   WEB_SEARCH_API_KEY_ENV,
@@ -79,6 +80,14 @@ export function assembleAgentTools(session: LiveSessionHandle) {
       return session.getCallbacks().send;
     },
   };
+  // Installed once, against the context this session was assembled with. The
+  // sandbox toolkit memoizes its tools per context object, so an install from a
+  // later context would be sending into a sandbox nobody runs commands in.
+  const commandStream = installCommandOutputStream({
+    context,
+    getSend: () => session.getCallbacks().send,
+    getProjectDir: () => session.getState().appDir,
+  });
   const writeProjectFileTool = buildWriteProjectFileTool(
     context,
     session.getState(),
@@ -103,6 +112,7 @@ export function assembleAgentTools(session: LiveSessionHandle) {
       get signal() {
         return session.getCallbacks().abortSignal;
       },
+      commandStream,
       onPreviewReady: (preview) => {
         session.flags.previewTouched = true;
         if (preview.url) session.getCallbacks().onPreviewReady?.(preview);

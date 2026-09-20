@@ -33,6 +33,7 @@ import {
 } from './command-preprocess.ts';
 import { prepareMakersCommand } from './makers-command.ts';
 import type { MakersCommandLifecycle } from './makers-lifecycle.ts';
+import { commandCallId } from './command-stream.ts';
 import { handleDevCommandResult } from './preview-command-result.ts';
 import {
   handleDeployCommandResult,
@@ -134,11 +135,27 @@ export function wrapSandboxTools(
           }
         }
         let result: Awaited<ReturnType<ClaudeMcpTool['handler']>>;
+        let endCommandStream: (() => void) | undefined;
         try {
+          const stream = lifecycle?.commandStream;
+          if (stream) {
+            endCommandStream = stream.begin({
+              toolUseId: commandCallId(extra),
+              command: extractCommand(nextArgs).command,
+              // The token and the gateway key are in the environment this
+              // command inherits, so a live log is no safer a place for either
+              // to surface than the finished one the tool_result carries.
+              secrets: makers ? [makers.sandboxToken, makers.gatewayKey] : [],
+            });
+          }
           result = await originalHandler(nextArgs, extra);
         } catch (error) {
           failDeployment(error instanceof Error ? error.message : String(error));
           throw error;
+        } finally {
+          // The process is gone, so nothing more can print. Painting the tail
+          // is over; the tool_result reports the whole output.
+          endCommandStream?.();
         }
         if (isEdgeoneVersionCommand(command)) {
           const versionOutput = commandOutputFromToolResult(result);

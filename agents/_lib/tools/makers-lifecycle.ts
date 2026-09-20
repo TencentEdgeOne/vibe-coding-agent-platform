@@ -5,6 +5,7 @@ import type {
   ProjectState,
   StreamSend,
 } from '../types.ts';
+import type { CommandOutputStream } from './command-stream.ts';
 
 export type MakersCommandLifecycle = {
   context: AgentContext;
@@ -12,6 +13,11 @@ export type MakersCommandLifecycle = {
   conversationId?: string;
   send?: StreamSend;
   signal?: AbortSignal;
+  /**
+   * Live command output for this session, installed when the tools were
+   * assembled. Null when the runtime does not expose an output sink.
+   */
+  commandStream?: CommandOutputStream | null;
   onPreviewReady?: (preview: {
     url?: string;
     sandboxDebugUrl?: string;
