@@ -1,3 +1,4 @@
+import { PREVIEW_ASSET_PREFIX_ENV } from '../../constants.ts';
 import { SUPPORTED_MAKERS_AGENT_FRAMEWORKS, type MakersFrameworkProfile, type MakersValidationRule } from './skill-rules.ts';
 
 export function buildMakersCompatibilityScript(
@@ -7,7 +8,7 @@ export function buildMakersCompatibilityScript(
   const rulesJson = JSON.stringify(sourceRules).replaceAll('<', '\\u003c');
   const frameworksJson = JSON.stringify(SUPPORTED_MAKERS_AGENT_FRAMEWORKS);
   const profilesJson = JSON.stringify(frameworkProfiles).replaceAll('<', '\\u003c');
-  return `'use strict';\nconst sourceRules = ${rulesJson};\nconst supportedAgentFrameworks = ${frameworksJson};\nconst frameworkProfiles = ${profilesJson};\n${String.raw`
+  return `'use strict';\nconst sourceRules = ${rulesJson};\nconst supportedAgentFrameworks = ${frameworksJson};\nconst frameworkProfiles = ${profilesJson};\nconst assetPrefixEnv = ${JSON.stringify(PREVIEW_ASSET_PREFIX_ENV)};\n${String.raw`
 const fs = require('fs');
 const path = require('path');
 const errors = [];
@@ -420,6 +421,31 @@ for (const profile of frameworkProfiles) {
       adapterPackage + ' is not referenced in this config, so the build emits output the platform cannot serve. '
         + 'Import it and register it the way the makers-frameworks skill documents for ' + profile.label + '.'
         + (overrode ? ' ' + override.reason : ''),
+    );
+  }
+}
+
+// Independent of the adapter: preview is the framework's own dev server, and
+// Astro emits /_astro and /@vite URLs from base in astro.config — not from
+// vite.config, and not only when output is server. Missing the env leaves the
+// document answering 200 while every chunk 404s outside the published prefix.
+const astroConfigFiles = ['astro.config.mjs', 'astro.config.js', 'astro.config.ts'];
+if (dependencies.astro) {
+  const astroConfig = astroConfigFiles.find((candidate) => files.includes(candidate));
+  if (!astroConfig) {
+    addError(
+      'MKR022',
+      astroConfigFiles[0],
+      'Astro must set base from process.env.' + assetPrefixEnv + ' in astro.config so preview '
+        + 'assets resolve under the published prefix. Omit the key when the variable is unset.',
+    );
+  } else if (!readLintSource(astroConfig).includes(assetPrefixEnv)) {
+    addError(
+      'MKR022',
+      astroConfig,
+      'Astro must set base from process.env.' + assetPrefixEnv + ' in this config so preview '
+        + 'assets resolve under the published prefix. The document still answers 200 when they '
+        + 'do not, which is why a curl cannot see the failure. Omit the key when the variable is unset.',
     );
   }
 }

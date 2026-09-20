@@ -474,7 +474,10 @@ test('a static build of the same framework needs no adapter', async () => {
     'package.json': '{"dependencies":{"astro":"^5.0.0"}}',
     'astro.config.mjs': `
 import { defineConfig } from 'astro/config';
-export default defineConfig({ output: 'static' });
+export default defineConfig({
+  base: process.env.EDGEONE_PREVIEW_ASSET_PREFIX,
+  output: 'static',
+});
 `,
   });
 
@@ -486,10 +489,27 @@ export default defineConfig({ output: 'static' });
 test('a framework defaulting to static passes with no output declared', async () => {
   const result = await runLintFixture({
     'package.json': '{"dependencies":{"astro":"^5.0.0"}}',
-    'astro.config.mjs': "import { defineConfig } from 'astro/config';\nexport default defineConfig({});\n",
+    'astro.config.mjs':
+      "import { defineConfig } from 'astro/config';\n"
+      + 'export default defineConfig({ base: process.env.EDGEONE_PREVIEW_ASSET_PREFIX });\n',
   });
 
   assert.equal(result.exitCode, 0, result.stderr);
+});
+
+// The preview is the framework's own dev server. `base` is what moves /_astro
+// under the published prefix, for static and server alike — the adapter check
+// cannot see this, and a curl of the document still answers 200.
+test('an Astro config that never reads the preview asset prefix is rejected', async () => {
+  const result = await runLintFixture({
+    'package.json': '{"dependencies":{"astro":"^5.0.0"}}',
+    'astro.config.mjs': "import { defineConfig } from 'astro/config';\nexport default defineConfig({});\n",
+  });
+  const output = `${result.stderr}\n${result.stdout}`;
+
+  assert.equal(result.exitCode, 2);
+  assert.match(output, /MKR022.*astro\.config\.mjs/);
+  assert.match(output, /EDGEONE_PREVIEW_ASSET_PREFIX/);
 });
 
 // The inverse default, and the case a single serverOutputPattern got wrong:

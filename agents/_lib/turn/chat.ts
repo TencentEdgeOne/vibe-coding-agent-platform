@@ -203,10 +203,14 @@ export async function runChatPipeline(
         await handlePreviewReady(preview);
         return Boolean(state.previewUrl);
       } catch (error) {
-        console.warn(
-          reason,
-          error instanceof Error ? error.message : error,
-        );
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn(reason, message);
+        send({
+          type: 'preview_ready',
+          data: {
+            preview: { error: message },
+          },
+        });
         return false;
       } finally {
         hostPreviewInFlight = null;

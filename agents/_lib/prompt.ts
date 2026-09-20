@@ -147,7 +147,7 @@ function buildSandboxRouting() {
     // as "static files 404": every stylesheet and client chunk missing, the
     // page unstyled and never hydrating, while the document still answered 200
     // and the build still passed. Nothing a curl can see.
-    `Anything a framework emits itself — stylesheets, client chunks, module URLs — is written by the framework at request time, so no convention in your source can move it under the prefix and the gateway publishes nothing above ${PREVIEW_PATH_PREFIX}. The framework has to be told, through whichever single option it offers, and the value is always process.env.${PREVIEW_ASSET_PREFIX_ENV}: assetPrefix in next.config for Next.js, base in vite.config for Vite and everything built on it, including TanStack Start. Omit the option entirely when the variable is unset, so the deployed site still resolves at /.`,
+    `Anything a framework emits itself — stylesheets, client chunks, module URLs — is written by the framework at request time, so no convention in your source can move it under the prefix and the gateway publishes nothing above ${PREVIEW_PATH_PREFIX}. The framework has to be told, through whichever single option it offers, and the value is always process.env.${PREVIEW_ASSET_PREFIX_ENV}: assetPrefix in next.config for Next.js, base in vite.config for Vite and everything built on it, including TanStack Start, and base in astro.config for Astro. Omit the option entirely when the variable is unset, so the deployed site still resolves at /.`,
     // Two shapes of option, and the host handles the difference rather than the
     // project: Vite's base moves the served paths along with the asset URLs, so
     // the framework then expects the prefix it was given. The host notices that
