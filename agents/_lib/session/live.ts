@@ -16,7 +16,6 @@ import {
 import {
   describeModelRun,
   resolveConfiguredModel,
-  resolveRunningModelLabel,
 } from '../models.ts';
 import type { AgentContext } from '../runtime/context.ts';
 import {
@@ -34,8 +33,7 @@ import { detectFatalToolError, truncateForStream } from '../utils/text.ts';
 import { sanitizeAssistantText, summarizeToolOutput } from '../../../shared/timeline.ts';
 import { parseEchoedExitCode } from '../makers/tool-phase.ts';
 import { buildPrompt } from '../prompt.ts';
-import { resolveMakersProjectName } from '../makers/project.ts';
-import { getConversationRecord, getLanguagePreference, patchConversationRecord } from './store.ts';
+import { getConversationRecord, patchConversationRecord } from './store.ts';
 import { downloadTranscript, resolveClaudeTranscriptPath, uploadTranscript } from './transcript.ts';
 import { PromptQueue } from './prompt-queue.ts';
 import {
@@ -79,11 +77,8 @@ export type StartLiveQueryOptions = {
   context: AgentContext;
   conversationId: string;
   state: ProjectState;
-  isNewProject: boolean;
   abortSignal?: AbortSignal;
   model?: string;
-  /** Passed in rather than read back, so the preference write can run in parallel. */
-  language?: string;
 };
 
 export type RunCodingAgentOptions = StartLiveQueryOptions & {
@@ -507,11 +502,6 @@ async function startLiveQuery(options: StartLiveQueryOptions): Promise<LiveQuery
     }
   }
 
-  const requestedLanguage = (options.language || '').trim();
-  const replyLocale = requestedLanguage === 'zh' || requestedLanguage === 'en'
-    ? requestedLanguage
-    : await getLanguagePreference(context, conversationId);
-
   const sdkOptions: Parameters<typeof query>[0]['options'] = {
     model,
     permissionMode: 'dontAsk',
@@ -525,14 +515,17 @@ async function startLiveQuery(options: StartLiveQueryOptions): Promise<LiveQuery
     },
     allowedTools: assembled.mcpAllowedTools,
     strictMcpConfig: true,
+    // Called once per SDK process. Both arguments are fixed for the life of the
+    // conversation — the project directory and the MCP server name — so a
+    // rebuilt prompt is byte-identical to the one the previous process wrote.
+    // Everything else that used to be interpolated here varied: the selected
+    // model (setLiveQueryModel changes it without rebuilding this text), the
+    // publish area and project name (the command wrapper injects both), whether
+    // the workspace was empty (the model reads that from a file listing), the
+    // reply language, and whether a search tool was configured.
     systemPrompt: buildPrompt(
       session.getState(),
-      options.isNewProject,
       SANDBOX_MCP_SERVER_NAME,
-      resolveMakersProjectName(context, session.getState()),
-      resolveRunningModelLabel(context, model),
-      assembled.webSearchAvailable,
-      replyLocale,
     ),
     env: sdkEnv,
     cwd: process.cwd(),

@@ -185,7 +185,6 @@ test('sandbox activation and CLI warmup run together and both finish', async () 
   const events: string[] = [];
   for await (const chunk of iterateSandboxAndAgentPrep(fixture.context, 'cid-parallel', {
     mode: 'create',
-    isNewProject: true,
   })) {
     events.push(chunk);
   }
@@ -290,8 +289,13 @@ test('warmLiveQuery reuses a live process and recycles one that never starts a t
   assert.match(live, /LIVE_QUERY_IDLE_MS/);
   assert.doesNotMatch(live, /WARM_LIVE_QUERY_BUDGET_MS/);
   assert.doesNotMatch(live, /waitForLiveSessionId/);
-  assert.match(live, /language\?: string/);
-  assert.match(live, /const requestedLanguage = \(options\.language \|\| ''\)\.trim\(\)/);
+  // The prompt is rendered once per process from constants only. Neither the
+  // reply language nor whether the project is new reaches it any more: the
+  // language rule follows the user's own language and the model reads the
+  // workspace itself.
+  assert.match(live, /systemPrompt: buildPrompt\(\s*session\.getState\(\),\s*SANDBOX_MCP_SERVER_NAME,\s*\)/);
+  assert.doesNotMatch(live, /options\.language/);
+  assert.doesNotMatch(live, /options\.isNewProject/);
   assert.doesNotMatch(live, /SCAFFOLD_TOOL_NAME/);
   assert.doesNotMatch(live, /onWorkspaceReady/);
 });
@@ -303,7 +307,9 @@ test('GET /session merges restore history with warmup and emits ready before wor
   assert.match(resume, /iterateSandboxAndAgentPrep/);
   assert.match(resume, /sessionPrepSse\(mode, 'ready', 'done'\)/);
   assert.match(resume, /type: 'resume_history'/);
-  assert.match(resume, /isNewProject: !record\.projectState\.created/);
+  // The warmup is no longer told whether the project has files: the prompt is
+  // identical either way, and the model reads the workspace itself.
+  assert.doesNotMatch(resume, /isNewProject/);
   assert.match(resume, /const hasProject = Boolean\(state\.created\) \|\| activityHistoryImpliesProject/);
 
   const createStart = resume.indexOf("if (mode === 'create')");
@@ -346,7 +352,10 @@ test('the prompt no longer tells the model to prepare the environment', async ()
   const prompt = await readFile('agents/_lib/prompt.ts', 'utf8');
   assert.doesNotMatch(prompt, /ensure_project_scaffold/);
   assert.match(prompt, /load_makers_skill as the first tool/);
-  assert.match(prompt, /host has already prepared an empty/);
+  // The host prepared the directory, but whether it holds files is the model's
+  // to check — asserting emptiness here outlived the empty workspace.
+  assert.match(prompt, /host has already prepared the project directory/);
+  assert.doesNotMatch(prompt, /has already prepared an empty/);
 });
 
 test('frontend copy names each session prep stage in both languages', async () => {
