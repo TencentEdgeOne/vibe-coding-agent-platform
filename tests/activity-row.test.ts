@@ -118,6 +118,25 @@ test('platform work always keeps a row of its own', () => {
   assert.deepEqual(grouped.map((block) => block.kind), ['group', 'tool', 'group']);
 });
 
+// The row is named for the topic it went and read, and a fold speaks for the
+// run with one generic label — which is exactly the label this row exists to
+// replace.
+test('a reference load is never folded into a run of file work', () => {
+  const load = (id: string, skill: string) => tool({
+    name: 'mcp__edgeone-sandbox__load_makers_skill',
+    toolUseId: id,
+    inputSummary: skill,
+  });
+  const grouped = groupTimelineBlocks(toolBlocks([
+    read('a', 'app/page.tsx'),
+    read('b', 'app/layout.tsx'),
+    load('c', 'makers-storage'),
+    write('d', 'app/page.tsx'),
+  ]));
+
+  assert.deepEqual(grouped.map((block) => block.kind), ['tool', 'tool', 'tool', 'tool']);
+});
+
 test('text between two runs of file work keeps them apart', () => {
   const grouped = groupTimelineBlocks(buildAssistantTimeline([
     read('a', 'app/page.tsx'),

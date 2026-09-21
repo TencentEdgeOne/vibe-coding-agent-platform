@@ -10,9 +10,9 @@ type ToolActivity = Extract<AssistantActivity, { kind: 'tool' }>;
 
 /**
  * The words a user recognises for what the agent just did. `presentToolActivity`
- * already knows the action; this only picks the translation and, for a document
+ * already knows the action; this only picks the translation and, for a reference
  * the agent went to read, says which subject it was after — the tool is handed
- * an id, and an id tells the reader nothing.
+ * a skill name, and a skill name tells the reader nothing.
  */
 export function toolRowLabel(activity: { name: string; inputSummary?: string }, copy: ConversationCopy) {
   const presentation = presentToolActivity(activity);

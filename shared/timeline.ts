@@ -277,10 +277,26 @@ export type ToolPresentation = {
   detailed?: boolean;
 };
 
-const PLATFORM_ACTIONS = new Set<ToolAction>(['Load skill', 'Create preview', 'Deploy project']);
+/** The steps a user waits on with their site open, and the only two that put
+ *  work in front of them. */
+const PLATFORM_ACTIONS = new Set<ToolAction>(['Create preview', 'Deploy project']);
+
+/** Reading a reference is bookkeeping like any other read, so the row reads as
+ *  plain as one. It still keeps a row of its own: the topic is the point of the
+ *  row, and a fold would hide it behind a generic label. */
+const ROW_OWNING_ACTIONS = new Set<ToolAction>([
+  'Load skill',
+  'Create preview',
+  'Deploy project',
+]);
 
 export function toolActionTier(action: ToolAction): 'platform' | 'file' {
   return PLATFORM_ACTIONS.has(action) ? 'platform' : 'file';
+}
+
+/** Whether a step is one a fold would hide, rather than a run to summarise. */
+function keepsOwnRowAction(action: ToolAction): boolean {
+  return ROW_OWNING_ACTIONS.has(action);
 }
 
 const MIN_REPLAY_CHUNK = 24;
@@ -696,15 +712,16 @@ export type GroupedTimelineBlock = AssistantTimelineBlock | AssistantTimelineGro
  *  step the agent is keeping from the reader. */
 const MIN_GROUP_SIZE = 3;
 
-function isFileTierTool(block: AssistantTimelineBlock): block is AssistantTimelineToolBlock {
+function isFoldableTool(block: AssistantTimelineBlock): block is AssistantTimelineToolBlock {
   if (block.kind !== 'tool') return false;
-  return toolActionTier(presentToolActivity(block.activity).action) === 'file';
+  return !keepsOwnRowAction(presentToolActivity(block.activity).action);
 }
 
 /**
- * Folds runs of routine file work into one row. Platform-tier steps — a deploy,
- * a preview, a document the agent went and read — are the ones a user is
- * waiting on, so they always keep a row of their own.
+ * Folds runs of routine file work into one row. A deploy and a preview are what
+ * the user is waiting on, and a document the agent went and read is identified
+ * by its topic — folding any of them in would hide the step behind a generic
+ * label, so each keeps a row of its own.
  */
 export function groupTimelineBlocks(blocks: AssistantTimelineBlock[]): GroupedTimelineBlock[] {
   const grouped: GroupedTimelineBlock[] = [];
@@ -720,7 +737,7 @@ export function groupTimelineBlocks(blocks: AssistantTimelineBlock[]): GroupedTi
   };
 
   for (const block of blocks) {
-    if (isFileTierTool(block)) {
+    if (isFoldableTool(block)) {
       run.push(block);
       continue;
     }
