@@ -236,14 +236,12 @@ export async function runChatPipeline(
     conversationId,
     userMessage: message,
     state,
-    isNewProject: !state.created,
     onProgress: forwardProgress,
     onProjectFilesChanged: handleProjectFilesChanged,
     onPreviewReady: handlePreviewReady,
     onDeploymentStatus: handleDeploymentStatus,
     abortSignal,
     model: options.model,
-    language: options.language,
     send,
   });
 

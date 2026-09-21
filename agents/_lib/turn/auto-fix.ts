@@ -48,7 +48,6 @@ export async function runAutoFixTurn(input: AutoFixTurnInput): Promise<{
     conversationId: input.conversationId,
     userMessage: prompt,
     state: input.state,
-    isNewProject: false,
     onProgress: input.onProgress,
     onProjectFilesChanged: input.onProjectFilesChanged,
     onPreviewReady: input.onPreviewReady,

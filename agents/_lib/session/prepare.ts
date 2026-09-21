@@ -125,9 +125,7 @@ export async function* iterateAgentWarmupEvents(
   conversationId: string,
   options: {
     mode: SessionPrepMode;
-    isNewProject: boolean;
     model?: string;
-    language?: string;
     signal?: AbortSignal;
   },
 ): AsyncGenerator<string> {
@@ -142,9 +140,7 @@ export async function* iterateAgentWarmupEvents(
         context,
         conversationId,
         state,
-        isNewProject: options.isNewProject,
         model: options.model,
-        language: options.language,
         abortSignal: signal,
       }),
     );
@@ -165,9 +161,7 @@ export async function* iterateSandboxAndAgentPrep(
   conversationId: string,
   options: {
     mode: SessionPrepMode;
-    isNewProject: boolean;
     model?: string;
-    language?: string;
     signal?: AbortSignal;
   },
 ): AsyncGenerator<string> {
