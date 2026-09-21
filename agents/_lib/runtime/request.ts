@@ -143,17 +143,38 @@ export function resolveConversationId(
 }
 
 /**
- * Public site root from the incoming Host, used to pick Makers acceleration
+ * Public site root from the incoming request, used to pick Makers acceleration
  * area. Mirrors the browser hostname split: `foo.edgeone.dev` → `edgeone.dev`.
+ *
+ * `eo-pages-host` is the only header carrying the public hostname on the edge,
+ * and it has to be read first: the edge rewrites `host` to the container's own
+ * address (`localhost:9000`), so a lookup that starts at `host` finds a name that
+ * is not a domain and resolves the area to the `global` default — which is how a
+ * `.dev` site ends up publishing to `.edgeone.cool`. `x-forwarded-host` is set
+ * by the local dev proxy only, and `host` is a last resort for a plain local run.
  */
+const PUBLIC_HOST_HEADERS = ['eo-pages-host', 'x-forwarded-host', 'host'] as const;
+
+/** A name that cannot carry a public site root, whichever header offered it. */
+function isInternalHostname(hostname: string) {
+  return !hostname
+    || hostname === 'localhost'
+    || hostname === 'undefined'
+    || hostname === 'null'
+    || /^\d+\.\d+\.\d+\.\d+$/.test(hostname);
+}
+
 export function resolveRequestSiteDomain(context: RequestCapable): string {
-  const forwarded = getRequestHeader(context, 'x-forwarded-host');
-  const host = (forwarded || getRequestHeader(context, 'host')).split(',')[0].trim();
-  const hostname = host.split(':')[0].toLowerCase();
-  if (!hostname || hostname === 'localhost' || /^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
-    return '';
+  for (const header of PUBLIC_HOST_HEADERS) {
+    const host = getRequestHeader(context, header).split(',')[0].trim();
+    const hostname = host.split(':')[0].toLowerCase();
+    if (isInternalHostname(hostname)) continue;
+    const parts = hostname.split('.');
+    // A single-label name is not a site root: it is a container hostname the
+    // edge did not rewrite, and reading it as a domain is the same mistake as
+    // reading `localhost` — the area then follows the wrong answer.
+    if (parts.length < 2) continue;
+    return parts.slice(1).join('.');
   }
-  const parts = hostname.split('.');
-  if (parts.length < 2) return hostname;
-  return parts.slice(1).join('.');
+  return '';
 }

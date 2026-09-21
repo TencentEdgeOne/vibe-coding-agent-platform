@@ -43,7 +43,6 @@ export async function prepareMakersCommand(
           previewPath: PREVIEW_PATH_PREFIX,
           projectName: makers.projectName,
           assetPrefixEnvName: PREVIEW_ASSET_PREFIX_ENV,
-          area: makers.area,
         }),
         lifecycle.state.appDir,
         makers.env,

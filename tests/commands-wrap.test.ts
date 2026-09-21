@@ -249,7 +249,10 @@ test('direct makers dev is normalized, published, and reported through the lifec
     String(received.command),
     new RegExp(`nohup edgeone makers dev --port ${MAKERS_DEV_PORT}`),
   );
-  assert.match(String(received.command), /--area global/);
+  // No --area: `makers dev` does not accept it, so the preview launch cannot be
+  // what decides the acceleration area — the SDK create in prepareMakersSession
+  // is, and it runs before this command.
+  assert.doesNotMatch(String(received.command), /--area/);
   assert.match(
     String(received.command),
     new RegExp(`http://127\\.0\\.0\\.1:${PREVIEW_SERVER_PORT}/preview/`),
@@ -432,7 +435,12 @@ test('direct makers deploy reports durable deployment state without replacing pr
   assert.match((result.content.at(-1) as { text: string }).text, /"status":"published"/);
 });
 
-test('a .dev host wraps preview onto the overseas area', async () => {
+// A .dev host reaches the preview path as an area the preview cannot carry
+// itself: `makers dev` has no `--area`, so what pins the area is the SDK create
+// inside prepareMakersSession. That create is asserted against the .dev host in
+// makers-deploy.test.ts (`ensureMakersPublishProject` with area 'overseas');
+// what this pins is that the launch does not pretend to decide it.
+test('a .dev host wraps preview without a --area the dev command cannot take', async () => {
   let received: Record<string, unknown> = {};
   const commandsTool = {
     name: 'commands',
@@ -473,8 +481,8 @@ test('a .dev host wraps preview onto the overseas area', async () => {
   });
 
   await wrapped.handler({ command: 'edgeone makers dev' }, {});
-  assert.match(String(received.command), /--area overseas/);
-  assert.doesNotMatch(String(received.command), /--area global/);
+  assert.match(String(received.command), /edgeone makers dev/);
+  assert.doesNotMatch(String(received.command), /--area/);
 });
 
 test('a .dev host wraps deploy onto the overseas area', async () => {
