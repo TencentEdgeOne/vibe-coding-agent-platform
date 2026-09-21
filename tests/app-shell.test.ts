@@ -173,7 +173,10 @@ test('the result panel only opens from its toggle, and never picks a tab by itse
   assert.match(screen, /workspace\.setResultPanelOpen\(false\)/);
   assert.match(screen, /onValueChange=\{\(value\) => workspace\.setSandboxTab\(value as SandboxTab\)\}/);
   assert.match(state, /\[resultPanelOpen, setResultPanelOpen\] = useState\(true\)/);
-  assert.match(state, /useState<SandboxTab \| null>\('preview'\)/);
+  // Code, not preview: the tree is ready as soon as the restore delivers it,
+  // while the preview may still be minutes of npm install away.
+  assert.match(state, /useState<SandboxTab \| null>\('files'\)/);
+  assert.doesNotMatch(state, /useState<SandboxTab \| null>\('preview'\)/);
   assert.doesNotMatch(live, /setResultPanelOpen\(/);
   assert.doesNotMatch(live, /setSandboxTab\(/);
   assert.doesNotMatch(resume, /setResultPanelOpen\(/);

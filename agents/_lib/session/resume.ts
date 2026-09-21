@@ -213,50 +213,113 @@ async function republishPreviewOnResume(context: AgentContext, state: ProjectSta
   };
 }
 
-async function runWorkspaceRestoreBody(context: AgentContext, conversationId: string) {
+type WorkspaceRestore = {
+  state: ProjectState;
+  hasFiles: boolean;
+  items: FileTreeItem[];
+  hasFileItems: boolean;
+  restoreError?: string;
+  generationActive: boolean;
+};
+
+type WorkspacePreviewLink = {
+  url?: string;
+  sandboxDebugUrl?: string;
+  error?: string;
+  restarted?: boolean;
+  kind?: 'sandbox' | 'makers';
+};
+
+/**
+ * Whether the restore is going to rebuild the preview at all. A turn still in
+ * flight owns the dev server, and an empty project has nothing to serve, so in
+ * both cases the preview stage is skipped rather than reported as a failure.
+ */
+function willRestorePreview(restore: WorkspaceRestore) {
+  return restore.hasFiles && !restore.generationActive && restore.hasFileItems;
+}
+
+/**
+ * Everything the Code tab needs, and nothing that waits on the preview. Pulling
+ * the snapshot down is the only unavoidable cost here: a cold sandbox spends
+ * minutes on `npm install` and a dev server boot before a preview link exists,
+ * and the file listing must not travel with that.
+ */
+async function restoreWorkspaceFiles(
+  context: AgentContext,
+  conversationId: string,
+): Promise<WorkspaceRestore> {
   const chatTask = await getChatTask(context, conversationId);
   const restored = await restoreProjectWorkspace(context, conversationId, { mode: 'resume' });
   const state = restored.state;
   const generationActive = isChatTaskActive(chatTask) && hasLiveChatTask(conversationId, chatTask.id);
 
-  if (!restored.hasFiles) {
+  let items: FileTreeItem[] = [];
+  if (restored.hasFiles) {
+    try {
+      items = await withTimeout(getFileTree(context, state), SANDBOX_PROBE_MS, 'file tree');
+    } catch {
+      items = [];
+    }
+  }
+
+  return {
+    state,
+    hasFiles: restored.hasFiles,
+    items,
+    hasFileItems: items.some((item) => item.type === 'file'),
+    restoreError: restored.restoreError,
+    generationActive,
+  };
+}
+
+function workspaceFilesPayload(conversationId: string, restore: WorkspaceRestore) {
+  if (!restore.hasFiles) {
     return {
       ok: true as const,
       stage: 'workspace' as const,
       conversation_id: conversationId,
       hasProject: false,
-      preview: restored.restoreError ? { error: restored.restoreError } : {},
-      deployment: state.deployment,
-      files: { root: state.appDir, items: [] as FileTreeItem[] },
+      preview: restore.restoreError ? { error: restore.restoreError } : {},
+      deployment: restore.state.deployment,
+      files: { root: restore.state.appDir, items: [] as FileTreeItem[] },
     };
   }
 
-  let items: FileTreeItem[] = [];
-  try {
-    items = await withTimeout(getFileTree(context, state), SANDBOX_PROBE_MS, 'file tree');
-  } catch {
-    items = [];
+  return {
+    ok: true as const,
+    stage: 'workspace' as const,
+    conversation_id: conversationId,
+    hasProject: restore.hasFileItems || Boolean(restore.state.created),
+    deployment: restore.state.deployment,
+    files: { root: restore.state.appDir, items: restore.items },
+    gatewayNeeded: restore.state.gatewayPromptPending === true,
+    gatewaySkipped: restore.state.gatewaySkipped === true,
+    ...(restore.hasFileItems ? { download: { url: '/download', filename: 'source.zip' } } : {}),
+  };
+}
+
+async function restoreWorkspacePreview(
+  context: AgentContext,
+  conversationId: string,
+  restore: WorkspaceRestore,
+): Promise<WorkspacePreviewLink> {
+  // Nothing was pulled down, so there is no preview to restart — the restore
+  // error, if any, is still the whole answer the panel needs.
+  if (!restore.hasFiles) {
+    return restore.restoreError ? { error: restore.restoreError } : {};
   }
 
-  const hasFileItems = items.some((item) => item.type === 'file');
-  const shouldStartPreview = !generationActive && hasFileItems;
-
-  let preview: {
-    url?: string;
-    sandboxDebugUrl?: string;
-    error?: string;
-    restarted?: boolean;
-    kind?: 'sandbox' | 'makers';
-  } = {};
-  if (shouldStartPreview) {
+  let preview: WorkspacePreviewLink = {};
+  if (willRestorePreview(restore)) {
     try {
       preview = await withTimeout(
-        republishPreviewOnResume(context, state),
+        republishPreviewOnResume(context, restore.state),
         PREVIEW_RESTART_BUDGET_MS,
         'preview resume',
       );
     } catch (error) {
-      clearPreview(state);
+      clearPreview(restore.state);
       console.warn(
         '[resume:workspace] preview restart failed:',
         error instanceof Error ? error.message : error,
@@ -266,22 +329,19 @@ async function runWorkspaceRestoreBody(context: AgentContext, conversationId: st
   }
 
   try {
-    await persistWorkspace(context, conversationId, state);
+    await persistWorkspace(context, conversationId, restore.state);
   } catch {
-    // Non-fatal — the files payload below is still useful.
+    // Non-fatal — the files payload is already on screen.
   }
 
+  return preview;
+}
+
+async function runWorkspaceRestoreBody(context: AgentContext, conversationId: string) {
+  const restore = await restoreWorkspaceFiles(context, conversationId);
   return {
-    ok: true as const,
-    stage: 'workspace' as const,
-    conversation_id: conversationId,
-    hasProject: hasFileItems || Boolean(state.created),
-    preview,
-    deployment: state.deployment,
-    files: { root: state.appDir, items },
-    gatewayNeeded: state.gatewayPromptPending === true,
-    gatewaySkipped: state.gatewaySkipped === true,
-    ...(hasFileItems ? { download: { url: '/download', filename: 'source.zip' } } : {}),
+    ...workspaceFilesPayload(conversationId, restore),
+    preview: await restoreWorkspacePreview(context, conversationId, restore),
   };
 }
 
@@ -357,28 +417,49 @@ async function* iterateWorkspaceResumeEvents(
 ): AsyncGenerator<string> {
   yield sessionPrepSse(mode, 'workspace', 'running');
   try {
-    const workspace = await timeStage('session:prep', { mode, stage: 'workspace' }, () => withTimeout(
-      runWorkspaceRestoreBody(context, conversationId),
+    const restore = await timeStage('session:prep', { mode, stage: 'workspace' }, () => withTimeout(
+      restoreWorkspaceFiles(context, conversationId),
       WORKSPACE_RESUME_BUDGET_MS,
       'workspace resume',
     ));
     if (signal?.aborted) return;
-    yield sseEvent({ type: 'resume_workspace', data: workspace });
-    yield sessionPrepSse(mode, 'workspace', 'done');
-    if (workspace.preview && 'url' in workspace.preview && workspace.preview.url) {
-      yield sessionPrepSse(mode, 'preview', 'done');
-    }
 
-    const fileItems = workspace.files?.items || [];
-    const paths = fileItems.filter((item) => item.type === 'file').map((item) => item.path);
+    // Files land first and close the workspace stage, so the Code tab stops
+    // waiting on a preview that a cold sandbox can spend minutes rebuilding.
+    const files = workspaceFilesPayload(conversationId, restore);
+    yield sseEvent({ type: 'resume_workspace', data: files });
+    yield sessionPrepSse(mode, 'workspace', 'done');
+
+    const paths = files.files.items.filter((item) => item.type === 'file').map((item) => item.path);
     if (!signal?.aborted && paths.length > 0) {
       yield sseEvent({ type: 'file_changed', data: { paths } });
     }
+
+    if (signal?.aborted) return;
+    if (!willRestorePreview(restore)) return;
+    yield sessionPrepSse(mode, 'preview', 'running');
+    const preview = await restoreWorkspacePreview(context, conversationId, restore);
+    if (signal?.aborted) return;
+    // Preview only: the tree already landed above, and re-sending it here would
+    // remount the listing the user is reading.
+    if (preview.url || preview.error) {
+      yield sseEvent({
+        type: 'resume_workspace',
+        data: {
+          ok: true,
+          stage: 'workspace',
+          conversation_id: conversationId,
+          preview,
+        },
+      });
+    }
+    yield sessionPrepSse(mode, 'preview', preview.url ? 'done' : 'failed');
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Workspace resume failed.';
     console.warn('[resume:stream]', message);
     if (!signal?.aborted) {
       yield sessionPrepSse(mode, 'workspace', 'failed');
+      yield sessionPrepSse(mode, 'preview', 'failed');
       yield sseEvent({
         type: 'resume_workspace',
         data: {

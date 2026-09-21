@@ -260,6 +260,10 @@ export function useSessionResume(options: {
 
           if (event.type === 'resume_workspace' && event.data?.ok) {
             applyWorkspace(event.data);
+            // The files arrive on their own event, ahead of the preview restart.
+            // Holding this flag until the stream closes left the Code tab
+            // spinning through an npm install it was never waiting on.
+            if (event.data.files) workspace.setFilesRefreshing(false);
             return;
           }
 
