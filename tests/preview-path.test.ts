@@ -562,7 +562,19 @@ test('the host starts dest with the workspace and keeps it watching files', asyn
     'host preview must not wait for the model to have launched dest',
   );
   assert.doesNotMatch(assemble, /onWorkspaceReady/);
-  assert.match(resume, /const shouldStartPreview = !generationActive && hasFileItems/);
+  // The file listing is emitted on its own event, before the preview restart, so
+  // a cold sandbox's npm install cannot hold the Code tab on a spinner.
+  assert.match(resume, /if \(willRestorePreview\(restore\)\) \{/);
+  const resumeEvents = resume.slice(
+    resume.indexOf('async function* iterateWorkspaceResumeEvents'),
+    resume.indexOf('export async function createProjectResumeStreamResponse'),
+  );
+  assert.ok(resumeEvents.length > 0, 'the restore stream generator must exist');
+  assert.ok(
+    resumeEvents.indexOf("yield sseEvent({ type: 'resume_workspace', data: files })")
+      < resumeEvents.indexOf('await restoreWorkspacePreview(context, conversationId, restore)'),
+    'the file tree must reach the client before the preview is rebuilt',
+  );
   assert.doesNotMatch(resume, /&& hadPreview/);
   assert.match(preview, /revision === undefined \|\| nextPreview\.restarted/);
   assert.match(prompt, /keeps that dest server watching files/);

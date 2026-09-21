@@ -20,7 +20,9 @@ export function useWorkspaceState() {
   const [download, setDownload] = useState<LinkInfo | null>(null);
   const [downloadBusy, setDownloadBusy] = useState(false);
   const [build, setBuild] = useState<BuildInfo | null>(null);
-  const [sandboxTab, setSandboxTab] = useState<SandboxTab | null>('preview');
+  // The Code tab is what the user watches while files land, and it is ready the
+  // moment the tree arrives — a preview may still be minutes of npm install away.
+  const [sandboxTab, setSandboxTab] = useState<SandboxTab | null>('files');
   const [fileTree, setFileTree] = useState<FileTree | null>(null);
   const [filesRefreshing, setFilesRefreshing] = useState(false);
   const [filesFocusPath, setFilesFocusPath] = useState<string | null>(null);
@@ -48,7 +50,7 @@ export function useWorkspaceState() {
     setGatewaySavedVisible(false);
     setGatewayPromptVariant('default');
     setGatewayBusy(false);
-    setSandboxTab('preview');
+    setSandboxTab('files');
   }, []);
 
   async function handleDownload(conversationId: string | null, failedMessage: string) {

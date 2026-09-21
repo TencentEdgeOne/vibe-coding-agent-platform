@@ -95,7 +95,6 @@ export function ResultPanel({
         <FilesPane
           workspace={workspace}
           conversationId={conversationId}
-          restoring={restoring}
           copy={filesCopy}
           cache={cache}
         />

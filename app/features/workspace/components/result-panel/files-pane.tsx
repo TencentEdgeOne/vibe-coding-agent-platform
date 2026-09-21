@@ -8,13 +8,11 @@ import type { WorkspaceStateApi } from '../../hooks/use-workspace-state';
 export function FilesPane({
   workspace,
   conversationId,
-  restoring,
   copy,
   cache,
 }: {
   workspace: WorkspaceStateApi;
   conversationId: string | null;
-  restoring: boolean;
   copy: FileCopy;
   cache: FileContentCache;
 }) {
@@ -23,7 +21,7 @@ export function FilesPane({
     <div className="workspace-panel-pane">
       <FilesPanel
         tree={workspace.fileTree}
-        refreshing={workspace.filesRefreshing || restoring}
+        refreshing={workspace.filesRefreshing}
         conversationId={conversationId}
         copy={copy}
         cache={cache}
