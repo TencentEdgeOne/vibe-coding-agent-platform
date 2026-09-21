@@ -487,15 +487,15 @@ export async function createProjectResumeStreamResponse(context: AgentContext): 
 
   return createSSEResponse(async function* (signal) {
     if (mode === 'create') {
-      // The preference write no longer gates the sandbox and the CLI: both are
-      // handed model and language instead of reading them back afterwards.
+      // The preference write no longer gates the sandbox and the CLI: the model
+      // is handed to the warmup instead of being read back afterwards. Language
+      // needs no hand-off — the prompt tells the model to follow the user's own
+      // language, so the preference is a display concern only.
       yield* mergeSseGenerators([
         iterateConversationPrep(context, conversationId, { mode, model, language, signal }),
         iterateSandboxAndAgentPrep(context, conversationId, {
           mode,
-          isNewProject: true,
           model,
-          language,
           signal,
         }),
       ], signal);
@@ -506,8 +506,8 @@ export async function createProjectResumeStreamResponse(context: AgentContext): 
     yield* iterateConversationPrep(context, conversationId, { mode, model, language, signal });
     if (signal?.aborted) return;
 
-    // The warmup needs isNewProject and the model before the transcript parse
-    // finishes, and the record carries both, so the two now run side by side.
+    // The warmup needs the model before the transcript parse finishes, and the
+    // record carries it, so the two now run side by side.
     const record = await getConversationRecord(context, conversationId);
     const historyPromise = timeStage(
       'session:prep',
@@ -523,9 +523,7 @@ export async function createProjectResumeStreamResponse(context: AgentContext): 
     yield* mergeSseGenerators([
       iterateSandboxAndAgentPrep(context, conversationId, {
         mode,
-        isNewProject: !record.projectState.created,
         model: model || (record.modelPreference || '').trim(),
-        language: language || record.languagePreference || '',
         signal,
       }),
       iterateHistoryEvent(),

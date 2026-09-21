@@ -4,7 +4,6 @@ import {
   PREVIEW_PUBLIC_PORT,
 } from './constants.ts';
 import type { ProjectState } from './types.ts';
-import { resolveConversationPublishArea } from './makers/project.ts';
 
 // The system prompt is split into named sections so each rule has an obvious
 // owner. The dividing line is deliberate: platform knowledge (handler
@@ -24,15 +23,20 @@ function section(title: string, body: readonly string[], spaced = false) {
   return `## ${title}\n${body.map((rule) => `- ${rule}`).join(spaced ? '\n\n' : '\n')}`;
 }
 
-function buildIdentity(modelLabel: string) {
+// The running model is deliberately not named here. The composer already shows
+// it, so a copy in the prompt would be a second source that goes stale the
+// moment the user switches model mid-conversation — `setLiveQueryModel` changes
+// the model without rebuilding this text, because rebuilding it would throw
+// away the cached prefix. Pointing at the composer is both correct and constant.
+function buildIdentity() {
   return [
     'You are the Vibe Coding Platform, an out-of-the-box Agent template on EdgeOne that creates and modifies EdgeOne Makers-compatible web projects in a remote sandbox.',
-    `Answer a question about who or what you are, or about which model you run, in the user's language, in one sentence, without calling any tool and without the out-of-scope reply below. You are the Vibe Coding Platform template on EdgeOne${modelLabel ? `, and this conversation runs on ${modelLabel} — the model chosen in the composer` : ''}.`,
+    'Answer a question about who or what you are, or about which model you run, in the user\'s language, in one sentence, without calling any tool and without the out-of-scope reply below. You are the Vibe Coding Platform template on EdgeOne.',
     // Every model reaches this harness through the same Anthropic-shaped
     // interface, so each one reports itself as that vendor's model whatever the
     // user selected. Left alone it states the wrong vendor with full
     // confidence, which reads as the model picker being broken.
-    'Your own impression of which model or vendor you are is not evidence here, because every model reaches this harness through one shared interface. Name only the model above, and if none is named, say the model is whichever one the composer shows rather than guessing a vendor.',
+    'The model this conversation runs on is whichever one the composer shows. Your own impression of which model or vendor you are is not evidence here, because every model reaches this harness through one shared interface — say the composer decides, rather than guessing a vendor.',
   ];
 }
 
@@ -44,7 +48,7 @@ const SCOPE = [
   'If the request is unclear, ask the user for the specific requirement.',
 ];
 
-function buildKnowledgeSourcing(webSearchAvailable: boolean) {
+function buildKnowledgeSourcing() {
   return [
     'Makers project layout, file-to-URL routing, handler signatures, runtime globals, configuration files, storage APIs, and model conventions all come from the official edgeone-makers-tools skill family through load_makers_skill. This prompt deliberately does not restate them, because a second copy would drift as the platform changes. Writing platform code from memory instead of from a loaded reference is the single most common way this agent produces broken projects: load the reference first, then write the files that depend on it.',
     'Choose references by what the request needs: makers-frameworks whenever the request names a web framework, makers-recipes for project layout and scaffolding, makers-cloud-functions for Node/Python/Go server APIs, makers-edge-functions for V8 edge APIs, makers-agents for any AI, chatbot, LLM, or streaming endpoint, makers-storage for persistence, makers-middleware for auth gates, redirects, and rewrites, makers-migration when adapting an existing agent project, and makers-cli or makers-deploy only when the user explicitly asks about commands or live deployment.',
@@ -68,7 +72,7 @@ function buildKnowledgeSourcing(webSearchAvailable: boolean) {
  * run's worth of wasted calls, and what they have in common is not where the
  * answer comes from but knowing when to stop asking.
  */
-function buildSearchDiscipline(webSearchAvailable: boolean) {
+function buildSearchDiscipline() {
   return [
     // One run spent thirteen tool calls reading a framework's bundled .d.ts files
     // to work out a constructor, then abandoned the framework anyway. The answer
@@ -94,12 +98,13 @@ function buildSearchDiscipline(webSearchAvailable: boolean) {
     // The live web is the one source that looks authoritative and is not. It
     // carries no version, and a run that searched for this platform's project
     // layout was searching for a document it already had, verbatim and current.
-    // Both lines are dropped when the tool is withheld: a rule naming a tool
-    // that is not in the list is an invitation to call it and find out.
-    ...(webSearchAvailable ? [
-      'Never use web_search for anything in this section. Platform layout, routing, handler signatures, configuration, storage, model ids and framework usage come from the loaded reference and nowhere else — a search returns undated third-party pages about a platform whose conventions ship with this agent. Search is for subject matter the project is about, such as facts the user asked to put on a page, never for how to write EdgeOne code.',
-      'If web_search comes back reporting that it is not configured, that is this deployment\'s configuration and no query will succeed. Do not call it again or rephrase, and say in the final reply what could not be looked up.',
-    ] : []),
+    // Phrased conditionally rather than dropped when the tool is withheld, so
+    // the text stays identical either way: a rule that only exists in one
+    // configuration is a rule that changes the cached prefix between them, and
+    // the conditional costs nothing when there is no tool to apply it to.
+    // Whether the tool is offered at all is the tool list's business — the host
+    // withholds it outright, so this rule never has to describe its absence.
+    'If a web search tool is available to you, never use it for anything in this section. Platform layout, routing, handler signatures, configuration, storage, model ids and framework usage come from the loaded reference and nowhere else — a search returns undated third-party pages about a platform whose conventions ship with this agent. Search is for subject matter the project is about, such as facts the user asked to put on a page, never for how to write EdgeOne code.',
   ];
 }
 
@@ -118,9 +123,7 @@ function buildSandboxTools(appDir: string, mcpServerName: string) {
   ];
 }
 
-function buildSandboxPreview(appDir: string, makersProjectName: string, area: string) {
-  const quotedProjectName = JSON.stringify(makersProjectName);
-  const publishArea = area === 'overseas' ? 'overseas' : 'global';
+function buildSandboxPreview(appDir: string) {
   return [
     `The host starts the right-hand development preview as soon as the project workspace exists in this sandbox, and keeps that dest server watching files so later edits show up there. Do not run a preview server, add nohup, start another server, synthesize a public URL, or use a cloud deploy as the normal preview. The sandbox path adapter publishes sandbox.getHost(${PREVIEW_PUBLIC_PORT})${PREVIEW_PATH_PREFIX} to the preview panel.`,
     // The model has no restart primitive, and it went looking for one: a turn
@@ -131,7 +134,13 @@ function buildSandboxPreview(appDir: string, makersProjectName: string, area: st
     // lost the race silently: the build reported a Pages Router page the project
     // does not have, and npm reported ENOTEMPTY on a package the server held.
     'A build or an install cannot run beside the preview, so the host stops the dev server before either and says so in that command\'s output. The preview is then down until the host starts it again. Do not report a preview as running across an install or a build you issued after it.',
-    `Only when the user explicitly asks for a live deployment, run edgeone makers deploy --json once through commands with cwd=${appDir}. This conversation publishes to ${quotedProjectName} with --area ${publishArea}. The host supplies credentials, pins the project this conversation publishes to, allows the long timeout, parses the final JSON line, and renders the result in its own deployment card.`,
+    // The publish area and the project name are both host-injected: the command
+    // wrapper rewrites the arguments with --area resolved from the request's
+    // public host and -n resolved from this conversation, so the instructions
+    // here carry neither. Naming an area would put a per-turn value in a
+    // prefix that has to stay constant, and the value would be the one that was
+    // true when this process started rather than the one the command gets.
+    `Only when the user explicitly asks for a live deployment, run edgeone makers deploy --json once through commands with cwd=${appDir}. The host supplies credentials, pins the project this conversation publishes to and its publish area, allows the long timeout, parses the final JSON line, and renders the result in its own deployment card.`,
     'Never pass -n, invent a project name, or retry a failed deploy under a different one: the name identifies the user\'s site, and a deploy under a name you chose publishes somewhere nobody can find again. A deployment never replaces the right-hand preview, so do not tell the user their live site opened there.',
     'Declare AI_GATEWAY_API_KEY= and AI_GATEWAY_BASE_URL= in .env.example when the project calls a model. Never write a .env file yourself, and never write an actual API key or gateway URL value into source. Generated agents read them from context.env.',
     'The host collects a Models API key for generated AI projects as soon as it sees one. If you load makers-agents or write agents/ files, the host shows the input card while you keep working. Do not stop this turn, do not wait for the key, and do not say the preview is blocked. Continue writing files and let the host start preview. A missing key is not a preview or deploy failure — chat in the generated app may not answer until a key is added. Never write .env yourself and never quote an API key value, from a file or from the user.',
@@ -208,7 +217,12 @@ function buildToolContracts(appDir: string) {
 
 function buildNewProjectWorkflow(appDir: string) {
   return [
-    `The host has already prepared an empty project directory at ${appDir} and started the coding agent. The workspace has no files yet. Work through these steps in order.`,
+    // "The workspace has no files yet" used to be stated as fact here, from a
+    // boolean captured when the process started. It is a condition now: the
+    // section is always present, and the workspace being empty is what selects
+    // it. Asserting it would also be wrong for most of a conversation's life,
+    // since the process that writes this prompt outlives the empty workspace.
+    `Use this workflow when ${appDir} is empty. Work through these steps in order.`,
     '1. Load the references this request needs with load_makers_skill and follow them for layout, routing, handler signatures, configuration files, and storage. Prefer static HTML/CSS/JS or Vite static output for ordinary UI. Do not put styles, scripts, and markup into one large index.html unless the user explicitly asks for a single-file page. load_makers_skill is the first tool of a new project — do not write files or run commands before the required references are loaded.',
     `2. When the request names a framework, the reference loaded in step 1 gives its scaffold command under Scaffold. Copy that command exactly and run it once through commands with cwd=${appDir}, into the current directory. Do not compose one from memory and do not drop or add a flag — the flags documented there are what keep it non-interactive, and a scaffolder that stops to ask a question in a sandbox hangs the turn. ${appDir} is empty here, which those tools require, and a generous timeout is needed because it installs as it goes. This is the one case where a command may create project source files.`,
     'A framework whose reference lists no scaffold command has none worth running: write its files yourself from the values that document gives. If the scaffolder prompts, hangs, or fails, that is one attempt and it is over: write the files yourself and let the build report what is wrong. Do not try a second scaffolder, a different package name, or a flag variation.',
@@ -222,7 +236,7 @@ function buildNewProjectWorkflow(appDir: string) {
 
 function buildExistingProjectWorkflow(appDir: string) {
   return [
-    `When ${appDir} already contains project files, load only the specific Makers references required by the change with load_makers_skill, inspect only the project files directly related to the request, then make the smallest complete change needed.`,
+    `Use this workflow when ${appDir} already contains project files. Load only the specific Makers references required by the change with load_makers_skill, inspect only the project files directly related to the request, then make the smallest complete change needed.`,
     'For bug reports, do not investigate platform internals, generated .edgeone files, running processes, ports, or external AI gateway behavior. Use at most one focused reproduction command before editing; after the edit, use at most one focused verification command. The host starts the sandbox preview.',
   ];
 }
@@ -262,7 +276,10 @@ const CODE_QUALITY = [
 
 function buildNarration(appDir: string) {
   return [
-    `The host has already prepared an empty workspace at ${appDir} and started the coding agent. If the user request requires creating or modifying a project, first respond with one brief natural-language sentence that you are starting, then call load_makers_skill as the first tool. Do not call write_project_file, files_write, files_list, files_make_dir, or commands before the references this request needs are loaded.`,
+    // "an empty workspace" dropped for the same reason as the workflow heading:
+    // the host prepared the directory, but whether it holds files changes
+    // during the conversation and cannot be asserted from here.
+    `The host has already prepared the project directory at ${appDir} and started the coding agent. If the user request requires creating or modifying a project, first respond with one brief natural-language sentence that you are starting, then call load_makers_skill as the first tool. Do not call write_project_file, files_write, files_list, files_make_dir, or commands before the references this request needs are loaded.`,
     'That first sentence must be concise, user-visible progress narration, not a plan. Use the user language when obvious. Example: 我先查一下这个框架的官方用法，然后开始实现。 / I will look up the framework guide first, then start building.',
     'Keep narrating as you work: before each tool call or parallel group of tool calls, write one short sentence saying what you are about to do and, when you just read an error, what you think is wrong. This narration is shown to the user, so always write it in the user language, never as internal English notes, raw logs, status codes, or command lines. Example: 我先修好前端请求地址，再刷新预览。 One sentence per step — do not restate the plan or repeat what you already said.',
     'Narration and the final reply are product copy. Never write the words Makers, load_makers_skill, or a makers-* document id in them, and never name your own tools, the sandbox, or the CLI. Say what the work is about instead: 我先查一下持久化存储的官方用法。 not 我先加载 makers-storage 技能。, and 预览已经启动。 not 我运行了 edgeone makers dev。 When the platform itself has to be named, call it EdgeOne.',
@@ -285,40 +302,38 @@ const FINAL_REPLY = [
 ];
 
 /**
- * The rules for this conversation, identical on every turn.
+ * The rules for this conversation, identical on every turn and every process.
  *
- * Everything here is either constant or fixed for the life of the conversation,
- * which is what lets the model provider reuse the prefix instead of re-reading
- * twenty thousand characters per turn. The request itself is the SDK user message.
+ * Everything here is constant for the life of a conversation. That is what lets
+ * the model provider reuse the prefix instead of re-reading twenty thousand
+ * characters per turn, and it is also why nothing that varies between turns,
+ * conversations, or deployments may be interpolated here: a value like the
+ * selected model or the publish area would be re-read on every rebuild and
+ * could differ from the one the previous process wrote. Where the model needs
+ * such a value, it comes from a tool result instead — the request itself is the
+ * SDK user message, and the command wrapper injects the arguments a Makers
+ * command needs. See the header comment above for the same rule stated as a
+ * division of ownership.
  */
 export function buildPrompt(
   state: ProjectState,
-  isNewProject: boolean,
   mcpServerName: string,
-  makersProjectName: string,
-  modelLabel = '',
-  // Fixed for the life of a deployment, so this stays a cacheable prompt.
-  webSearchAvailable = false,
-  replyLocale: 'zh' | 'en' | '' = '',
 ) {
-  const languageRule = replyLocale === 'zh'
-    ? 'Write all user-facing narration and the final reply in Chinese.'
-    : replyLocale === 'en'
-      ? 'Write all user-facing narration and the final reply in English.'
-      : 'Write all user-facing narration and the final reply in the language of the user request.';
   return [
-    section('Who you are', buildIdentity(modelLabel)),
-    section('Language', [languageRule]),
+    section('Who you are', buildIdentity()),
+    // One rule for every conversation: follow the user's own language. The
+    // composer's language preference used to select between three phrasings
+    // here, which made the text differ per conversation and change when the
+    // preference was written mid-conversation.
+    section('Language', [
+      'Write all user-facing narration and the final reply in the language of the user request.',
+    ]),
     section('What you take on', SCOPE),
-    section('Where platform knowledge comes from', buildKnowledgeSourcing(webSearchAvailable)),
-    section('What is not a source, and when to stop looking', buildSearchDiscipline(webSearchAvailable)),
+    section('Where platform knowledge comes from', buildKnowledgeSourcing()),
+    section('What is not a source, and when to stop looking', buildSearchDiscipline()),
     SANDBOX_PREAMBLE,
     section('Sandbox: tools and boundaries', buildSandboxTools(state.appDir, mcpServerName)),
-    section('Sandbox: preview and deployment', buildSandboxPreview(
-      state.appDir,
-      makersProjectName,
-      resolveConversationPublishArea(state),
-    )),
+    section('Sandbox: preview and deployment', buildSandboxPreview(state.appDir)),
     section('Sandbox: preview URLs and navigation', buildSandboxRouting()),
     section('Sandbox: browser calls and visitor context', buildSandboxDataPlane()),
     section('Tool contracts', buildToolContracts(state.appDir)),
@@ -327,9 +342,11 @@ export function buildPrompt(
     section('Code quality', CODE_QUALITY),
     section('Narration', buildNarration(state.appDir)),
     section('Final reply', FINAL_REPLY),
-    isNewProject
-      ? 'The project workspace is empty and ready for you to write files.'
-      : 'This conversation already has a project workspace with files in it.',
+    // Which workflow applies is a property of the workspace, not of this
+    // conversation's age, so it is read from the filesystem rather than baked
+    // in here. Both sections above are always present for the same reason, and
+    // this line is what tells the model how to choose between them.
+    `Before you write anything, check whether ${state.appDir} already contains project files. If it is empty, follow the new-project workflow below; if it already has files, follow the existing-project workflow. This is a property of the workspace, which can change during a long conversation — read it from a file listing rather than assuming either answer from how the conversation started.`,
   ].join('\n\n');
 }
 

@@ -34,17 +34,9 @@ const PLATFORM_OWNED_IDENTIFIERS = [
 ];
 
 const state = projectState();
-const makersProjectName = 'vibe-coding-playground';
 
-function renderPrompt(isNewProject = true, modelLabel = 'Kimi K2.6', webSearchAvailable = false) {
-  return buildPrompt(
-    state,
-    isNewProject,
-    'edgeone-sandbox',
-    makersProjectName,
-    modelLabel,
-    webSearchAvailable,
-  );
+function renderPrompt() {
+  return buildPrompt(state, 'edgeone-sandbox');
 }
 
 async function readAllVendoredSkills() {
@@ -132,7 +124,12 @@ test('the prompt keeps the sandbox corrections the skills cannot know about', ()
     prompt,
     new RegExp(`edgeone makers dev --port ${MAKERS_DEV_PORT} --skip-env-sync --skip-ai-gateway-sync`),
   );
-  assert.match(prompt, /--area global/);
+  // The publish area is resolved from the request's public host and injected
+  // into the command by the wrapper. A literal here would be a per-turn value
+  // in a prefix that must stay constant, and it would be the value that was
+  // true when this process started rather than the one the command receives.
+  assert.doesNotMatch(prompt, /--area (?:global|overseas)/);
+  assert.match(prompt, /pins the project this conversation publishes to and its publish area/);
   assert.match(
     prompt,
     new RegExp(`sandbox\\.getHost\\(${PREVIEW_PUBLIC_PORT}\\).*${PREVIEW_PATH_PREFIX}`),
@@ -141,11 +138,11 @@ test('the prompt keeps the sandbox corrections the skills cannot know about', ()
   // model a -n to copy, edit, or replace after a name conflict.
   assert.match(prompt, /edgeone makers deploy --json once/);
   assert.match(prompt, /Never pass -n, invent a project name/);
+  assert.doesNotMatch(prompt, /vibe-coding-playground/);
   assert.match(prompt, /one read-only edgeone --version check is allowed/);
   assert.match(prompt, /errorCode=MAKERS_CLI_UNAVAILABLE, stop immediately/);
   assert.match(prompt, /Do not inspect PATH or installation directories/);
   assert.match(prompt, /host injects a short-lived tenant credential/i);
-  assert.ok(prompt.includes(makersProjectName));
   assert.match(prompt, /Declare AI_GATEWAY_API_KEY= and AI_GATEWAY_BASE_URL=/);
   assert.match(prompt, /Never write a \.env file yourself/);
   assert.doesNotMatch(prompt, /request_gateway_credentials/);
@@ -225,9 +222,19 @@ test('the prompt keeps its tool contracts and workspace boundary', () => {
   assert.match(prompt, /I can only help create or modify web projects/);
 });
 
-test('the prompt reflects whether the workspace already exists', () => {
-  assert.match(renderPrompt(true), /workspace is empty and ready for you to write files/);
-  assert.match(renderPrompt(false), /already has a project workspace with files in it/);
+// The workspace's emptiness used to be a boolean baked into the prompt at
+// process start, which made the text differ between two processes of the same
+// conversation. It is now a condition the model checks, so both branches are
+// present in one immutable text.
+test('both workspace workflows are present, and the model is told how to pick', () => {
+  const prompt = renderPrompt();
+  assert.match(prompt, /Use this workflow when .* is empty/);
+  assert.match(prompt, /Use this workflow when .* already contains project files/);
+  assert.match(prompt, /read it from a file listing rather than assuming/);
+  // The old wording asserted the workspace was empty as fact. It outlived the
+  // empty workspace in every conversation that got past the first turn.
+  assert.doesNotMatch(prompt, /The workspace has no files yet/);
+  assert.doesNotMatch(prompt, /has already prepared an empty/);
 });
 
 test('the system prompt is the same on every turn of a conversation', () => {
@@ -243,16 +250,60 @@ test('the system prompt is the same on every turn of a conversation', () => {
   assert.doesNotMatch(prompt, /Current user request:/);
 });
 
-test('an international site tells the model to preview onto the overseas area', () => {
-  const prompt = buildPrompt(
-    projectState('projects/demo', { siteDomain: 'edgeone.dev' }),
-    true,
-    'edgeone-sandbox',
-    makersProjectName,
-    'Kimi K2.6',
+// The stronger form of the invariant above: the prompt has to be identical
+// across processes too, because an idle process is recycled and the next turn
+// rebuilds it from scratch. Anything the prompt interpolates that is not a
+// conversation or deployment constant breaks this — the selected model, the
+// publish area, and whether the project has files yet were each such a value.
+test('a rebuilt prompt is identical to the one the previous process wrote', () => {
+  const conversation = projectState();
+  const first = buildPrompt(conversation, 'edgeone-sandbox');
+
+  // Everything about the session that changes during use, and that used to
+  // reach this function.
+  const later = {
+    ...conversation,
+    created: true,
+    siteDomain: 'edgeone.dev',
+    previewUrl: 'https://example.edgeone.dev/preview/',
+    deployment: {
+      status: 'success' as const,
+      url: 'https://live.example.dev',
+      startedAt: 1,
+      finishedAt: 2,
+    },
+  };
+  assert.equal(
+    buildPrompt(later, 'edgeone-sandbox'),
+    first,
+    'a value that changes during the conversation must not reach the prompt',
   );
-  assert.match(prompt, /--area overseas/);
-  assert.doesNotMatch(prompt, /--area global/);
+});
+
+// The composer's language preference used to pick one of three phrasings of the
+// language rule, which made the text differ per conversation and change the
+// moment the preference was written. One rule now covers every conversation.
+test('the language rule is one sentence for every conversation', () => {
+  const prompt = renderPrompt();
+  assert.match(
+    prompt,
+    /Write all user-facing narration and the final reply in the language of the user request\./,
+  );
+  assert.doesNotMatch(prompt, /Write all user-facing narration and the final reply in Chinese/);
+  assert.doesNotMatch(prompt, /Write all user-facing narration and the final reply in English/);
+});
+
+test('the prompt carries no publish area, because the command wrapper injects it', () => {
+  const mainland = buildPrompt(
+    projectState('projects/demo', { siteDomain: 'edgeone.cool' }),
+    'edgeone-sandbox',
+  );
+  const international = buildPrompt(
+    projectState('projects/demo', { siteDomain: 'edgeone.dev' }),
+    'edgeone-sandbox',
+  );
+  assert.equal(mainland, international);
+  assert.doesNotMatch(international, /--area (?:global|overseas)/);
 });
 
 test('the prompt reads as sections rather than one wall of rules', () => {
@@ -274,21 +325,19 @@ test('a missing CLI is explained in exactly one place', () => {
   assert.equal(mentions.length, 1, `MAKERS_CLI_UNAVAILABLE is stated ${mentions.length} times`);
 });
 
-test('the identity answer names the running model and never its raw ID', () => {
-  const prompt = renderPrompt(true, 'Kimi K2.6');
+// The model is not told which model it runs on, because that value changes the
+// moment the user switches in the composer and the prompt is not rebuilt. The
+// user-facing label is the one the composer shows, so the prompt points there.
+test('the identity answer defers to the composer instead of naming a model', () => {
+  const prompt = renderPrompt();
   assert.match(prompt, /which model you run/);
-  assert.ok(prompt.includes('Kimi K2.6'), 'the agent must be able to name the selected model');
+  assert.match(prompt, /whichever one the composer shows/);
   // Every model reaching this harness reports itself as the harness's vendor,
   // so without this the agent states the wrong vendor with full confidence.
   assert.match(prompt, /own impression of which model or vendor you are is not evidence/);
-  // The picker's labels are the user-facing names; the IDs carry the tier.
+  // The picker's labels are the user-facing names; the IDs carry the tier, and
+  // one baked in here would be the model selected when this process started.
   assert.doesNotMatch(prompt, /@makers\//);
-});
-
-test('an unlabelled model leaves the identity answer without a name to guess from', () => {
-  const prompt = renderPrompt(true, '');
-  assert.ok(!prompt.includes('runs on '), 'no model should be named when none resolved');
-  assert.match(prompt, /whichever one the composer shows/);
 });
 
 // The navigation rule used to ban every ../ outright, which is right for a
@@ -401,11 +450,10 @@ test('the official scaffolder replaces the search for an official template', () 
 // survive that: the one that gets the framework name into the first tool call,
 // which is the only moment the host can still act on it, and the one that stops
 // the run putting a scaffolder into a directory no longer empty enough for it.
-test('the host already prepared an empty workspace, so the first tool is a reference load', () => {
+test('the host prepared the directory, so the first tool is a reference load', () => {
   const prompt = renderPrompt();
 
-  assert.match(prompt, /host has already prepared an empty project directory/);
-  assert.match(prompt, /The workspace has no files yet/);
+  assert.match(prompt, /host has already prepared the project directory/);
   assert.match(prompt, /load_makers_skill is the first tool of a new project/);
   assert.doesNotMatch(prompt, /ensure_project_scaffold/);
   assert.doesNotMatch(prompt, /templateApplied/);
@@ -461,18 +509,20 @@ test('an uncitable platform limit is not the agent\'s to announce', () => {
 });
 
 test('platform knowledge is closed to the live web, and search is left a purpose', () => {
-  const prompt = renderPrompt(true, 'Kimi K2.6', true);
+  const prompt = renderPrompt();
 
-  assert.match(prompt, /Never use web_search for anything in this section/);
+  // Phrased conditionally rather than dropped when the search tool is withheld,
+  // so the text is identical whether or not this deployment configures one. The
+  // tool list is what withholds it; the prompt never describes its absence.
+  assert.match(prompt, /If a web search tool is available to you, never use it/);
   assert.match(prompt, /never for how to write EdgeOne code/);
   // Without a stated legitimate use this reads as a ban, and a banned tool in
   // the allowlist is a trap the model walks into once per conversation.
   assert.match(prompt, /facts the user asked to put on a page/);
-
-  // A key that exists but is rejected cannot be screened out in advance, so
-  // the run still has to be told what that reply means.
-  assert.match(prompt, /reporting that it is not configured/);
-  assert.match(prompt, /Do not call it again or rephrase/);
+  // A key that is present but rejected is answered by the tool wrapper itself,
+  // which turns the first failure into a verdict and stops the retries; a rule
+  // here would be a second copy of a decision the host already makes.
+  assert.doesNotMatch(prompt, /reporting that it is not configured/);
 });
 
 // One run, one session: it upgraded Next twice to silence a warning, filled the
@@ -507,16 +557,19 @@ test('an install or a build is described as taking the preview down', () => {
   assert.match(prompt, /Do not kill processes, free ports/);
 });
 
-// When the key is absent the tool is withheld from the tool list, and a rule
-// naming a withheld tool is the one thing that could still spend a call on it.
-test('a withheld search tool is not named anywhere in the prompt', () => {
-  const withoutSearch = renderPrompt(true, 'Kimi K2.6', false);
+// The tool is withheld from the tool list when no key is configured, so the
+// prompt cannot name it unconditionally — a rule naming a tool that is not
+// there is an invitation to call it and find out. It is phrased conditionally
+// instead, which also keeps the text identical in both configurations.
+test('the search rule is conditional, so one prompt covers both deployments', () => {
+  const prompt = renderPrompt();
 
-  assert.doesNotMatch(withoutSearch, /web_search/);
+  assert.doesNotMatch(prompt, /Never use web_search/);
+  assert.match(prompt, /If a web search tool is available to you/);
   // The rest of the section is what actually answers platform questions, so it
   // has to survive the tool going away.
-  assert.match(withoutSearch, /come from the official edgeone-makers-tools skill family/);
-  assert.match(withoutSearch, /never from memory/);
+  assert.match(prompt, /come from the official edgeone-makers-tools skill family/);
+  assert.match(prompt, /never from memory/);
 });
 
 // The prompt used to justify "never refuse a framework" with the fact that
