@@ -6,6 +6,7 @@ import {
   appendNarrationChunk,
   dropTrailingSummaryEcho,
   presentToolActivity,
+  toolActionTier,
 } from '../app/lib/tool-activity.ts';
 import { summarizeToolInput } from '../shared/timeline.ts';
 import { MAKERS_REFERENCE_SKILL_NAMES } from '../agents/_lib/tools/makers-skills.ts';
@@ -166,6 +167,21 @@ test('zh and en tool action labels cover every action', () => {
   }
   assert.equal(TRANSLATIONS.zh.workspace.toolActions['Read file'], '读取文件');
   assert.equal(TRANSLATIONS.en.workspace.toolActions['Read file'], 'Read file');
+});
+
+// The platform tone is the blue weight a row carries. Only the two steps that
+// put the user's own site in front of them get it — reading a reference is a
+// read like any other, and tinting it made the row look more important than
+// the build it was feeding.
+test('only the steps the user waits on carry the platform tone', () => {
+  const tier = (name: string, inputSummary?: string) =>
+    toolActionTier(presentToolActivity({ name, inputSummary }).action);
+
+  assert.equal(tier('commands', 'edgeone makers deploy -n demo'), 'platform');
+  assert.equal(tier('commands', 'edgeone makers dev --port 8088'), 'platform');
+  assert.equal(tier('Skill', 'edgeone-makers-tools'), 'file');
+  assert.equal(tier('mcp__edgeone-sandbox__load_makers_skill', 'makers-storage'), 'file');
+  assert.equal(tier('read', JSON.stringify({ path: 'app/page.tsx' })), 'file');
 });
 
 // Every label the conversation renders comes from here, so the platform tier

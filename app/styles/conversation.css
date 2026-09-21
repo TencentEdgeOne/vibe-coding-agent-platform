@@ -389,8 +389,8 @@
   font-weight: 500;
 }
 
-/* Work the user is actually waiting on — a deploy, a preview, a document the
-   agent went and read — against the file bookkeeping underneath it. */
+/* Work the user is actually waiting on — a deploy, a preview — against the file
+   bookkeeping underneath it. */
 .activity-row.is-platform .activity-row-label {
   color: var(--brand-deep);
 }
