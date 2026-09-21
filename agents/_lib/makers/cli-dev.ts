@@ -382,19 +382,25 @@ export function previewRestoredUrl(
   return target.toString();
 }
 
-export function buildMakersDevLaunchCommand(
-  port: number,
-  projectName: string,
-  options: { area?: string } = {},
-) {
-  const area = options.area === 'overseas' ? 'overseas' : 'global';
+/**
+ * The preview launch.
+ *
+ * Deliberately carries no `--area`: `makers dev` does not accept the flag (it is
+ * absent from the command's own options and from its implementation), and the
+ * CLI does not enable strictOptions, so passing it is silently dropped rather
+ * than rejected. The acceleration area is decided before this runs, by
+ * `ensureMakersPublishProject` creating the project through the SDK — that
+ * create is what pins the area, and `dev` then reuses the project it finds.
+ * Adding the flag back here would only make the launch look like it decides
+ * something it does not.
+ */
+export function buildMakersDevLaunchCommand(port: number, projectName: string) {
   return [
     'edgeone makers dev',
     `--port ${port}`,
     '--skip-env-sync',
     '--skip-ai-gateway-sync',
     `--name ${shellQuote(projectName)}`,
-    `--area ${area}`,
   ].join(' ');
 }
 
@@ -436,8 +442,6 @@ export type MakersDevBackgroundOptions = {
   /** Name only; the launcher owns the value, which is always the live prefix. */
   assetPrefixEnvName: string;
   forceRestart?: boolean;
-  /** Same acceleration area deploy uses; preview is what creates the project. */
-  area?: string;
 };
 
 export function buildMakersDevBackgroundCommand({
@@ -447,12 +451,11 @@ export function buildMakersDevBackgroundCommand({
   projectName,
   assetPrefixEnvName,
   forceRestart = false,
-  area,
 }: MakersDevBackgroundOptions) {
   const prefix = normalizePreviewPrefix(previewPath);
   const readyUrl = `http://127.0.0.1:${previewPort}${prefix}/`;
   const proxyHealthUrl = `http://127.0.0.1:${previewPort}/__edgeone_preview_proxy_health`;
-  const launch = buildMakersDevLaunchCommand(makersPort, projectName, { area });
+  const launch = buildMakersDevLaunchCommand(makersPort, projectName);
   const proxyScript = buildPreviewProxyScript(previewPort, makersPort, prefix);
   const proxyRevision = previewProxyRevision(previewPort, makersPort, prefix);
   const writeProxyScript = `require('node:fs').writeFileSync(${

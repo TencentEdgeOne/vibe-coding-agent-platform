@@ -32,7 +32,7 @@ import { sandboxGatewayKeyIsSet } from './gateway.ts';
 import { runCommandCapturingExit, runSandboxCommand } from './commands.ts';
 import { assertMakersProjectCompatible } from '../makers/compat/run.ts';
 import { prepareMakersSession } from '../makers/session.ts';
-import { resolveConversationPublishArea, resolveMakersProjectName } from '../makers/project.ts';
+import { resolveMakersProjectName } from '../makers/project.ts';
 import { describeMissingMakersRuntimeToken } from '../makers/token.ts';
 import { publishPreview } from './workspace-store.ts';
 
@@ -120,8 +120,7 @@ export async function startPreviewServer(
   const verifyRoutes = options.verifyRoutes !== false;
   await assertMakersProjectCompatible(context, state);
   const projectName = resolveMakersProjectName(context, state);
-  const area = resolveConversationPublishArea(state);
-  const launchCommand = buildMakersDevLaunchCommand(MAKERS_DEV_PORT, projectName, { area });
+  const launchCommand = buildMakersDevLaunchCommand(MAKERS_DEV_PORT, projectName);
   let forceRestart = options.forceRestart === true;
 
   // makers-dev watches project files. On resume, keep a healthy process rather
@@ -158,7 +157,6 @@ export async function startPreviewServer(
       projectName: makers.projectName,
       assetPrefixEnvName: PREVIEW_ASSET_PREFIX_ENV,
       forceRestart,
-      area: makers.area,
     }),
     {
       cwd: state.appDir,
