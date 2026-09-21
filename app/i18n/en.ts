@@ -177,7 +177,6 @@ export const en = {
   },
   files: {
     empty: 'No files captured yet.',
-    refreshing: 'Loading...',
     projectFiles: 'Project files',
     selectFile: 'Select a file from the left to preview its contents.',
     loading: (path: string) => `Loading ${path}...`,

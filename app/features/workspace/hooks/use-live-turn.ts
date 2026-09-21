@@ -179,7 +179,6 @@ export function useLiveTurn(options: {
       setMessages((current) => [...current, ...turnMessages]);
     }
     if (!isDeploy) {
-      workspace.setFilesRefreshing(true);
       setInput('');
     }
     if (inboundApiKey) {
@@ -259,7 +258,6 @@ export function useLiveTurn(options: {
         setSessionPreparing(false);
         setPrepStage(null);
         setLoading(false);
-        workspace.setFilesRefreshing(false);
         chatAbortControllerRef.current = null;
         activeTurnIdRef.current = '';
         stoppingRef.current = false;
@@ -280,7 +278,6 @@ export function useLiveTurn(options: {
       setLoading(false);
       setSessionPreparing(false);
       setPrepStage(null);
-      workspace.setFilesRefreshing(false);
       chatAbortControllerRef.current = null;
       activeTurnIdRef.current = '';
       stoppingRef.current = false;
@@ -297,7 +294,6 @@ export function useLiveTurn(options: {
     setLoading(false);
     setSessionPreparing(false);
     setPrepStage(null);
-    workspace.setFilesRefreshing(false);
     workspace.setGatewayNeeded(false);
     workspace.setGatewayBusy(false);
     workspace.setGatewaySavedVisible(false);

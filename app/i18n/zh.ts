@@ -206,7 +206,6 @@ export const zh = {
   },
   files: {
     empty: '暂无文件。',
-    refreshing: '加载中...',
     projectFiles: '项目文件',
     selectFile: '从左侧选择一个文件以预览内容。',
     loading: (path: string) => `正在加载 ${path}...`,

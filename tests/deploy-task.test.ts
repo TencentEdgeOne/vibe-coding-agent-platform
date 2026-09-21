@@ -300,8 +300,10 @@ test('publishing leaves the composer and the files panel alone', async () => {
   assert.match(live, /openSessionStream/);
   assert.match(body, /startPromptTurn\(/);
   assert.match(body, /startDeployTurn\(/);
-  assert.match(body, /if \(!isDeploy\) \{\s*workspace\.setFilesRefreshing\(true\);/);
-  assert.match(body, /setInput\(''\)/);
+  // Only the composer is cleared, and only for a generation turn.
+  assert.match(body, /if \(!isDeploy\) \{\s*setInput\(''\);\s*\}/);
+  assert.doesNotMatch(body, /setFilesRefreshing/);
+  assert.doesNotMatch(body, /setFileTree/);
   assert.doesNotMatch(body, /isGatewayCard/);
   assert.doesNotMatch(body, /gatewaySkip/);
 });

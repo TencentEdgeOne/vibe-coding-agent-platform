@@ -24,7 +24,6 @@ export function useWorkspaceState() {
   // moment the tree arrives — a preview may still be minutes of npm install away.
   const [sandboxTab, setSandboxTab] = useState<SandboxTab | null>('files');
   const [fileTree, setFileTree] = useState<FileTree | null>(null);
-  const [filesRefreshing, setFilesRefreshing] = useState(false);
   const [filesFocusPath, setFilesFocusPath] = useState<string | null>(null);
   const [resultPanelOpen, setResultPanelOpen] = useState(true);
   const [dismissedDeployTurnId, setDismissedDeployTurnId] = useState('');
@@ -40,7 +39,6 @@ export function useWorkspaceState() {
     setDownload(null);
     setBuild(null);
     setFileTree(null);
-    setFilesRefreshing(false);
     setFilesFocusPath(null);
     setResultPanelOpen(true);
     setDismissedDeployTurnId('');
@@ -98,8 +96,6 @@ export function useWorkspaceState() {
     setSandboxTab,
     fileTree,
     setFileTree,
-    filesRefreshing,
-    setFilesRefreshing,
     filesFocusPath,
     setFilesFocusPath,
     resultPanelOpen,
