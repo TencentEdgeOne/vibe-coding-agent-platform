@@ -183,11 +183,12 @@ test('the result panel only opens from its toggle, and never picks a tab by itse
   assert.doesNotMatch(resume, /setSandboxTab\(/);
 });
 
-test('the full-screen prep overlay drops on ready while files and preview keep local loading', async () => {
-  const [screen, resume, live] = await Promise.all([
+test('the full-screen prep overlay drops on ready while the preview keeps local loading', async () => {
+  const [screen, resume, live, state] = await Promise.all([
     surface(WORKSPACE),
     surface('app/features/workspace/hooks/use-session-resume.ts'),
     surface(LIVE_TURN),
+    surface('app/features/workspace/hooks/use-workspace-state.ts'),
   ]);
 
   assert.match(screen, /if \(!resume\.resumeChecked \|\| live\.sessionPreparing\)/);
@@ -202,7 +203,13 @@ test('the full-screen prep overlay drops on ready while files and preview keep l
   assert.match(resume, /event\.data\.stage === 'ready'/);
   assert.match(resume, /setResumeChecked\(true\);\s*setPrepStage\(null\)/);
   assert.match(resume, /finally \{[\s\S]*setWorkspaceRestoring\(false\)/);
-  assert.match(resume, /finally \{[\s\S]*setFilesRefreshing\(false\)/);
+
+  // The Code tab has no loading state of its own: an empty project is described
+  // as empty, not as still loading, so a first turn cannot sit on a spinner it
+  // was never actually waiting behind.
+  assert.doesNotMatch(state, /filesRefreshing/);
+  assert.doesNotMatch(live, /setFilesRefreshing/);
+  assert.doesNotMatch(resume, /setFilesRefreshing/);
 
   assert.match(live, /onReady: \(\) => \{/);
   assert.match(live, /setSessionPreparing\(false\)/);

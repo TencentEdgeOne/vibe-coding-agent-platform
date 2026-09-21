@@ -154,7 +154,6 @@ export function useSessionResume(options: {
           }
           live.activeTurnIdRef.current = assistantId;
           live.setLoading(true);
-          workspace.setFilesRefreshing(true);
         }
       }
 
@@ -179,7 +178,6 @@ export function useSessionResume(options: {
       if (data.hasProject || data.needsWorkspace || activeTask) {
         if (data.hasProject || data.needsWorkspace) {
           setWorkspaceRestoring(true);
-          workspace.setFilesRefreshing(true);
         }
       }
       const liveTaskId = activeTask?.id
@@ -260,10 +258,6 @@ export function useSessionResume(options: {
 
           if (event.type === 'resume_workspace' && event.data?.ok) {
             applyWorkspace(event.data);
-            // The files arrive on their own event, ahead of the preview restart.
-            // Holding this flag until the stream closes left the Code tab
-            // spinning through an npm install it was never waiting on.
-            if (event.data.files) workspace.setFilesRefreshing(false);
             return;
           }
 
@@ -285,7 +279,6 @@ export function useSessionResume(options: {
           if (workspaceEpoch === workspaceEpochRef.current) {
             setWorkspaceRestoring(false);
             liveAttach.session?.finish();
-            if (!liveAttach.session) workspace.setFilesRefreshing(false);
           }
         }
       }

@@ -21,7 +21,6 @@ export function FilesPane({
     <div className="workspace-panel-pane">
       <FilesPanel
         tree={workspace.fileTree}
-        refreshing={workspace.filesRefreshing}
         conversationId={conversationId}
         copy={copy}
         cache={cache}

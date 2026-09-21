@@ -98,8 +98,6 @@ export function createLiveChatSession(sessionOptions: LiveChatSessionOptions): L
       cacheConversationId(data.conversation_id);
       setConversationId(data.conversation_id);
     }
-    workspace.setFilesRefreshing(false);
-
     const finalText = data.reply || data.error || sessionOptions.noDisplay;
     const finalStatus: AssistantStatus = data.stopped ? 'stopped' : data.ok === false ? 'error' : 'done';
     finalizeAssistant(finalText, finalStatus);
@@ -141,7 +139,6 @@ export function createLiveChatSession(sessionOptions: LiveChatSessionOptions): L
     }
     if (event.type === 'workspace' && event.data) {
       snapshot.applySnapshot(event.data);
-      workspace.setFilesRefreshing(false);
       return;
     }
     if (event.type === 'result' && event.data) {
@@ -180,7 +177,6 @@ export function createLiveChatSession(sessionOptions: LiveChatSessionOptions): L
     if (event.type === 'file_tree' && event.data) {
       sawProjectActivity = true;
       workspace.setFileTree(event.data);
-      workspace.setFilesRefreshing(false);
       if (pendingFirstFilePath) {
         revealFirstFile(pendingFirstFilePath);
       }
@@ -220,7 +216,6 @@ export function createLiveChatSession(sessionOptions: LiveChatSessionOptions): L
         );
       }
       setLoading(false);
-      workspace.setFilesRefreshing(false);
       chatAbortControllerRef.current = null;
       if (!stoppingRef.current) {
         activeTurnIdRef.current = '';
