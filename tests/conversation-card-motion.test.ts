@@ -24,6 +24,7 @@ test('conversation action cards animate in and out from under the composer', asy
   assert.match(conversation, /className="conversation-card-stack"/);
 
   assert.match(css, /\.conversation-card-stack \{[\s\S]*?z-index: 1;/);
+  assert.match(css, /\.conversation-card-stack \{[\s\S]*?width: 100%;[\s\S]*?align-self: stretch;/);
   assert.match(css, /\.conversation-card-stack > \* \+ \* \{[\s\S]*?margin-top: -8px;/);
   assert.match(css, /\.deploy-offer,\n\.gateway-prompt \{[\s\S]*?border-radius: var\(--r-lg\) var\(--r-lg\) 0 0;/);
   assert.match(css, /\.conversation-composer \{[\s\S]*?z-index: 2;/);

@@ -692,8 +692,8 @@
   position: relative;
   z-index: 1;
   display: flex;
-  width: min(100%, 520px);
-  align-self: flex-end;
+  width: 100%;
+  align-self: stretch;
   flex-direction: column;
   margin: -6px 0 -8px;
 }
