@@ -137,8 +137,9 @@ export function WorkspaceCanvas({
             hideLabel={t.workspace.hidePanel}
             attentionLabel={t.workspace.panelReady}
             onToggle={() => {
-              if (workspace.unseenPanel) workspace.setSandboxTab('preview');
-              else if (!workspace.sandboxTab) workspace.setSandboxTab('files');
+              if (workspace.unseenPanel || !workspace.sandboxTab) {
+                workspace.setSandboxTab('preview');
+              }
               workspace.setUnseenPanel(false);
               workspace.setResultPanelOpen(true);
             }}

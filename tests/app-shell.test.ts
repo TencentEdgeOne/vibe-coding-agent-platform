@@ -158,9 +158,10 @@ test('the topbar overlays the preview from its own layer, and never through opac
   assert.match(disabled, /:disabled svg,\s*\.workspace-icon-button:disabled \.workspace-icon-spinner \{\s*opacity: 0\.45/);
 });
 
-// The canvas starts with the result column closed. A ready preview opens it
-// onto that tab; nothing else in the stream may open the panel or pick a tab.
-test('a ready preview opens the closed result panel onto the preview tab', async () => {
+// The canvas starts with the result column closed. Opening it defaults to
+// Preview, and a ready preview opens it onto that tab; nothing else in the
+// stream may open the panel or pick a tab.
+test('the result panel opens on the preview tab by default', async () => {
   const [screen, live, resume, state] = await Promise.all([
     surface(WORKSPACE),
     surface(LIVE_TURN),
@@ -171,6 +172,10 @@ test('a ready preview opens the closed result panel onto the preview tab', async
   assert.match(screen, /function ResultPanelToggle\(/);
   assert.match(screen, /workspace\.setResultPanelOpen\(true\)/);
   assert.match(screen, /workspace\.setResultPanelOpen\(false\)/);
+  assert.match(
+    screen,
+    /if \(workspace\.unseenPanel \|\| !workspace\.sandboxTab\) \{\s*workspace\.setSandboxTab\('preview'\);/,
+  );
   assert.match(screen, /onValueChange=\{\(value\) => workspace\.setSandboxTab\(value as SandboxTab\)\}/);
   assert.match(state, /\[resultPanelOpen, setResultPanelOpen\] = useState\(false\)/);
   assert.match(state, /useState<SandboxTab \| null>\(null\)/);
