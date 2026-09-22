@@ -187,16 +187,16 @@ test('a run where everything landed speaks for the step that landed last', () =>
   assert.equal(summary.target, 'app/globals.css');
 });
 
-test('the reading view hides SDK status pings', () => {
+test('the reading view hides SDK status, session, and usage rows', () => {
   const blocks = buildAssistantTimeline([
     { kind: 'thinking', content: 'Need a form.' },
     { kind: 'info', infoType: 'status', title: 'Status', content: 'compacting' },
+    { kind: 'info', infoType: 'system', title: 'Session', content: 'model=claude' },
     { kind: 'info', infoType: 'usage', title: 'Usage', content: 'turns=1' },
     write('a', 'app/page.tsx'),
   ]);
   const visible = visibleRefinedBlocks(blocks);
-  assert.deepEqual(visible.map((block) => block.kind), ['thinking', 'info', 'tool']);
-  assert.equal(visible[1].kind === 'info' && visible[1].activity.infoType, 'usage');
+  assert.deepEqual(visible.map((block) => block.kind), ['thinking', 'tool']);
 });
 
 test('the reading view hides thinking_tokens and stitches the thought back together', () => {
@@ -212,7 +212,7 @@ test('the reading view hides thinking_tokens and stitches the thought back toget
     { kind: 'info', infoType: 'usage', title: 'Usage', content: 'turns=1' },
   ]);
   const visible = visibleRefinedBlocks(blocks);
-  assert.deepEqual(visible.map((block) => block.kind), ['thinking', 'info']);
+  assert.deepEqual(visible.map((block) => block.kind), ['thinking']);
   assert.equal(visible[0]?.kind === 'thinking' && visible[0].content, 'Fix the typo first. Then write the page.');
   assert.equal(visible[0]?.kind === 'thinking' && visible[0].startedAt, 1_000);
   assert.equal(visible[0]?.kind === 'thinking' && visible[0].endedAt, 1_400);

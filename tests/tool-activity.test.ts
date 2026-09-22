@@ -320,3 +320,29 @@ test('the closing narration gives way to the turn summary', () => {
     [narration, tool],
   );
 });
+
+// The SDK emits its usage boundary after the last narration and before the
+// turn result. That row must not hide the narration the result is repeating.
+test('a trailing usage row does not stop the closing narration from giving way', () => {
+  const narration = {
+    kind: 'text' as const,
+    content: '站点已上线，可以直接访问：https://demo.edgeone.app?eo_token=abc',
+  };
+  const tool = {
+    kind: 'tool' as const,
+    toolUseId: 'deploy-1',
+    name: 'deploy_project',
+    status: 'completed' as const,
+  };
+  const usage = {
+    kind: 'info' as const,
+    infoType: 'usage' as const,
+    title: 'Usage',
+    content: 'subtype=success turns=2',
+  };
+
+  assert.deepEqual(
+    dropTrailingSummaryEcho([tool, narration, usage], narration.content),
+    [tool, usage],
+  );
+});

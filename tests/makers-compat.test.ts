@@ -124,7 +124,7 @@ test('cold resume restores project dependencies without managing the sandbox CLI
   const client = await surface('app/features/workspace/workspace-api.ts');
   // A cold resume gets its install from the level that needs it rather than by
   // asking for one itself, which is why resume no longer names dependencies.
-  assert.match(readiness, /ensureDependencies\(context, state\)/);
+  assert.match(readiness, /ensureDependencies\(context, state, \{/);
   assert.doesNotMatch(resume, /prewarmEdgeoneCli|npm install -g edgeone/);
   // The budgets live together so the preview's can be read against the install
   // and dev server boot that happen inside it.

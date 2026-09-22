@@ -420,12 +420,27 @@ function withoutUrls(text: string) {
   return text.replace(/https?:\/\/\S+/g, '').replace(/\s+/g, '');
 }
 
-export function dropTrailingSummaryEcho<T extends { kind: string; content?: string }>(
+export function dropTrailingSummaryEcho<T extends {
+  kind: string;
+  content?: string;
+  infoType?: string;
+}>(
   activities: readonly T[],
   finalContent: string,
 ): T[] {
   const list = [...activities];
-  const last = list.at(-1);
+  // The SDK's usage event lands between the last streamed narration and the
+  // final reply. Usage and compact rows are boundaries, not narration, so look
+  // through them for the text block the reply is echoing.
+  let lastIndex = list.length - 1;
+  while (
+    lastIndex >= 0
+    && list[lastIndex].kind === 'info'
+    && isBoundarySystemInfo(list[lastIndex])
+  ) {
+    lastIndex -= 1;
+  }
+  const last = list[lastIndex];
   if (!last || last.kind !== 'text') return list;
   const echoes = (narration: string, summary: string) => Boolean(narration)
     && Boolean(summary)
@@ -435,7 +450,7 @@ export function dropTrailingSummaryEcho<T extends { kind: string; content?: stri
     echoes(content.replace(/\s+/g, ''), finalContent.replace(/\s+/g, ''))
     || echoes(withoutUrls(content), withoutUrls(finalContent))
   ) {
-    list.pop();
+    list.splice(lastIndex, 1);
   }
   return list;
 }
@@ -717,7 +732,7 @@ function mergeThinkingBlocks(
   };
 }
 
-/** SDK status pings and token meters are the agent's plumbing, not a step the
+/** SDK status, session, and usage rows are the agent's plumbing, not a step the
  *  user asked about. Classic keeps them; the reading view does not. Thoughts
  *  that those pings split are stitched back into one row. */
 export function visibleRefinedBlocks(blocks: AssistantTimelineBlock[]): AssistantTimelineBlock[] {
@@ -725,7 +740,15 @@ export function visibleRefinedBlocks(blocks: AssistantTimelineBlock[]): Assistan
   for (const block of blocks) {
     if (
       block.kind === 'info'
-      && (block.activity.infoType === 'status' || isPlumbingSystemInfo(block.activity))
+      && (
+        block.activity.infoType === 'status'
+        || block.activity.infoType === 'usage'
+        || (
+          block.activity.infoType === 'system'
+          && block.activity.title.trim().toLowerCase() === 'session'
+        )
+        || isPlumbingSystemInfo(block.activity)
+      )
     ) {
       continue;
     }

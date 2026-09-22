@@ -183,9 +183,11 @@ test('a failed level can be retried inside the same request', async () => {
   assert.equal(state.appDir, 'projects/cid/app');
 });
 
-test('the readiness chain is the only place that starts a preview', async () => {
+test('the readiness chain owns previews, and chat does not start one after a turn', async () => {
+  const chat = await readFile('agents/_lib/turn/chat.ts', 'utf8');
+  assert.doesNotMatch(chat, /ensurePreview\(/);
+
   const sources = await Promise.all([
-    readFile('agents/_lib/turn/chat.ts', 'utf8'),
     readFile('agents/_lib/session/resume.ts', 'utf8'),
     readFile('agents/_lib/session/gateway-apply.ts', 'utf8'),
     readFile('agents/_lib/tools/preview-command-result.ts', 'utf8'),

@@ -566,7 +566,7 @@ test('dynamic and catch-all routes stay out of the probe list', () => {
   assert.deepEqual(functionRoutes, ['/api/health']);
 });
 
-test('the host starts dest with the workspace and keeps it watching files', async () => {
+test('the host does no preview work after the coding agent returns', async () => {
   const [chat, snapshot, live, apply, assemble, resume, preview, prompt] = await Promise.all([
     readFile('agents/_lib/turn/chat.ts', 'utf8'),
     readFile('agents/_lib/project/snapshot.ts', 'utf8'),
@@ -578,29 +578,17 @@ test('the host starts dest with the workspace and keeps it watching files', asyn
     readFile('agents/_lib/prompt.ts', 'utf8'),
   ]);
 
-  assert.match(chat, /const startHostPreview = async/);
-  assert.match(chat, /if \(state\.created\) \{\s*\n\s*void startHostPreview\('\[preview\] workspace ready:'\)/);
-  // One call per place the turn notices the preview is missing, and no guard of
-  // its own: deduplicating the four is the readiness layer's job.
-  assert.match(chat, /ensurePreview\(context, conversationId, state, \{\s*\n\s*verifyRoutes: true,\s*\n\s*\}\)/);
-  assert.doesNotMatch(chat, /hostPreviewInFlight/);
-  assert.doesNotMatch(chat, /startPreviewServer|publishRunningPreview/);
-  // A failed dest used to warn only. The empty panel then had nothing to show
-  // but the placeholder, over a model sentence that claimed the preview worked.
-  assert.match(chat, /preview:\s*\{\s*error:\s*message\s*\}/);
-  assert.doesNotMatch(chat, /onWorkspaceReady/);
-  assert.match(chat, /state\.created && !state\.previewUrl/);
+  // The model owns preview, verification, and fixing inside its turn. Once the
+  // SDK result is back, the host answers and persists; it does not start work
+  // that would leave the conversation reading "running" after the model stopped.
+  assert.doesNotMatch(chat, /startHostPreview|ensurePreview\(/);
+  assert.doesNotMatch(chat, /runVerification|runAutoFixTurn/);
+  assert.doesNotMatch(chat, /setLastBuild|previewLinkFromState/);
+  assert.doesNotMatch(chat, /createFileTreePushController|fileTreePush/);
+  assert.match(chat, /const handlePreviewReady = async/);
   assert.match(chat, /await persistWorkspace\(context, conversationId, state\)/);
-  assert.match(chat, /let previewVerified = Boolean\(state\.previewUrl\)/);
-  assert.match(chat, /filesWritten \? \{ restarted: true \}/);
-  assert.doesNotMatch(
-    chat,
-    /previewTouched && Boolean\(state\.previewUrl\)/,
-    'host preview must not wait for the model to have launched dest',
-  );
+  assert.match(chat, /void checkpoint\.flush\(\)/);
   assert.doesNotMatch(assemble, /onWorkspaceReady/);
-  // The file listing is emitted on its own event, before the preview restart, so
-  // a cold sandbox's npm install cannot hold the Code tab on a spinner.
   assert.match(resume, /if \(willRestorePreview\(restore\)\) \{/);
   const resumeEvents = resume.slice(
     resume.indexOf('async function* iterateWorkspaceResumeEvents'),

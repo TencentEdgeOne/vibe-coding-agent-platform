@@ -179,7 +179,7 @@ test('workspace snapshot and preview status are pullable without the chat stream
   assert.match(previewSurface, /void options\.refreshWorkspace\?\.\(id\)/);
 });
 
-test('a finished turn streams the workspace snapshot instead of GET /workspace', async () => {
+test('a finished turn streams a state-only workspace snapshot instead of GET /workspace', async () => {
   const [
     protocol,
     result,
@@ -199,8 +199,8 @@ test('a finished turn streams the workspace snapshot instead of GET /workspace',
   assert.match(protocol, /type: 'workspace'; data\?: WorkspaceSnapshot/);
   assert.match(result, /type: 'workspace'/);
   assert.match(snapshot, /export function workspaceSnapshotFromState/);
-  assert.match(chat, /workspaceSnapshotFromState\(conversationId, state, flushedItems\)/);
-  assert.match(chat, /rememberTree\(await fileTreePush\.flush/);
+  assert.match(chat, /workspaceSnapshotFromState\(conversationId, state\)/);
+  assert.doesNotMatch(chat, /fileTreePush|flushedItems|rememberTree/);
   assert.match(deploy, /workspaceSnapshotFromState\(/);
   assert.match(live, /event\.type === 'workspace' && event\.data/);
   assert.match(live, /snapshot\.applySnapshot\(event\.data\)/);
