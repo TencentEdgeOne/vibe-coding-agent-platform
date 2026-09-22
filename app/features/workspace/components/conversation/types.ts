@@ -1,16 +1,14 @@
+import type { ChatMessage } from '@/app/types/workspace';
 import type { AssistantActivity } from '../../../../../shared/protocol';
 import type { ReferenceTopic, ToolAction } from '../../../../../shared/timeline';
 import type { ModelOption } from '../../../../../shared/models';
 
-export type ConversationMessage = {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  activities?: AssistantActivity[];
-  status?: 'running' | 'done' | 'error' | 'stopped';
-};
+export type AgentTurnStatus = 'running' | 'done' | 'error' | 'stopped';
+
+export type ConversationMessage = ChatMessage;
 
 export type ConversationCopy = {
+  preparingAgent: string;
   running: string;
   completed: string;
   failed: string;

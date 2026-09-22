@@ -95,6 +95,11 @@ export function useSessionResume(options: {
               content: turn.assistant,
               activities: dropTrailingSummaryEcho(turn.activities ?? [], turn.assistant),
               status: turn.status === 'completed' ? 'done' as const : turn.status === 'failed' ? 'error' as const : 'stopped' as const,
+              startedAt: turn.createdAt,
+              endedAt: turn.activities.reduce(
+                (latest, activity) => Math.max(latest, activity.kind === 'tool' ? activity.endedAt || 0 : activity.kind === 'thinking' ? activity.endedAt || 0 : 0),
+                turn.createdAt,
+              ),
             },
           ])
         : history.map((item) => ({
@@ -131,6 +136,7 @@ export function useSessionResume(options: {
                   content: '',
                   activities: [],
                   status: 'running',
+                  startedAt: activeTask.startedAt || activeTask.createdAt || Date.now(),
                 },
               ];
             } else if (!hasUserForTurn && !(last?.role === 'assistant' && last.id === assistantId)) {
@@ -148,6 +154,7 @@ export function useSessionResume(options: {
                   content: '',
                   activities: [],
                   status: 'running',
+                  startedAt: activeTask.startedAt || activeTask.createdAt || Date.now(),
                 },
               ];
             }

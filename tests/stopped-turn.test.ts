@@ -99,8 +99,6 @@ test('earlier turns keep their identity so memoized turns do not re-render', () 
 test('the stopped reply is one definition, in the language of the request', () => {
   assert.equal(replyLocaleFor('做一个留言板'), 'zh');
   assert.equal(replyLocaleFor('build a guestbook'), 'en');
-  assert.equal(replyLocaleFor('build a guestbook', 'zh'), 'zh');
-  assert.equal(replyLocaleFor('做一个留言板', 'en'), 'en');
   // Mixed input follows the CJK it contains, which is how the request reads.
   assert.equal(replyLocaleFor('给 landing page 加个表单'), 'zh');
 

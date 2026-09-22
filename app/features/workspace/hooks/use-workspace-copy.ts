@@ -26,6 +26,7 @@ export function useWorkspaceCopy(t: UiCopy, options: {
     pausedForDeploy: t.workspace.previewPausedForDeploy,
   }), [t]);
   const conversationCopy = useMemo(() => ({
+    preparingAgent: t.workspace.activityPreparingAgent,
     running: t.workspace.activityRunning,
     completed: t.workspace.activityCompleted,
     failed: t.workspace.activityFailed,

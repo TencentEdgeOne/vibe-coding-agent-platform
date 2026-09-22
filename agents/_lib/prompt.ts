@@ -330,6 +330,7 @@ export function buildPrompt(
     // preference was written mid-conversation.
     section('Language', [
       'Write all user-facing narration and the final reply in the language of the user request.',
+      'Determine that language again from the current user message on every turn. When the user switches languages, switch with them; do not carry over the previous turn\'s language or use the interface language.',
     ]),
     section('What you take on', SCOPE),
     section('Where platform knowledge comes from', buildKnowledgeSourcing()),
@@ -352,4 +353,3 @@ export function buildPrompt(
     `Before you write anything, check whether ${state.appDir} already contains project files. If it is empty, follow the new-project workflow below; if it already has files, follow the existing-project workflow. This is a property of the workspace, which can change during a long conversation — read it from a file listing rather than assuming either answer from how the conversation started.`,
   ].join('\n\n');
 }
-

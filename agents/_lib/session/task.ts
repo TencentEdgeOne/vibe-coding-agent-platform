@@ -3,7 +3,6 @@ import { runChatPipeline } from '../turn/chat.ts';
 import { runDeployPipeline } from '../turn/deploy.ts';
 import {
   getChatTask,
-  getLanguagePreference,
   saveChatTask,
   saveLanguagePreference,
   saveModelPreference,
@@ -236,11 +235,9 @@ async function executeLiveTask(context: AgentContext, liveTask: LiveChatTask) {
 
   try {
     await saveChatTask(taskContext, liveTask.conversationId, runningTask);
-    const language = await getLanguagePreference(taskContext, liveTask.conversationId);
     if (liveTask.task.kind === 'deploy') {
       await runDeployPipeline(taskContext, liveTask.task.message, send, {
         turnId: liveTask.task.id,
-        language: language || undefined,
         apiKey: liveTask.gatewayApiKey,
         gatewaySkip: liveTask.gatewaySkip,
       });
@@ -248,7 +245,6 @@ async function executeLiveTask(context: AgentContext, liveTask: LiveChatTask) {
       await runChatPipeline(taskContext, liveTask.task.message, send, {
         turnId: liveTask.task.id,
         model: liveTask.task.model,
-        language: language || undefined,
         apiKey: liveTask.gatewayApiKey,
         gatewaySkip: liveTask.gatewaySkip,
       });

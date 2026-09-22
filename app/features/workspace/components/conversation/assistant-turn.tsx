@@ -10,22 +10,24 @@ import {
 import { withoutPlatformName } from '../../../../../shared/platform-name';
 import type { ActivityStyle } from '../../hooks/use-activity-style';
 import { ActivityStream } from './activity-stream';
+import { isAgentPreparing } from './agent-status-bar-phase';
+import { AgentStatusBar } from './agent-status-bar';
 import { Markdown } from './markdown';
 import type { ConversationCopy, ConversationMessage } from './types';
 
-export const AssistantTurn = memo(function AssistantTurn({ message, style, copy }: {
+export const AssistantTurn = memo(function AssistantTurn({ message, style, copy, followOutput }: {
   message: ConversationMessage;
   style: ActivityStyle;
   copy: ConversationCopy;
+  followOutput: boolean;
 }) {
   const activities = message.activities ?? [];
   const blocks = useMemo(() => buildAssistantTimeline(activities), [activities]);
   const lastText = lastTimelineText(blocks);
   const trailing = trailingTimelineContent(lastText?.content, message.content, message.status);
   const running = message.status === 'running';
-  const hasRunningTool = activities.some(
-    (activity) => activity.kind === 'tool' && activity.status === 'running',
-  );
+  const status = message.status ?? 'done';
+  const preparing = status === 'running' && isAgentPreparing(message);
   // Only the block still being written into counts as live; the ones above it
   // are finished thoughts even though the turn as a whole is not.
   const liveIndex = running ? blocks[blocks.length - 1]?.index : undefined;
@@ -44,10 +46,14 @@ export const AssistantTurn = memo(function AssistantTurn({ message, style, copy 
             <Markdown content={trailing} copy={copy} />
           )
         )}
-        {running && !hasRunningTool && (
-          <p className="agent-waiting" role="status">{copy.running}</p>
-        )}
       </div>
+      <AgentStatusBar
+        status={status}
+        preparing={preparing}
+        sticky={followOutput}
+        copy={copy}
+        message={message}
+      />
     </section>
   );
 });

@@ -67,6 +67,7 @@ export function finalizeAssistant(
               : activity,
           ),
           status: finalStatus,
+          endedAt: Date.now(),
         }
       : item,
   );
@@ -83,6 +84,7 @@ export function settleRunningAssistant(
           ...item,
           status: 'done' as const,
           content: item.content || fallbackContent,
+          endedAt: Date.now(),
         }
       : item,
   );

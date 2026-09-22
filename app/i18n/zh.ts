@@ -75,6 +75,7 @@ export const zh = {
     // Labels the picker for screen readers only; the control itself shows the
     // model's own name, which is the more useful thing to read sighted.
     modelLabel: '选择模型',
+    activityPreparingAgent: '正在准备 Agent',
     activityRunning: '正在执行',
     activityCompleted: '已完成',
     activityFailed: '失败',

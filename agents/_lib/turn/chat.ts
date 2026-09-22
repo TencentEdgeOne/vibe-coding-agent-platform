@@ -50,7 +50,6 @@ export async function runChatPipeline(
     turnId?: string;
     /** Validated model for this turn; '' or absent runs the configured default. */
     model?: string;
-    language?: ReplyLocale | string;
     /** Real Models API key from the card or a chat sentence; never persisted. */
     apiKey?: string;
     gatewaySkip?: boolean;
@@ -58,7 +57,7 @@ export async function runChatPipeline(
 ) {
   const { conversationId } = resolveConversationId(context);
   const abortSignal = context?.request?.signal as AbortSignal | undefined;
-  const replyLocale = replyLocaleFor(message, options.language);
+  const replyLocale = replyLocaleFor(message);
 
   if (!message) {
     sendTurnResult(send, slimResult(conversationId, {
@@ -222,7 +221,7 @@ export async function runChatPipeline(
     : (modelResult.error || 'An error occurred during processing. Please try again.');
   const rawAssistantReply = stripReturnedPreviewLinks(sanitizeAssistantText(
     modelOutput || fallbackReply
-  ) || fallbackReply, state.previewUrl);
+  ) || fallbackReply, state.previewUrl).trim();
   const liveDeploymentUrl = modelResult.deploymentTouched
     && state.deployment?.status === 'success'
     ? state.deployment.url

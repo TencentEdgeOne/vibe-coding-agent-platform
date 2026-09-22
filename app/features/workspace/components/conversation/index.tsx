@@ -76,6 +76,7 @@ export const AgentConversation = memo(function AgentConversation({
   onGatewayReopen?: () => void;
 }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const streamRef = useRef<HTMLDivElement | null>(null);
   const followOutputRef = useRef(true);
   const [following, setFollowing] = useState(true);
   const { style, setStyle } = useActivityStyle();
@@ -87,18 +88,37 @@ export const AgentConversation = memo(function AgentConversation({
     }
     return `${messages.length}:${last.id}:${last.status}:${last.content.length}`;
   }, [messages]);
+  const pinToBottom = useCallback(() => {
+    const node = scrollRef.current;
+    if (!node || !followOutputRef.current) return;
+    node.scrollTop = node.scrollHeight;
+  }, []);
+
+  useEffect(() => {
+    pinToBottom();
+  }, [pinToBottom, signature]);
 
   useEffect(() => {
     const node = scrollRef.current;
-    if (node && followOutputRef.current) node.scrollTop = node.scrollHeight;
-  }, [signature]);
+    const stream = streamRef.current;
+    if (!node || !stream) return;
+
+    // A streamed turn can keep growing after React has painted it: markdown
+    // reflows, a code block settles, or an image gets its dimensions. Pin to
+    // the new bottom for every one of those changes, not only the render that
+    // carried the latest token.
+    const observer = new ResizeObserver(pinToBottom);
+    observer.observe(stream);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [pinToBottom]);
 
   const scrollToLatest = useCallback(() => {
     const node = scrollRef.current;
     if (!node) return;
-    node.scrollTo({ top: node.scrollHeight, behavior: 'smooth' });
     followOutputRef.current = true;
     setFollowing(true);
+    node.scrollTop = node.scrollHeight;
   }, []);
 
   return (
@@ -119,11 +139,17 @@ export const AgentConversation = memo(function AgentConversation({
             setFollowing((current) => (current === nearBottom ? current : nearBottom));
           }}
         >
-          <div className="conversation-stream">
+          <div ref={streamRef} className="conversation-stream">
             {messages.map((message) => message.role === 'user' ? (
               <UserTurn key={message.id} content={message.content} copy={copy} />
             ) : (
-              <AssistantTurn key={message.id} message={message} style={style} copy={copy} />
+              <AssistantTurn
+                key={message.id}
+                message={message}
+                style={style}
+                followOutput={following}
+                copy={copy}
+              />
             ))}
           </div>
         </div>

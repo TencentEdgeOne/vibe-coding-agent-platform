@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { extractApiKeyFromUserText } from '../../../../shared/gateway-secret';
-import { STOPPED_TURN_REPLY } from '../../../../shared/user-facing-reply';
+import { replyLocaleFor, STOPPED_TURN_REPLY } from '../../../../shared/user-facing-reply';
 import type { Locale } from '@/app/i18n';
 import {
   cacheConversationId,
@@ -172,6 +172,7 @@ export function useLiveTurn(options: {
         content: '',
         activities: [],
         status: 'running',
+        startedAt: Date.now(),
       },
     ];
     if (!isStartingFromHome) {
@@ -282,7 +283,10 @@ export function useLiveTurn(options: {
     const cid = conversationIdRef.current || conversationId;
     if (!loadingRef.current || !cid || stoppingRef.current) return null;
     stoppingRef.current = true;
-    const stoppedText = STOPPED_TURN_REPLY[language];
+    const currentUserMessage = [...messagesRef.current]
+      .reverse()
+      .find((message) => message.role === 'user')?.content || '';
+    const stoppedText = STOPPED_TURN_REPLY[replyLocaleFor(currentUserMessage)];
     const stopped = markLastTurnStopped(messagesRef.current, stoppedText);
     setMessages(stopped.messages);
     setLoading(false);

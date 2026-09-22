@@ -21,6 +21,14 @@ export function previewLinkFromState(state: ProjectState) {
   };
 }
 
+/**
+ * Remove a preview link the model echoed back.
+ *
+ * This runs on every streamed text chunk, so it must not normalize the chunk:
+ * trimming each one deletes the space that separates two words and the reply
+ * arrives as "Yourguestbookisready". Callers that want an edge trim (the
+ * complete reply) do it themselves.
+ */
 export function stripReturnedPreviewLinks(text: string, previewUrl?: string) {
   if (!text || !previewUrl) {
     return text;
@@ -29,8 +37,7 @@ export function stripReturnedPreviewLinks(text: string, previewUrl?: string) {
   return text
     .replace(new RegExp(`\\s*\\[[^\\]]*(?:打开预览|预览|preview)[^\\]]*\\]\\(${escapedUrl}\\)`, 'gi'), '')
     .replace(new RegExp(`\\s*${escapedUrl}`, 'g'), '')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+    .replace(/\n{3,}/g, '\n\n');
 }
 
 function escapeRegExp(value: string) {

@@ -109,4 +109,18 @@ test('settleRunningAssistant only fills an unfinished assistant turn', () => {
   assert.equal(next[0], done);
   assert.equal(next[1].status, 'done');
   assert.equal(next[1].content, 'Agent flow has ended.');
+  assert.ok(typeof next[1].endedAt === 'number');
+});
+
+test('finalizing a turn freezes its status bar elapsed time', () => {
+  const running: ChatMessage = {
+    id: 'a1',
+    role: 'assistant',
+    content: '',
+    status: 'running',
+    startedAt: 1_000,
+  };
+  const finished = finalizeAssistant([running], 'a1', 'All set.', 'done');
+  assert.ok(typeof finished[0].endedAt === 'number');
+  assert.equal(finished[0].startedAt, 1_000);
 });

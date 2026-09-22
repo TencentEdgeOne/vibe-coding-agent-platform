@@ -59,6 +59,7 @@ export const en = {
     send: 'Send',
     stop: 'Stop generation',
     modelLabel: 'Select model',
+    activityPreparingAgent: 'Preparing the agent',
     activityRunning: 'Running',
     activityCompleted: 'Completed',
     activityFailed: 'Failed',

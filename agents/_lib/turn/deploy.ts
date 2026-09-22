@@ -177,14 +177,13 @@ export async function runDeployPipeline(
   send: StreamSend,
   options: {
     turnId?: string;
-    language?: string;
     apiKey?: string;
     gatewaySkip?: boolean;
   } = {},
 ) {
   const { conversationId } = resolveConversationId(context);
   const request = message.trim() || 'Deploy this project';
-  const copy = replyLocaleFor(request, options.language) === 'zh' ? COPY.zh : COPY.en;
+  const copy = replyLocaleFor(request) === 'zh' ? COPY.zh : COPY.en;
 
   if (!conversationId) {
     sendTurnResult(send, {

@@ -294,6 +294,10 @@ test('the language rule is one sentence for every conversation', () => {
     prompt,
     /Write all user-facing narration and the final reply in the language of the user request\./,
   );
+  assert.match(
+    prompt,
+    /Determine that language again from the current user message on every turn\./,
+  );
   assert.doesNotMatch(prompt, /Write all user-facing narration and the final reply in Chinese/);
   assert.doesNotMatch(prompt, /Write all user-facing narration and the final reply in English/);
 });

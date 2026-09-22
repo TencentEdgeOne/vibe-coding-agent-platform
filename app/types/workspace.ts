@@ -24,4 +24,8 @@ export type ChatMessage = {
   content: string;
   activities?: AssistantActivity[];
   status?: AssistantStatus;
+  /** When this turn started running; the status bar ticks from here. */
+  startedAt?: number;
+  /** When this turn reached a terminal status; absent while still running. */
+  endedAt?: number;
 };

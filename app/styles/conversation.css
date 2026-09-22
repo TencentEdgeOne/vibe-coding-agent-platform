@@ -33,6 +33,7 @@
   flex: 1;
   overflow-y: auto;
   overscroll-behavior: contain;
+  overflow-anchor: none;
 }
 
 .conversation-stream {
@@ -121,13 +122,6 @@
 
 .conversation-assistant-turn .agent-markdown + .assistant-error-message {
   margin-top: 12px;
-}
-
-.conversation-skeleton + .agent-waiting,
-.activity-row + .agent-waiting,
-.agent-markdown + .agent-waiting,
-.assistant-error-message + .agent-waiting {
-  margin-top: 8px;
 }
 
 .agent-markdown p + p,
@@ -527,32 +521,81 @@
   margin-top: 2px;
 }
 
-/* The wait says what it is waiting on. A light travels across the word so the
-   turn reads as still moving even while nothing new has arrived. */
-.agent-waiting {
-  margin: 0;
-  padding: 2px 6px;
-  background: linear-gradient(
-    90deg,
-    var(--n-400) 0%,
-    var(--n-900) 50%,
-    var(--n-400) 100%
-  );
-  background-clip: text;
-  background-size: 220% 100%;
+/* The latest turn owns one status rail at the tail of the stream. It reads as
+   chrome rather than as another assistant bubble, and only sticks while the
+   reader is already following the latest output. */
+.agent-status-bar {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 8px;
+  border-radius: var(--r-sm);
+  padding: 3px 6px;
   color: var(--n-500);
-  font-size: var(--fs-sm);
-  line-height: 1.55;
-  -webkit-text-fill-color: transparent;
-  animation: agent-waiting-sheen 1.8s linear infinite;
 }
 
-@keyframes agent-waiting-sheen {
-  from {
-    background-position: 220% 0;
+.agent-status-bar.is-sticky {
+  position: sticky;
+  z-index: 3;
+  bottom: 0;
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  backdrop-filter: blur(5px);
+}
+
+.agent-status-bar-indicator {
+  display: inline-flex;
+  height: 12px;
+  align-items: center;
+  gap: 2px;
+}
+
+.agent-status-bar-indicator i {
+  width: 2px;
+  height: 5px;
+  border-radius: var(--r-full);
+  background: var(--n-400);
+  animation: agent-status-bar-breathe 1.7s ease-in-out infinite;
+  transform-origin: center;
+}
+
+.agent-status-bar-indicator i:nth-child(2) {
+  animation-delay: 180ms;
+}
+
+.agent-status-bar-indicator i:nth-child(3) {
+  animation-delay: 360ms;
+}
+
+.agent-status-bar-label {
+  min-width: 0;
+  color: var(--n-500);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.agent-status-bar-elapsed {
+  color: var(--n-400);
+  font-size: var(--fs-2xs);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+@keyframes agent-status-bar-breathe {
+  0%,
+  100% {
+    height: 5px;
+    opacity: 0.4;
   }
-  to {
-    background-position: -220% 0;
+
+  50% {
+    height: 11px;
+    opacity: 0.95;
   }
 }
 
@@ -1177,7 +1220,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .agent-waiting span {
+  .agent-status-bar-indicator i {
     animation: none;
   }
 

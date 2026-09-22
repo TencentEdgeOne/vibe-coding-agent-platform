@@ -10,12 +10,11 @@ const CJK_PATTERN = /[\u3400-\u9fff]/;
 export type ReplyLocale = 'zh' | 'en';
 
 /**
- * Which language a reply should be written in. An explicit locale from the
- * conversation preference wins; the request text is only a fallback so a
- * Chinese UI with an English prompt still gets Chinese replies.
+ * Which language a reply should be written in. The request text is the only
+ * source: a turn must follow the language the user just wrote in, regardless
+ * of the language selected for the surrounding UI.
  */
-export function replyLocaleFor(text: string, explicit?: ReplyLocale | string): ReplyLocale {
-  if (explicit === 'zh' || explicit === 'en') return explicit;
+export function replyLocaleFor(text: string): ReplyLocale {
   return CJK_PATTERN.test(text) ? 'zh' : 'en';
 }
 

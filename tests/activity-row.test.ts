@@ -15,6 +15,11 @@ import {
   formatActivityDuration,
   resolveDisclosure,
 } from '../app/features/workspace/components/conversation/activity-disclosure.ts';
+import {
+  isAgentPreparing,
+  resolveAgentElapsed,
+  resolveAgentStatusBarPhase,
+} from '../app/features/workspace/components/conversation/agent-status-bar-phase.ts';
 
 const CONVERSATION = 'app/features/workspace/components/conversation';
 
@@ -296,16 +301,92 @@ test('a tool row is named for what it did, not for the tool that did it', async 
   assert.doesNotMatch(toolBlock, /activity\.name/);
 });
 
-test('an open log follows new output until the reader scrolls it back', async () => {
-  const [row, conversation, thinking] = await Promise.all([
+test('an open log and the conversation follow new output until the reader scrolls back', async () => {
+  const [row, conversation, styles, thinking] = await Promise.all([
     readFile(`${CONVERSATION}/activity-row.tsx`, 'utf8'),
     readFile(`${CONVERSATION}/index.tsx`, 'utf8'),
+    readFile('app/styles/conversation.css', 'utf8'),
     readFile(`${CONVERSATION}/thinking-block.tsx`, 'utf8'),
   ]);
 
   assert.match(row, /export function FollowLog\(/);
   assert.match(row, /followRef\.current = node\.scrollHeight - node\.scrollTop - node\.clientHeight < 24/);
+  assert.match(conversation, /const streamRef = useRef<HTMLDivElement \| null>\(null\)/);
   assert.match(conversation, /followOutputRef\.current = nearBottom/);
+  assert.match(conversation, /const observer = new ResizeObserver\(pinToBottom\)/);
+  assert.match(conversation, /observer\.observe\(stream\)/);
+  assert.match(conversation, /ref=\{streamRef\}/);
+  assert.match(styles, /\.conversation-scroll \{[^}]*overflow-anchor: none;/);
   assert.match(thinking, /startedAt=\{startedAt\}/);
   assert.match(thinking, /<FollowLog /);
+});
+
+test('every assistant turn keeps its own status rail through completion', async () => {
+  const [conversation, assistant, status, styles, zh, en] = await Promise.all([
+    readFile(`${CONVERSATION}/index.tsx`, 'utf8'),
+    readFile(`${CONVERSATION}/assistant-turn.tsx`, 'utf8'),
+    readFile(`${CONVERSATION}/agent-status-bar.tsx`, 'utf8'),
+    readFile('app/styles/conversation.css', 'utf8'),
+    readFile('app/i18n/zh.ts', 'utf8'),
+    readFile('app/i18n/en.ts', 'utf8'),
+  ]);
+
+  assert.doesNotMatch(conversation, /<AgentStatusBar/);
+  assert.match(assistant, /isAgentPreparing\(message\)/);
+  assert.match(assistant, /<AgentStatusBar/);
+  assert.match(assistant, /status=\{status\}/);
+  assert.match(assistant, /preparing=\{preparing\}/);
+  assert.match(assistant, /sticky=\{followOutput\}/);
+  assert.match(status, /state === 'preparing'/);
+  assert.match(status, /copy\.completed/);
+  assert.match(status, /copy\.failed/);
+  assert.match(status, /copy\.stopped/);
+  assert.match(status, /role="status"/);
+  assert.match(status, /\{active && \(/);
+  assert.match(status, /className="agent-status-bar-indicator"/);
+  assert.match(status, /<i \/>\s*<i \/>\s*<i \/>/);
+  assert.match(status, /resolveAgentElapsed\(message, now\)/);
+  assert.match(status, /agent-status-bar-elapsed/);
+  assert.match(styles, /\.agent-status-bar\.is-sticky \{[\s\S]*?position: sticky;/);
+  assert.match(styles, /\.agent-status-bar-indicator i \{[\s\S]*?animation: agent-status-bar-breathe/);
+  assert.match(styles, /@keyframes agent-status-bar-breathe/);
+  assert.doesNotMatch(styles, /agent-running-spin/);
+  assert.match(zh, /activityPreparingAgent: '正在准备 Agent'/);
+  assert.match(en, /activityPreparingAgent: 'Preparing the agent'/);
+});
+
+test('turn elapsed time ticks while running and freezes when done', () => {
+  assert.equal(resolveAgentElapsed({ status: 'running', startedAt: 1_000, endedAt: undefined }, 1_999), '0s');
+  assert.equal(resolveAgentElapsed({ status: 'running', startedAt: 1_000, endedAt: undefined }, 2_999), '1s');
+  assert.equal(resolveAgentElapsed({ status: 'done', startedAt: 1_000, endedAt: 62_999 }, 99_000), '1m 1s');
+  assert.equal(resolveAgentElapsed({ status: 'done', startedAt: undefined, endedAt: 2_500 }, 9_000), '');
+});
+
+test('thinking alone is preparing, while a tool or visible text means running', () => {
+  assert.equal(resolveAgentStatusBarPhase('running', true), 'preparing');
+  assert.equal(resolveAgentStatusBarPhase('running', false), 'running');
+  assert.equal(resolveAgentStatusBarPhase('done', false), 'completed');
+  assert.equal(resolveAgentStatusBarPhase('error', false), 'failed');
+  assert.equal(resolveAgentStatusBarPhase('stopped', false), 'stopped');
+  assert.equal(isAgentPreparing({
+    content: '',
+    activities: [],
+  }), true);
+  assert.equal(isAgentPreparing({
+    content: '',
+    activities: [{ kind: 'thinking', content: 'Working out the layout.' }],
+  }), true);
+  assert.equal(isAgentPreparing({
+    content: '',
+    activities: [{
+      kind: 'tool',
+      toolUseId: 'tool-1',
+      name: 'write_project_file',
+      status: 'running',
+    }],
+  }), false);
+  assert.equal(isAgentPreparing({
+    content: '',
+    activities: [{ kind: 'text', content: 'I will build the page.' }],
+  }), false);
 });

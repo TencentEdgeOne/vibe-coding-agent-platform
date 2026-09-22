@@ -6,6 +6,7 @@ import {
   resolveFinishedTurn,
   withLiveDeploymentUrl,
 } from '../shared/user-facing-reply.ts';
+import { stripReturnedPreviewLinks } from '../agents/_lib/turn/checkpoint.ts';
 
 const LIVE_URL = 'https://vibe-coding-playground.edgeone.app/?eo_token=abc123def456&eo_time=1787882262';
 
@@ -35,8 +36,30 @@ test('step narration is streamed to the user while the summary stays compact', a
   assert.match(chat, /if \(event\.type === 'text_segment'\)/);
   assert.match(chat, /recordProgress\(narration\)/);
   assert.match(chat, /send\(narration\)/);
+  assert.match(chat, /stripReturnedPreviewLinks\(event\.data\?\.text \|\| '', state\.previewUrl\)/);
+  assert.match(chat, /state\.previewUrl\)\.trim\(\)/);
   assert.match(prompt, /Keep narrating as you work/);
   assert.match(prompt, /always write it in the user language/);
+});
+
+test('stripping preview links from streamed chunks preserves word spacing', () => {
+  const previewUrl = 'https://sandbox.example.com/preview/?access_token=token';
+  const chunks = ['Your ', 'guestbook ', 'is ready. ', `[Open preview](${previewUrl})`];
+
+  const streamed = chunks
+    .map((chunk) => stripReturnedPreviewLinks(chunk, previewUrl))
+    .join('');
+
+  assert.equal(streamed.trim(), 'Your guestbook is ready.');
+});
+
+test('stripping preview links from a complete reply still trims its edges', () => {
+  const previewUrl = 'https://sandbox.example.com/preview/?access_token=token';
+
+  assert.equal(
+    stripReturnedPreviewLinks(`\n\nDone.\n\n[Open preview](${previewUrl})\n\n`, previewUrl).trim(),
+    'Done.',
+  );
 });
 
 const QUESTION_TURN = `我先和你确认一个关键点，避免做完无法运行：
