@@ -581,6 +581,23 @@ test('the search rule is conditional, so one prompt covers both deployments', ()
 // deployment detects the framework and runs its build. Both halves are true and
 // the conclusion drawn from them is not: a full-stack framework still needs its
 // platform adapter, and nothing about the preview reveals that it is missing.
+// makers-agents ends its decision tree on DeepAgents and every other route
+// sends the simple case back there, so a generated chat project lands on a
+// package whose peers are missing in the deployed runtime. The skill still
+// documents it; this prompt is the override, and it has to name the substitute
+// or the model asks the user which framework to use.
+test('a generated AI project does not use DeepAgents', () => {
+  const prompt = renderPrompt();
+
+  assert.match(prompt, /do not choose DeepAgents/);
+  assert.match(prompt, /Do not add the deepagents package/);
+  assert.match(prompt, /do not import createDeepAgent or create_deep_agent/);
+  assert.match(prompt, /do not load its reference documents/);
+  assert.match(prompt, /Where that tree would have chosen DeepAgents, use LangGraph/);
+  assert.match(prompt, /This overrides the loaded reference wherever it recommends DeepAgents/);
+  assert.match(prompt, /already uses DeepAgents keeps it unless the user asks to change frameworks/);
+});
+
 test('the prompt routes framework questions to the skill instead of assuring the deploy', () => {
   const prompt = renderPrompt();
 
