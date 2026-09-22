@@ -138,6 +138,9 @@ export const zh = {
     // The wording the deploy button sends as the user's turn. It is an ordinary
     // prompt: the agent calls deploy_project, which is what actually publishes.
     deployRequest: '请只调用 deploy_project 把当前项目部署到线上，不要修改文件，也不要执行别的命令。',
+    // What the user sees after submitting the card. {key} is already masked.
+    // What the agent does with that line lives in the system prompt.
+    gatewayRequest: 'API Key： {key}',
     deployNeedsProject: '生成项目后即可一键部署',
     deployNeedsIdle: '当前任务结束后即可部署',
     deployOffer: '要把当前项目部署上线吗？',
@@ -151,7 +154,6 @@ export const zh = {
     gatewayPromptContinue: '继续',
     gatewayPromptSkip: '跳过',
     gatewayPromptChip: '配置 API Key',
-    gatewayPromptSaved: 'Models 集成中...',
     preview: '预览',
     code: '代码',
     // The Claude JSONL file is the only history this product keeps. The chat

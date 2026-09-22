@@ -1,9 +1,10 @@
 /**
  * Models API key collection for a generated AI project.
  *
- * `.env.example` declares the names. The host shows the input card as soon as
- * it sees an AI project. Generation and preview keep going; submitting a key
- * writes `.env` without opening a coding-agent turn.
+ * `.env.example` declares the names. The host records that a key is needed as
+ * soon as it sees an AI project; the input card appears after that turn.
+ * Submitting a key starts a coding-agent turn. The transcript shows a masked
+ * "API Key" line; the system prompt tells the agent to restart the preview.
  */
 
 import { persistWorkspace, setGatewayPending, setGatewaySkipped } from './workspace-store.ts';
@@ -28,7 +29,7 @@ export function gatewayBaseUrlForAgentFramework(framework?: string | null) {
 
 export const GATEWAY_CREDENTIALS_PAUSE_MESSAGE = [
   'AI_GATEWAY_API_KEY is not set in the project .env.',
-  'The user has been shown the API key input card.',
+  'The API key input card appears after this turn finishes.',
   'Do not call deploy_project or run a deploy command until they provide a key or skip.',
   'A missing key is not a preview failure, but a live publish still needs the card answered.',
 ].join(' ');

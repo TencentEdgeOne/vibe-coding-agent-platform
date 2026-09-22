@@ -291,7 +291,7 @@ test('writing agents/ or a gateway .env.example offers the card immediately', as
   assert.equal(quietEvents.length, 0);
 });
 
-test('the conversation card is visible while generating and submits without a chat turn', async () => {
+test('the conversation card waits until the turn finishes, then submits as an agent prompt', async () => {
   const [conversation, screen, live, api, promptRoute, apply] = await Promise.all([
     surface(CONVERSATION),
     surface(WORKSPACE),
@@ -335,17 +335,23 @@ test('the conversation card is visible while generating and submits without a ch
   assert.doesNotMatch(card, /baseUrl/);
   assert.equal(DEFAULT_AI_GATEWAY_BASE_URL, 'https://ai-gateway.edgeone.link/v1');
   assert.equal(AI_GATEWAY_ORIGIN, 'https://ai-gateway.edgeone.link');
-  assert.match(screen, /gatewayPrompt=\{workspace\.gatewayNeeded \? \{/);
-  assert.doesNotMatch(screen, /gatewayNeeded && !live\.loading/);
-  assert.match(screen, /live\.applyGateway\(\{ apiKey \}\)/);
+  assert.match(screen, /gatewayPrompt=\{workspace\.gatewayNeeded && !live\.loading \? \{/);
+  assert.match(screen, /gatewayRequest\.replace\('\{key\}', maskApiKey\(apiKey\)\)/);
+  assert.match(screen, /maskApiKey/);
+  assert.doesNotMatch(screen, /live\.applyGateway\(\{ apiKey \}\)/);
   assert.match(screen, /live\.applyGateway\(\{ skip: true \}\)/);
   assert.doesNotMatch(screen, /sendMessage\(`\$\{t\.workspace\.gatewayPromptApiKey\}/);
   assert.doesNotMatch(screen, /sendMessage\(t\.workspace\.gatewayPromptSkip/);
+  assert.equal(TRANSLATIONS.zh.workspace.gatewayRequest, 'API Key： {key}');
+  assert.equal(TRANSLATIONS.en.workspace.gatewayRequest, 'API Key: {key}');
+  assert.doesNotMatch(TRANSLATIONS.zh.workspace.gatewayRequest, /start_preview|\.env/);
+  assert.doesNotMatch(TRANSLATIONS.en.workspace.gatewayRequest, /start_preview|\.env/);
   assert.match(conversation, /className="gateway-prompt-expand"/);
   assert.match(conversation, /className="gateway-prompt-status"/);
   assert.match(conversation, /className="gateway-prompt-saved"/);
-  assert.match(screen, /gatewaySaved=\{workspace\.gatewaySavedVisible && !workspace\.gatewayNeeded/);
-  assert.match(live, /setGatewaySavedVisible\(true\)/);
+  assert.doesNotMatch(screen, /gatewayPromptSaved/);
+  assert.doesNotMatch(screen, /gatewaySaved=\{workspace/);
+  assert.doesNotMatch(live, /setGatewaySavedVisible\(true\)/);
   assert.match(live, /gatewayKeyApplied/);
   assert.match(live, /async function applyGateway/);
   assert.match(live, /if \(!trimmed \|\| loading\) return/);
@@ -405,6 +411,9 @@ test('the host still writes .env from a chat sentence', async () => {
   assert.match(tasks, /resolveGatewayUserTurn\(message, options\.apiKey\)/);
   assert.match(prompt, /natural language/);
   assert.match(prompt, /配置好并重新预览/);
+  assert.match(prompt, /shows the input card after this turn, not during it/);
+  assert.match(prompt, /API Key: sk-••••••••wxyz/);
+  assert.match(prompt, /Call start_preview once with restart:true and do nothing else/);
 });
 
 test('applying a key or skip emits gateway_credentials resolved', async () => {

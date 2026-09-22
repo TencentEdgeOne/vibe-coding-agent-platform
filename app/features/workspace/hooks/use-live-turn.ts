@@ -16,10 +16,7 @@ import type {
   ChatMessage,
   SessionPrepStage,
 } from '@/app/types/workspace';
-import {
-  startPromptTurn,
-  stopChatTask,
-} from '../workspace-api';
+import { startPromptTurn, stopChatTask } from '../workspace-api';
 import type { PreviewSurfaceApi } from './use-preview-surface';
 import type { WorkspaceStateApi } from './use-workspace-state';
 import type { WorkspaceSnapshotApi } from './use-workspace-snapshot';
@@ -133,16 +130,20 @@ export function useLiveTurn(options: {
 
   async function sendMessage(message: string, sendOptions: {
     deploy?: boolean;
+    /** Real key from the input card. The visible turn is the prompt, not the key. */
+    apiKey?: string;
   } = {}) {
     const trimmed = message.trim();
     if (!trimmed || loading) return;
 
-    const extractedKey = extractApiKeyFromUserText(trimmed);
-    const inboundApiKey = extractedKey?.apiKey;
+    const providedKey = (sendOptions.apiKey || '').trim();
+    const extractedKey = providedKey ? null : extractApiKeyFromUserText(trimmed);
+    const inboundApiKey = providedKey || extractedKey?.apiKey;
     const displayMessage = extractedKey?.maskedText || trimmed;
 
     const isDeploy = sendOptions.deploy === true;
     const isStartingFromHome = !isDeploy
+      && !providedKey
       && messages.length === 0
       && !preview.preview
       && !workspace.deployment
@@ -178,14 +179,14 @@ export function useLiveTurn(options: {
     if (!isStartingFromHome) {
       setMessages((current) => [...current, ...turnMessages]);
     }
-    if (!isDeploy) {
+    if (!isDeploy && !providedKey) {
       setInput('');
     }
     if (inboundApiKey) {
       workspace.setGatewayNeeded(false);
       workspace.setGatewayDeferred(false);
       workspace.setGatewayConfigured(true);
-      workspace.setGatewaySavedVisible(true);
+      workspace.setGatewaySavedVisible(false);
       workspace.setGatewayBusy(false);
     }
     setLoading(true);
@@ -213,9 +214,9 @@ export function useLiveTurn(options: {
           setSessionPreparing(false);
           setPrepStage(null);
         }
-      // A deploy click is the same kind of turn as a typed request. The message
-      // names deploy_project; the tool publishes. The flag only keeps this from
-      // clearing the composer or opening a new project.
+      // A deploy click and an API key card are ordinary user turns. The card's
+      // message is the masked key; the system prompt says what to do with it.
+      // The flags only keep this from touching the composer or opening a project.
       const response = await startPromptTurn({
         conversationId: requestConversationId,
         message: displayMessage,
@@ -257,6 +258,12 @@ export function useLiveTurn(options: {
         activeTurnIdRef.current = '';
         stoppingRef.current = false;
         return;
+      }
+      if (providedKey) {
+        workspace.setGatewayNeeded(true);
+        workspace.setGatewayConfigured(false);
+        workspace.setGatewaySavedVisible(false);
+        workspace.setGatewayBusy(false);
       }
       const msg = `${t.response.requestFailedPrefix}${error instanceof Error ? error.message : t.response.unknownError}`;
       setMessages((current) =>

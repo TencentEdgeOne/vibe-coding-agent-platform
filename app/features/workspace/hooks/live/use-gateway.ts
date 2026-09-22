@@ -28,7 +28,7 @@ export function createApplyGateway(options: {
       workspace.setGatewayNeeded(false);
       workspace.setGatewayDeferred(false);
       workspace.setGatewayConfigured(true);
-      workspace.setGatewaySavedVisible(true);
+      workspace.setGatewaySavedVisible(false);
       workspace.setGatewayPromptVariant('default');
     }
 

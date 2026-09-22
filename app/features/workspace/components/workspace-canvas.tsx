@@ -12,6 +12,7 @@ import type { useWorkspaceCopy } from '../hooks/use-workspace-copy';
 import { AgentConversation } from './lazy-panels';
 import { ResultPanel, ResultPanelToggle } from './result-panel';
 import { WorkspaceSplitHandle } from './workspace-split-handle';
+import { maskApiKey } from '../../../../shared/gateway-secret';
 import type { DeployOfferCopy } from './conversation/types';
 
 type WorkspaceCopy = ReturnType<typeof useWorkspaceCopy>;
@@ -87,7 +88,7 @@ export function WorkspaceCanvas({
           onDismissDeployOffer={() => {
             if (deployOfferTurnId) workspace.setDismissedDeployTurnId(deployOfferTurnId);
           }}
-          gatewayPrompt={workspace.gatewayNeeded ? {
+          gatewayPrompt={workspace.gatewayNeeded && !live.loading ? {
             title: t.workspace.gatewayPromptTitle,
             ...(workspace.gatewayPromptVariant === 'deploy'
               ? { description: t.workspace.gatewayPromptDeployHint }
@@ -101,14 +102,14 @@ export function WorkspaceCanvas({
           gatewayChip={workspace.gatewayDeferred && !workspace.gatewayNeeded
             ? t.workspace.gatewayPromptChip
             : null}
-          gatewaySaved={workspace.gatewaySavedVisible && !workspace.gatewayNeeded
-            ? t.workspace.gatewayPromptSaved
-            : null}
           gatewayBusy={workspace.gatewayBusy}
           onGatewaySubmit={(values: { apiKey: string }) => {
             const apiKey = values.apiKey.trim();
-            if (!apiKey || workspace.gatewayBusy) return;
-            void live.applyGateway({ apiKey });
+            if (!apiKey || workspace.gatewayBusy || live.loading) return;
+            void live.sendMessage(
+              t.workspace.gatewayRequest.replace('{key}', maskApiKey(apiKey)),
+              { apiKey },
+            );
           }}
           onGatewaySkip={() => {
             if (workspace.gatewayBusy) return;

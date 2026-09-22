@@ -116,6 +116,9 @@ export const en = {
     // The wording the deploy button sends as the user's turn. It is an ordinary
     // prompt: the agent calls deploy_project, which is what actually publishes.
     deployRequest: 'Call only the deploy_project tool to publish this project. Do not modify any files and do not run any other command.',
+    // What the user sees after submitting the card. {key} is already masked.
+    // What the agent does with that line lives in the system prompt.
+    gatewayRequest: 'API Key: {key}',
     deployNeedsProject: 'Deploy becomes available once a project is generated',
     deployNeedsIdle: 'Deploy becomes available once the current task finishes',
     deployOffer: 'Deploy this project to production?',
@@ -129,7 +132,6 @@ export const en = {
     gatewayPromptContinue: 'Continue',
     gatewayPromptSkip: 'Skip',
     gatewayPromptChip: 'Set up API Key',
-    gatewayPromptSaved: 'Integrating Models...',
     preview: 'Preview',
     code: 'Code',
     session: 'Session',

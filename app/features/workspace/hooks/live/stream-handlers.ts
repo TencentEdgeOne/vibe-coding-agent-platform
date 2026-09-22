@@ -132,7 +132,7 @@ export function createLiveChatSession(sessionOptions: LiveChatSessionOptions): L
           gatewayKeyApplied = true;
           workspace.setGatewayDeferred(false);
           workspace.setGatewayConfigured(true);
-          workspace.setGatewaySavedVisible(true);
+          workspace.setGatewaySavedVisible(false);
           workspace.setGatewayPromptVariant('default');
         }
       }

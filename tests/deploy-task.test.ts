@@ -323,8 +323,9 @@ test('publishing leaves the composer and the files panel alone', async () => {
   // The click is a user turn. The agent calls deploy_project; this hook does
   // not open the deterministic /deploy pipeline.
   assert.doesNotMatch(body, /startDeployTurn\(/);
-  // Only the composer is cleared, and only for a generation turn.
-  assert.match(body, /if \(!isDeploy\) \{\s*setInput\(''\);\s*\}/);
+  // Only the composer is cleared, and only for a generation turn. A deploy
+  // click and an API key card both send a prompt without touching the draft.
+  assert.match(body, /if \(!isDeploy && !providedKey\) \{\s*setInput\(''\);\s*\}/);
   assert.doesNotMatch(body, /setFilesRefreshing/);
   assert.doesNotMatch(body, /setFileTree/);
   assert.doesNotMatch(body, /isGatewayCard/);
