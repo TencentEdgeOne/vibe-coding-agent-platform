@@ -18,11 +18,13 @@ export function AgentStatusBar({ status, preparing, stopping, sticky, copy, mess
   const [now, setNow] = useState(() => Date.now());
   const state = resolveAgentStatusBarPhase(status, preparing, stopping);
   const active = state === 'running' || state === 'stopping';
+  const ticking = status === 'running' || state === 'stopping';
   useEffect(() => {
-    if (!active) return;
+    if (!ticking) return;
+    setNow(Date.now());
     const id = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(id);
-  }, [active]);
+  }, [ticking]);
 
   const label = state === 'preparing'
     ? copy.preparingAgent

@@ -347,6 +347,9 @@ test('every assistant turn keeps its own status rail through completion', async 
   assert.match(status, /\{active && \(/);
   assert.match(status, /className="agent-status-bar-indicator"/);
   assert.match(status, /<i \/>\s*<i \/>\s*<i \/>/);
+  assert.match(status, /const ticking = status === 'running' \|\| state === 'stopping'/);
+  assert.match(status, /if \(!ticking\) return;[\s\S]*setNow\(Date\.now\(\)\)/);
+  assert.doesNotMatch(status, /if \(!active\) return;/);
   assert.match(status, /resolveAgentElapsed\(message, now\)/);
   assert.match(status, /agent-status-bar-elapsed/);
   assert.match(styles, /\.agent-status-bar\.is-sticky \{[\s\S]*?position: sticky;/);
