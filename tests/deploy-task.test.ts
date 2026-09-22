@@ -173,16 +173,20 @@ test('a failed publish shows the CLI output on the card and one line in the chat
   assert.match(pipeline, /\$\{copy\.failedPrefix\}\$\{summarizeDeployError\(error\)\}/);
 });
 
-test('the deploy button sends a user turn that names deploy_project', async () => {
-  const [zh, en, assemble, prompt] = await Promise.all([
+test('the deploy button sends product language while the tool carries the constraints', async () => {
+  const [zh, en, assemble, deployTool, prompt] = await Promise.all([
     surface(I18N),
     readFile('app/i18n/en.ts', 'utf8'),
     readFile('agents/_lib/tools/assemble.ts', 'utf8'),
+    readFile('agents/_lib/tools/deploy-tools.ts', 'utf8'),
     readFile('agents/_lib/prompt.ts', 'utf8'),
   ]);
 
-  assert.match(zh, /请只调用 deploy_project 把当前项目部署到线上/);
-  assert.match(en, /Call only the deploy_project tool to publish this project/);
+  assert.match(zh, /deployRequest: '把当前项目部署到线上'/);
+  assert.match(en, /deployRequest: 'Deploy this project to production'/);
+  assert.doesNotMatch(zh, /deployRequest: .*deploy_project/);
+  assert.doesNotMatch(en, /deployRequest: .*deploy_project/);
+  assert.match(deployTool, /do not modify files or run other commands/);
   assert.match(assemble, /buildDeployProjectTool/);
   assert.match(assemble, /mcp__\$\{mcpServerName\}__\$\{DEPLOY_PROJECT_TOOL_NAME\}/);
   assert.doesNotMatch(prompt, /deploy_project/);

@@ -113,9 +113,9 @@ export const en = {
     copyMessage: 'Copy message',
     messageCopied: 'Copied',
     scrollToLatest: 'Jump to latest',
-    // The wording the deploy button sends as the user's turn. It is an ordinary
-    // prompt: the agent calls deploy_project, which is what actually publishes.
-    deployRequest: 'Call only the deploy_project tool to publish this project. Do not modify any files and do not run any other command.',
+    // The wording the deploy button sends as the user's turn. Keep tool names
+    // and execution constraints in the tool description, not in the transcript.
+    deployRequest: 'Deploy this project to production',
     // What the user sees after submitting the card. {key} is already masked.
     // What the agent does with that line lives in the system prompt.
     gatewayRequest: 'API Key: {key}',

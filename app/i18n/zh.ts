@@ -135,9 +135,9 @@ export const zh = {
     // something the user takes elsewhere, so the reply offers to copy it.
     copyLink: '复制链接',
     linkCopied: '已复制',
-    // The wording the deploy button sends as the user's turn. It is an ordinary
-    // prompt: the agent calls deploy_project, which is what actually publishes.
-    deployRequest: '请只调用 deploy_project 把当前项目部署到线上，不要修改文件，也不要执行别的命令。',
+    // The wording the deploy button sends as the user's turn. Keep tool names
+    // and execution constraints in the tool description, not in the transcript.
+    deployRequest: '把当前项目部署到线上',
     // What the user sees after submitting the card. {key} is already masked.
     // What the agent does with that line lives in the system prompt.
     gatewayRequest: 'API Key： {key}',

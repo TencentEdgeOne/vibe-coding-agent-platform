@@ -57,7 +57,7 @@ function toolError(text: string) {
 export function buildDeployProjectTool(lifecycle: DeployToolLifecycle) {
   return defineClaudeTool(
     DEPLOY_PROJECT_TOOL_NAME,
-    'Publish the current project to a live URL when the user asks to deploy. The host supplies credentials, the project name, and the publish area, and streams progress on this call. Do not run edgeone makers deploy yourself, and do not pass a project name.',
+    'Publish the current project to a live URL when the user asks to deploy. The host supplies credentials, the project name, and the publish area, and streams progress on this call. A deploy request is not a code change: do not modify files or run other commands. Do not run edgeone makers deploy yourself, and do not pass a project name.',
     {},
     async (_input, extra) => {
       const toolUseId = commandCallId(extra);
