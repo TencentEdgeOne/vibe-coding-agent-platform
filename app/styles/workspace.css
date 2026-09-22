@@ -310,6 +310,17 @@
     color var(--t-fast) ease;
 }
 
+.workspace-panel-attention {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--danger);
+  box-shadow: 0 0 0 2px var(--n-0);
+}
+
 .workspace-icon-button:hover:not(:disabled),
 .workspace-icon-button:focus-visible {
   background: var(--n-100);
@@ -676,79 +687,5 @@
     to {
       opacity: 1;
     }
-  }
-}
-
-/* Full-screen session warmup. A determinate bar replaces the spinner so a
-   multi-second CLI start still reads as progress, not a hang. */
-.session-prep {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  background: var(--n-0);
-}
-
-.session-prep-card {
-  width: min(100% - 48px, 320px);
-  text-align: center;
-}
-
-.session-prep-title {
-  margin: 0;
-  color: var(--n-900);
-  font-size: var(--fs-lg);
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-
-.session-prep-bar {
-  height: 6px;
-  margin: 18px 0 12px;
-  overflow: hidden;
-  border-radius: var(--r-full);
-  background: var(--n-150);
-}
-
-.session-prep-bar-fill {
-  display: block;
-  position: relative;
-  height: 100%;
-  overflow: hidden;
-  border-radius: inherit;
-  background: var(--brand);
-}
-
-.session-prep-bar-fill::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -40%;
-  width: 40%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, var(--n-0), transparent);
-  opacity: 0.35;
-  animation: session-prep-sheen 1.6s ease-in-out infinite;
-}
-
-.session-prep-stage {
-  margin: 0;
-  color: var(--n-500);
-  font-size: var(--fs-md);
-}
-
-@keyframes session-prep-sheen {
-  0% {
-    transform: translateX(0);
-  }
-
-  100% {
-    transform: translateX(350%);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .session-prep-bar-fill::after {
-    animation: none;
   }
 }

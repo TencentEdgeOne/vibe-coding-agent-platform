@@ -18,7 +18,7 @@ const PREVIEW_REFRESH_POLL_MS = 60_000;
 export function usePreviewSurface(options: {
   conversationIdRef: MutableRefObject<string | null>;
   loadingRef: MutableRefObject<boolean>;
-  workspaceRestoringRef: MutableRefObject<boolean>;
+  previewPanelOpenRef: MutableRefObject<boolean>;
   refreshWorkspace?: (conversationId: string) => Promise<unknown>;
 }) {
   const [preview, setPreview] = useState<LinkInfo | null>(null);
@@ -61,7 +61,7 @@ export function usePreviewSurface(options: {
   usePreviewRefresh({
     conversationIdRef: options.conversationIdRef,
     loadingRef: options.loadingRef,
-    workspaceRestoringRef: options.workspaceRestoringRef,
+    previewPanelOpenRef: options.previewPanelOpenRef,
     refreshWorkspace: options.refreshWorkspace,
     credentialRefreshMs: PREVIEW_CREDENTIAL_REFRESH_MS,
     refreshPollMs: PREVIEW_REFRESH_POLL_MS,

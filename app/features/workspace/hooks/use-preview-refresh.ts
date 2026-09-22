@@ -8,7 +8,7 @@ import { isSamePreviewTarget } from './preview-identity';
 export function usePreviewRefresh(options: {
   conversationIdRef: MutableRefObject<string | null>;
   loadingRef: MutableRefObject<boolean>;
-  workspaceRestoringRef: MutableRefObject<boolean>;
+  previewPanelOpenRef: MutableRefObject<boolean>;
   refreshWorkspace?: (conversationId: string) => Promise<unknown>;
   credentialRefreshMs: number;
   refreshPollMs: number;
@@ -36,7 +36,7 @@ export function usePreviewRefresh(options: {
   const {
     conversationIdRef,
     loadingRef,
-    workspaceRestoringRef,
+    previewPanelOpenRef,
     credentialRefreshMs,
     refreshPollMs,
   } = options;
@@ -81,7 +81,7 @@ export function usePreviewRefresh(options: {
         || !options.hasLivePreviewRef.current
         || options.isMakersPreviewRef.current
         || loadingRef.current
-        || workspaceRestoringRef.current
+        || !previewPanelOpenRef.current
         || options.previewRefreshInFlightRef.current
       ) {
         return false;
@@ -139,7 +139,7 @@ export function usePreviewRefresh(options: {
       const credentialAge = Date.now() - options.previewRefreshedAtRef.current;
       const wentStale = hiddenFor >= credentialRefreshMs
         || credentialAge >= credentialRefreshMs;
-      if (!wentStale || options.isMakersPreviewRef.current) return;
+      if (!wentStale || options.isMakersPreviewRef.current || !previewPanelOpenRef.current) return;
 
       void refreshPreviewLink({
         remountIframe: true,
@@ -151,6 +151,7 @@ export function usePreviewRefresh(options: {
       if (
         document.visibilityState === 'visible'
         && options.hasLivePreviewRef.current
+        && options.previewPanelOpenRef.current
         && !options.isMakersPreviewRef.current
         && Date.now() - options.previewRefreshedAtRef.current >= credentialRefreshMs
       ) {

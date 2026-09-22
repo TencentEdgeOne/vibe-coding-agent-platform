@@ -1,7 +1,6 @@
 import type { AgentContext } from '../runtime/context.ts';
-import { getProjectState } from '../session/store.ts';
+import { activateSandbox } from '../lazy/sandbox.ts';
 import { createProjectArchive } from './archive.ts';
-import { restorePersistedProject } from './persistence.ts';
 import { resolveConversationId } from '../runtime/request.ts';
 
 export async function runProjectDownloadPipeline(context: AgentContext): Promise<Response> {
@@ -16,17 +15,11 @@ export async function runProjectDownloadPipeline(context: AgentContext): Promise
     return jsonError('missing conversation_id');
   }
 
-  const state = await getProjectState(context, conversationId);
+  const { state } = await activateSandbox(context, conversationId);
 
   let archive;
   try {
     archive = await createProjectArchive(context, state);
-    if (!archive.ok) {
-      const restored = await restorePersistedProject(context, conversationId, state, {
-        installDependencies: false,
-      });
-      if (restored.restored) archive = await createProjectArchive(context, state);
-    }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to package the project.';
     return jsonError(message, 500);

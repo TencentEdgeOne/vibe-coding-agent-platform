@@ -10,7 +10,6 @@ export function useNewProject(options: {
   live: LiveTurnApi;
   resume: {
     resumeAbortControllerRef: MutableRefObject<AbortController | null>;
-    setWorkspaceRestoring: (value: boolean) => void;
   };
   workspace: WorkspaceStateApi;
   preview: PreviewSurfaceApi;
@@ -45,12 +44,9 @@ export function useNewProject(options: {
     setConversationId(null);
     live.setMessages([]);
     live.setLoading(false);
-    live.setSessionPreparing(false);
-    live.setPrepStage(null);
     live.setInput('');
     workspace.resetWorkspace();
     preview.resetPreview();
-    resume.setWorkspaceRestoring(false);
   }
 
   function handleNewProject() {

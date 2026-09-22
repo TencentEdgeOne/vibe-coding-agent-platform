@@ -1,7 +1,8 @@
 import type { AgentContext } from '../runtime/context.ts';
 import { applyUserGatewayDecision } from '../project/gateway.ts';
 import { isPreviewServerReady } from '../project/preview.ts';
-import { ensurePreview, ensureWorkspace } from '../project/readiness.ts';
+import { ensurePreview } from '../lazy/preview.ts';
+import { activateSandbox } from '../lazy/sandbox.ts';
 import { getConversationId } from './task.ts';
 import { getLiveWorkspace } from './live-workspace.ts';
 import type { ProjectState, StreamSend } from '../types.ts';
@@ -65,7 +66,7 @@ export async function applyGatewayDecisionAndRespond(
   try {
     const live = getLiveWorkspace(conversationId);
     const send = live?.send;
-    const state = live?.state ?? (await ensureWorkspace(context, conversationId, { send })).state;
+    const state = live?.state ?? (await activateSandbox(context, conversationId, { send })).state;
     const values = await applyUserGatewayDecision(
       context,
       state,

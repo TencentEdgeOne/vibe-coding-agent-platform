@@ -69,7 +69,7 @@ type LiveQuerySession = LiveSessionHandle & {
   idleTimer?: ReturnType<typeof setTimeout>;
 };
 
-/** Close a warmed process that never received a turn, so abandoned visits do not leak one. */
+/** Close a process that finished a turn and never received another, so an abandoned conversation does not leak one. */
 export const LIVE_QUERY_IDLE_MS = 5 * 60 * 1000;
 
 const liveQueries = new Map<string, LiveQuerySession>();
@@ -187,6 +187,8 @@ async function pumpSession(session: LiveQuerySession) {
     const waiter = session.turn;
     session.turn = undefined;
     waiter?.resolve(result);
+    // The process stays up for the next prompt. Close it if nobody sends one.
+    scheduleIdleClose(session);
   };
 
   try {
@@ -610,44 +612,6 @@ export function getLiveQuery(conversationId: string) {
   return liveQueries.get(conversationId) || null;
 }
 
-export type WarmLiveQueryResult = {
-  ok: boolean;
-  reused: boolean;
-  error?: string;
-};
-
-export async function warmLiveQuery(options: StartLiveQueryOptions): Promise<WarmLiveQueryResult> {
-  if (options.abortSignal?.aborted) {
-    return { ok: false, reused: false, error: 'aborted' };
-  }
-
-  let session = liveQueries.get(options.conversationId);
-  const reused = Boolean(session);
-  if (!session) {
-    const started = await startLiveQuery(options);
-    if (!('queue' in started)) {
-      return {
-        ok: false,
-        reused: false,
-        error: started.error || 'The coding agent could not start.',
-      };
-    }
-    session = started;
-  } else {
-    session.context = options.context;
-    session.state = options.state;
-  }
-
-  if (!session.turn) scheduleIdleClose(session);
-  if (options.abortSignal?.aborted) {
-    return { ok: false, reused, error: 'aborted' };
-  }
-  // Warm means the process and its PromptQueue exist. The CLI's session id
-  // arrives later through the SessionStart hook, and /prompt never needs it,
-  // so nothing here waits for one.
-  return { ok: true, reused };
-}
-
 export async function interruptLiveQuery(conversationId: string) {
   const live = liveQueries.get(conversationId);
   if (!live) return false;
@@ -673,7 +637,14 @@ export async function setLiveQueryModel(conversationId: string, model: string) {
   }
 }
 
-export async function runCodingAgent(options: RunCodingAgentOptions): Promise<CodingAgentResult> {
+/**
+ * Reuse the live CLI for this conversation, or start one.
+ * Starting restores the transcript and passes `resume` when a previous
+ * session id is stored. Nothing here runs until a prompt asks.
+ */
+export async function acquireAgentSession(
+  options: StartLiveQueryOptions,
+): Promise<LiveQuerySession | CodingAgentResult> {
   if (options.abortSignal?.aborted) {
     return emptyCodingResult({ stopped: true });
   }
@@ -691,12 +662,19 @@ export async function runCodingAgent(options: RunCodingAgentOptions): Promise<Co
       await setLiveQueryModel(options.conversationId, model);
     }
   }
+  clearIdleTimer(session);
+  return session;
+}
+
+export async function runCodingAgent(options: RunCodingAgentOptions): Promise<CodingAgentResult> {
+  const acquired = await acquireAgentSession(options);
+  if (!('queue' in acquired)) return acquired;
+  const session = acquired;
 
   session.flags.projectTouched = false;
   session.flags.filesWritten = false;
   session.flags.previewTouched = false;
   session.flags.deploymentTouched = false;
-  clearIdleTimer(session);
 
   const abort = () => {
     void interruptLiveQuery(options.conversationId);

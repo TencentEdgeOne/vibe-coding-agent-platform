@@ -241,26 +241,7 @@ export type ChatStreamEvent =
   | { type: 'error'; error?: string }
   | { type: 'ping'; ts?: number };
 
-export type SessionPrepMode = 'create' | 'restore';
-
-export type SessionPrepStage =
-  | 'conversation'
-  | 'sandbox'
-  | 'agent'
-  | 'workspace'
-  | 'preview'
-  | 'ready';
-
-export type SessionPrepStatus = 'running' | 'done' | 'failed';
-
-export type SessionPrepData = {
-  mode: SessionPrepMode;
-  stage: SessionPrepStage;
-  status: SessionPrepStatus;
-};
-
 export type ResumeStreamEvent =
-  | { type: 'session_prep'; data?: SessionPrepData }
   | { type: 'resume_history'; data?: ResumeData }
   | { type: 'resume_workspace'; data?: ResumeData }
   | { type: 'file_changed'; data?: { paths?: string[] } }

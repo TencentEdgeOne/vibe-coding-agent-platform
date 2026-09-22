@@ -122,16 +122,17 @@ test('specific Makers skill loader reads official references without changing th
 
 test('cold resume restores project dependencies without managing the sandbox CLI', async () => {
   const resume = await readFile('agents/_lib/session/resume.ts', 'utf8');
-  const readiness = await readFile('agents/_lib/project/readiness.ts', 'utf8');
+  const sandbox = await readFile('agents/_lib/lazy/sandbox.ts', 'utf8');
+  const preview = await readFile('agents/_lib/lazy/preview.ts', 'utf8');
+  const budgets = await readFile('agents/_lib/lazy/budgets.ts', 'utf8');
   const client = await surface('app/features/workspace/workspace-api.ts');
-  // A cold resume gets its install from the level that needs it rather than by
-  // asking for one itself, which is why resume no longer names dependencies.
-  assert.match(readiness, /ensureDependencies\(context, state, \{/);
+  // Preview waits on the install activation started. Resume itself never
+  // names npm, and it does not boot the sandbox CLI.
+  assert.match(sandbox, /dependenciesReady\(context, state\)/);
+  assert.match(preview, /dependenciesReady\(context, state, \{/);
   assert.doesNotMatch(resume, /prewarmEdgeoneCli|npm install -g edgeone/);
-  // The budgets live together so the preview's can be read against the install
-  // and dev server boot that happen inside it.
-  assert.match(readiness, /preview: 540_000/);
-  assert.match(readiness, /workspace: 600_000/);
+  assert.match(budgets, /preview: 540_000/);
+  assert.match(budgets, /workspace: 600_000/);
   assert.match(client, /PREVIEW_CLIENT_TIMEOUT_MS = 620_000/);
 });
 

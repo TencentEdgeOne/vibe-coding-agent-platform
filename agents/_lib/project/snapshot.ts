@@ -1,4 +1,5 @@
 import type { WorkspaceSnapshot } from '../../../shared/protocol.ts';
+import { activateSandbox } from '../lazy/sandbox.ts';
 import { getProjectState } from '../session/store.ts';
 import { getFileTree } from './fs.ts';
 import { resolveConversationId } from '../runtime/request.ts';
@@ -47,7 +48,7 @@ export async function loadWorkspaceSnapshot(
   context: AgentContext,
   conversationId: string,
 ): Promise<WorkspaceSnapshot> {
-  const state = await getProjectState(context, conversationId);
+  const { state } = await activateSandbox(context, conversationId);
   let items: FileTreeItem[] = [];
   try {
     items = await getFileTree(context, state);

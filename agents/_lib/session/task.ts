@@ -13,6 +13,7 @@ import { createSSEResponse, sseEvent } from '../runtime/sse.ts';
 import { resolveConversationId } from '../runtime/request.ts';
 import { resolveGatewayUserTurn } from '../../../shared/gateway-secret.ts';
 import type { ChatStreamEvent } from '../../../shared/protocol.ts';
+import { instanceId } from '../runtime/instance.ts';
 import { unbindLiveWorkspace } from './live-workspace.ts';
 
 type SequencedEvent = {
@@ -75,6 +76,17 @@ export async function markOrphanedTaskFailed(context: AgentContext, conversation
   const existing = await getChatTask(context, conversationId);
   if (!existing || !isChatTaskActive(existing)) return null;
   if (hasLiveTask(conversationId, existing.id)) return existing;
+  // Sticky routing should have delivered this request to the instance that
+  // owns the run. Landing here means that process is gone, not that a sibling
+  // instance is still generating — failing the blob row is what unblocks the
+  // next prompt. The instance id is logged so a real cross-instance kill shows
+  // up instead of looking like an ordinary failure.
+  console.warn('[chat-task] orphaned task has no live runner on this instance', {
+    instance: instanceId(),
+    conversationId,
+    taskId: existing.id,
+    status: existing.status,
+  });
   const failed: ChatTask = {
     ...existing,
     status: 'failed',

@@ -245,7 +245,7 @@ test('the deploy button is disabled until a project exists and nothing is runnin
   );
   assert.match(
     screen,
-    /const canDeployProject = hasDeployableProject && !deployRunning && !resume\.workspaceRestoring/,
+    /const canDeployProject = hasDeployableProject && !deployRunning;/,
   );
   assert.match(screen, /sendMessage\(t\.workspace\.deployRequest, \{ deploy: true \}\)/);
   assert.match(live, /language,/);
@@ -286,7 +286,7 @@ test('the header ships the template, the panel ships the project', async () => {
 test('resumed history decides the deployment card, including when there is none', async () => {
   const resume = await surface('app/features/workspace/hooks/use-session-resume.ts');
   const start = resume.indexOf('const applyHistory = (data: ResumeData)');
-  const body = resume.slice(start, resume.indexOf('const applyWorkspace = (data: ResumeData) => {', start));
+  const body = resume.slice(start, resume.indexOf('const resumeController = new AbortController()', start));
 
   assert.ok(start >= 0 && body.length > 0);
   assert.match(body, /workspace\.setDeployment\(data\.deployment \?\? null\)/);
@@ -323,8 +323,7 @@ test('publishing leaves the composer and the files panel alone', async () => {
 
   assert.ok(start >= 0 && body.length > 0);
   assert.match(body, /const isStartingFromHome = !isDeploy/);
-  assert.match(body, /if \(isStartingFromHome\) \{[\s\S]*?runCreateSessionPrep/);
-  assert.match(live, /openSessionStream/);
+  assert.doesNotMatch(body, /runCreateSessionPrep|sessionPreparing|openSessionStream/);
   assert.match(body, /startPromptTurn\(/);
   assert.match(body, /message: displayMessage/);
   // The click is a user turn. The agent calls deploy_project; this hook does

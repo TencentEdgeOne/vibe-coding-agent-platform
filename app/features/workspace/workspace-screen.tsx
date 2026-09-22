@@ -11,10 +11,10 @@ import { HomeStage } from './components/home-stage';
 import { NewProjectDialog } from './components/new-project-dialog';
 import { WorkspaceCanvas } from './components/workspace-canvas';
 import { importAgentConversation } from './components/lazy-panels';
-import { SessionPrepLoading } from './components/session-prep-loading';
 import { SiteHeader } from './components/site-header';
 import { fetchModelCatalog } from './workspace-api';
 import { useDeployOffer } from './hooks/use-deploy-offer';
+import { useLazyPanel } from './hooks/use-lazy-panel';
 import { useLiveTurn } from './hooks/use-live-turn';
 import { useNewProject } from './hooks/use-new-project';
 import { usePlatformLinks } from './hooks/use-platform-links';
@@ -33,17 +33,18 @@ export function WorkspaceScreen() {
 
   const conversationIdRef = useRef<string | null>(null);
   const loadingRef = useRef(false);
-  const workspaceRestoringRef = useRef(false);
+  const previewPanelOpenRef = useRef(false);
   const workspaceEpochRef = useRef(0);
   const fileCache = useFileContentCache();
 
   const workspace = useWorkspaceState();
+  previewPanelOpenRef.current = workspace.resultPanelOpen && workspace.sandboxTab === 'preview';
   const split = useWorkspaceSplit();
   const snapshotRefreshRef = useRef<(conversationId: string) => Promise<unknown>>(async () => null);
   const preview = usePreviewSurface({
     conversationIdRef,
     loadingRef,
-    workspaceRestoringRef,
+    previewPanelOpenRef,
     refreshWorkspace: (id) => snapshotRefreshRef.current(id),
   });
   const snapshot = useWorkspaceSnapshot({
@@ -71,19 +72,22 @@ export function WorkspaceScreen() {
   const resume = useSessionResume({
     workspace,
     live,
-    snapshot,
     setConversationId,
     setModel,
     setLanguage,
     conversationIdRef,
     workspaceEpochRef,
-    workspaceRestoringRef,
+  });
+  useLazyPanel({
+    conversationId,
+    workspace,
+    preview,
+    snapshot,
   });
   const deploy = useDeployOffer({
     t,
     workspace,
     live,
-    resume,
   });
   const {
     handleDeployProject,
@@ -113,8 +117,7 @@ export function WorkspaceScreen() {
   const hasWorkspace = live.messages.length > 0
     || Boolean(preview.preview)
     || Boolean(workspace.deployment)
-    || Boolean(workspace.build)
-    || resume.workspaceRestoring;
+    || Boolean(workspace.build);
   const previewDisplayPath = previewDisplayPathFromPath(preview.previewPath);
   const placeholderPhrases = useMemo(
     () => t.home.examples.map((example) => `${example.label}…`),
@@ -160,18 +163,6 @@ export function WorkspaceScreen() {
     await live.sendMessage(live.input);
   }
 
-  const prepStage = live.prepStage || resume.prepStage
-    || (live.sessionPreparing ? 'conversation' : null);
-  if (!resume.resumeChecked || live.sessionPreparing) {
-    return (
-      <SessionPrepLoading
-        stage={prepStage}
-        title={live.sessionPreparing ? t.workspace.preparing : t.workspace.resuming}
-        stageLabel={prepStage ? t.workspace.prepStages[prepStage] : t.workspace.resuming}
-      />
-    );
-  }
-
   return (
     <main className="app-shell flex flex-col text-foreground">
       <SiteHeader
@@ -193,7 +184,7 @@ export function WorkspaceScreen() {
         onOpenChange={project.setNewProjectConfirmOpen}
         onConfirm={project.confirmNewProject}
       />
-      {!hasWorkspace && (
+      {resume.resumeChecked && !hasWorkspace && (
         <HomeStage
           copy={t}
           locale={language}
@@ -229,7 +220,6 @@ export function WorkspaceScreen() {
         canSend={canSend}
         canDeployProject={canDeployProject}
         publishing={publishing}
-        restoring={resume.workspaceRestoring}
         cache={fileCache}
         makersModelsDocsUrl={makersModelsDocsUrl}
         handleDeployProject={handleDeployProject}

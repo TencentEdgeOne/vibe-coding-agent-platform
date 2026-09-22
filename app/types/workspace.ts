@@ -10,8 +10,6 @@ export type {
   LinkInfo,
   ResumeData,
   ResumeStreamEvent,
-  SessionPrepData,
-  SessionPrepStage,
   SessionStreamEvent,
   WorkspaceSnapshot,
 } from '../../shared/protocol';

@@ -1,6 +1,6 @@
 import type { AgentContext } from '../runtime/context.ts';
 import { runCodingAgent } from '../session/live.ts';
-import { ensureWorkspace } from '../project/readiness.ts';
+import { activateSandbox } from '../lazy/sandbox.ts';
 import {
   bindSiteDomain,
   persistWorkspace,
@@ -72,7 +72,7 @@ export async function runChatPipeline(
     return;
   }
 
-  const { state } = await ensureWorkspace(context, conversationId, { send });
+  const { state } = await activateSandbox(context, conversationId, { send });
   if (bindSiteDomain(state, resolveRequestSiteDomain(context))) {
     await persistWorkspace(context, conversationId, state);
   }

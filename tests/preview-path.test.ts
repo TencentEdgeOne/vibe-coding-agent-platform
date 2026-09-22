@@ -485,7 +485,7 @@ test('an unmounted route is restarted, while a bad reply is reported as-is', asy
 test('a preview publish never probes the generated agent twice in a row', async () => {
   const [preview, readiness] = await Promise.all([
     readFile('agents/_lib/project/preview.ts', 'utf8'),
-    readFile('agents/_lib/project/readiness.ts', 'utf8'),
+    readFile('agents/_lib/lazy/preview.ts', 'utf8'),
   ]);
 
   // Each probe is a real model call against the generated agent. The publish
@@ -611,17 +611,10 @@ test('the host does no preview work after the coding agent returns', async () =>
   assert.match(chat, /await persistWorkspace\(context, conversationId, state\)/);
   assert.match(chat, /void checkpoint\.flush\(\)/);
   assert.doesNotMatch(assemble, /onWorkspaceReady/);
-  assert.match(resume, /if \(willRestorePreview\(restore\)\) \{/);
-  const resumeEvents = resume.slice(
-    resume.indexOf('async function* iterateWorkspaceResumeEvents'),
-    resume.indexOf('export async function createProjectResumeStreamResponse'),
-  );
-  assert.ok(resumeEvents.length > 0, 'the restore stream generator must exist');
-  assert.ok(
-    resumeEvents.indexOf("yield sseEvent({ type: 'resume_workspace', data: files })")
-      < resumeEvents.indexOf('await restoreWorkspacePreview(context, conversationId, restore)'),
-    'the file tree must reach the client before the preview is rebuilt',
-  );
+  const sessionOpen = resume.slice(resume.indexOf('export async function createProjectResumeStreamResponse'));
+  assert.match(sessionOpen, /type: 'resume_history'/);
+  assert.doesNotMatch(sessionOpen, /activateSandbox|ensurePreview|willRestorePreview|iterateWorkspaceResumeEvents/);
+  assert.match(resume, /iterateLiveChatTaskEvents/);
   assert.doesNotMatch(resume, /&& hadPreview/);
   assert.match(preview, /revision === undefined \|\| nextPreview\.restarted/);
   assert.match(prompt, /keeps that dest server watching files/);

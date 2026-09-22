@@ -9,12 +9,11 @@ import {
   createMessageId,
   getOrCreateCachedConversationId,
 } from '@/app/lib/conversation';
-import type { AssistantStatus, ChatMessage, SessionPrepStage } from '@/app/types/workspace';
+import type { AssistantStatus, ChatMessage } from '@/app/types/workspace';
 import { startPromptTurn } from '../workspace-api';
 import type { PreviewSurfaceApi } from './use-preview-surface';
 import type { WorkspaceStateApi } from './use-workspace-state';
 import type { WorkspaceSnapshotApi } from './use-workspace-snapshot';
-import { runCreateSessionPrep } from './live/session-prep';
 import {
   attachChatStream as attachLiveChatStream,
   createLiveChatSession,
@@ -67,8 +66,6 @@ export function useLiveTurn(options: {
   const [loading, setLoading] = useState(false);
   const stoppingState = useStoppingState();
   const { stopping, setStopping, stopInFlightRef, resetStopping } = stoppingState;
-  const [sessionPreparing, setSessionPreparing] = useState(false);
-  const [prepStage, setPrepStage] = useState<SessionPrepStage | null>(null);
   const messagesRef = useRef<ChatMessage[]>([]);
   const modelRef = useRef(model);
   const chatAbortControllerRef = useRef<AbortController | null>(null);
@@ -174,9 +171,7 @@ export function useLiveTurn(options: {
         startedAt: Date.now(),
       },
     ];
-    if (!isStartingFromHome) {
-      setMessages((current) => [...current, ...turnMessages]);
-    }
+    setMessages((current) => [...current, ...turnMessages]);
     if (!isDeploy && !providedKey) {
       setInput('');
     }
@@ -188,33 +183,11 @@ export function useLiveTurn(options: {
       workspace.setGatewayBusy(false);
     }
     setLoading(true);
-    if (isStartingFromHome) setSessionPreparing(true);
 
     try {
       const requestAbortController = new AbortController();
       chatAbortControllerRef.current = requestAbortController;
       stoppingRef.current = false;
-        if (isStartingFromHome) {
-          await runCreateSessionPrep({
-            conversationId: requestConversationId,
-            signal: requestAbortController.signal,
-            model: modelRef.current,
-            language,
-            setPrepStage,
-            // `ready` can precede the end of the prep stream; drop the overlay there
-            // instead of waiting for the remaining stages to close it.
-            onReady: () => {
-              setMessages(turnMessages);
-              setSessionPreparing(false);
-            },
-          });
-          setMessages(turnMessages);
-          setSessionPreparing(false);
-          setPrepStage(null);
-        }
-      // A deploy click and an API key card are ordinary user turns. The card's
-      // message is the masked key; the system prompt says what to do with it.
-      // The flags only keep this from touching the composer or opening a project.
       const response = await startPromptTurn({
         conversationId: requestConversationId,
         message: displayMessage,
@@ -249,8 +222,6 @@ export function useLiveTurn(options: {
       });
     } catch (error) {
       if ((error instanceof Error && error.name === 'AbortError') || stoppingRef.current) {
-        setSessionPreparing(false);
-        setPrepStage(null);
         setLoading(false);
         chatAbortControllerRef.current = null;
         activeTurnIdRef.current = '';
@@ -276,8 +247,6 @@ export function useLiveTurn(options: {
         ),
       );
       setLoading(false);
-      setSessionPreparing(false);
-      setPrepStage(null);
       chatAbortControllerRef.current = null;
       activeTurnIdRef.current = '';
       stoppingRef.current = false;
@@ -305,8 +274,6 @@ export function useLiveTurn(options: {
     });
     setMessages(stop.messages);
     setLoading(false);
-    setSessionPreparing(false);
-    setPrepStage(null);
     workspace.setGatewayNeeded(false);
     workspace.setGatewayBusy(false);
     workspace.setGatewaySavedVisible(false);
@@ -339,10 +306,6 @@ export function useLiveTurn(options: {
     sendMessage,
     applyGateway,
     stopCurrentTask,
-    sessionPreparing,
-    setSessionPreparing,
-    prepStage,
-    setPrepStage,
   };
 }
 

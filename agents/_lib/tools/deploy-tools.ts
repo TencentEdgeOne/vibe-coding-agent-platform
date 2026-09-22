@@ -15,7 +15,7 @@ import { describeMissingMakersRuntimeToken } from '../makers/token.ts';
 import { assertMakersProjectCompatible } from '../makers/compat/run.ts';
 import { getFileTree } from '../project/fs.ts';
 import { pauseForGatewayCredentialsIfNeeded } from '../project/gateway.ts';
-import { ensureDependencies } from '../project/readiness.ts';
+import { dependenciesReady } from '../lazy/sandbox.ts';
 import { startPreviewServer } from '../project/preview.ts';
 import { setDeployment } from '../project/workspace-store.ts';
 import type { AgentContext } from '../runtime/context.ts';
@@ -86,7 +86,9 @@ export function buildDeployProjectTool(lifecycle: DeployToolLifecycle) {
       let sandboxEnv: Record<string, string> = {};
       try {
         await assertMakersProjectCompatible(lifecycle.context, lifecycle.state);
-        await ensureDependencies(lifecycle.context, lifecycle.state);
+        if (!await dependenciesReady(lifecycle.context, lifecycle.state)) {
+          throw new Error('Project dependencies are not available for deploy.');
+        }
         const makers = await prepareMakersSession(lifecycle.context, lifecycle.state, { syncEnv: true });
         sandboxToken = makers.sandboxToken;
         sandboxEnv = makers.env;

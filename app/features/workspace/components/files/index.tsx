@@ -14,12 +14,14 @@ export const FilesPanel = memo(function FilesPanel({
   copy,
   cache,
   focusPath = null,
+  loading = false,
 }: {
   tree: FileTree | null;
   conversationId: string | null;
   copy: FileCopy;
   cache: FileContentCache;
   focusPath?: string | null;
+  loading?: boolean;
 }) {
   const {
     collapsedDirs,
@@ -34,6 +36,15 @@ export const FilesPanel = memo(function FilesPanel({
     cache,
     focusPath,
   });
+
+  if (loading && (!tree || tree.items.length === 0)) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 bg-card px-6 text-center text-muted-foreground">
+        <span className="size-8 animate-spin rounded-full border-2 border-current border-t-transparent" />
+        <p>{copy.loadingTree}</p>
+      </div>
+    );
+  }
 
   if (!tree || tree.items.length === 0) {
     return (

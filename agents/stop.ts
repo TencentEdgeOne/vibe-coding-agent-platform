@@ -1,6 +1,6 @@
 import type { AgentContext } from './_lib/runtime/context.ts';
 import { abortLiveChatTask, markChatTaskStopped } from './_lib/session/task.ts';
-import { getProjectState } from './_lib/session/store.ts';
+import { activateSandbox, sandboxWasActivated } from './_lib/lazy/sandbox.ts';
 import { persistProjectSnapshot } from './_lib/turn/checkpoint.ts';
 import { markCreated, persistWorkspace } from './_lib/project/workspace-store.ts';
 import { getRequestBody } from './_lib/runtime/request.ts';
@@ -21,9 +21,9 @@ export async function onRequest(context: AgentContext) {
     await markChatTaskStopped(context, conversationId);
     const result = await context.utils?.abortActiveRun?.(conversationId);
     let persisted: boolean | undefined;
-    if (!discardProject) {
+    if (!discardProject && sandboxWasActivated(conversationId)) {
       try {
-        const state = await getProjectState(context, conversationId);
+        const { state } = await activateSandbox(context, conversationId);
         const saved = await persistProjectSnapshot(context, conversationId, state);
         persisted = saved;
         if (saved && !state.created) {

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
-import { LIVE_TURN, WORKSPACE, surface } from './helpers/source.ts';
+import { FILES_PANEL, LIVE_TURN, WORKSPACE, surface } from './helpers/source.ts';
 
 const STYLES_DIR = 'app/styles';
 
@@ -158,9 +158,9 @@ test('the topbar overlays the preview from its own layer, and never through opac
   assert.match(disabled, /:disabled svg,\s*\.workspace-icon-button:disabled \.workspace-icon-spinner \{\s*opacity: 0\.45/);
 });
 
-// The canvas starts with the result column open, but the stream still must
-// not open it or pick a tab as a side effect of a tool call.
-test('the result panel only opens from its toggle, and never picks a tab by itself', async () => {
+// The canvas starts with the result column closed. A ready preview opens it
+// onto that tab; nothing else in the stream may open the panel or pick a tab.
+test('a ready preview opens the closed result panel onto the preview tab', async () => {
   const [screen, live, resume, state] = await Promise.all([
     surface(WORKSPACE),
     surface(LIVE_TURN),
@@ -172,48 +172,33 @@ test('the result panel only opens from its toggle, and never picks a tab by itse
   assert.match(screen, /workspace\.setResultPanelOpen\(true\)/);
   assert.match(screen, /workspace\.setResultPanelOpen\(false\)/);
   assert.match(screen, /onValueChange=\{\(value\) => workspace\.setSandboxTab\(value as SandboxTab\)\}/);
-  assert.match(state, /\[resultPanelOpen, setResultPanelOpen\] = useState\(true\)/);
-  // Code, not preview: the tree is ready as soon as the restore delivers it,
-  // while the preview may still be minutes of npm install away.
-  assert.match(state, /useState<SandboxTab \| null>\('files'\)/);
+  assert.match(state, /\[resultPanelOpen, setResultPanelOpen\] = useState\(false\)/);
+  assert.match(state, /useState<SandboxTab \| null>\(null\)/);
   assert.doesNotMatch(state, /useState<SandboxTab \| null>\('preview'\)/);
-  assert.doesNotMatch(live, /setResultPanelOpen\(/);
-  assert.doesNotMatch(live, /setSandboxTab\(/);
+  assert.doesNotMatch(state, /useState<SandboxTab \| null>\('files'\)/);
+  const previewReady = live.slice(live.indexOf("event.type === 'preview_ready'"));
+  assert.match(previewReady, /if \(!workspace\.resultPanelOpen\) \{[\s\S]*?setSandboxTab\('preview'\)[\s\S]*?setResultPanelOpen\(true\)/);
+  assert.doesNotMatch(live.replace(previewReady, ''), /setResultPanelOpen\(|setSandboxTab\(/);
   assert.doesNotMatch(resume, /setResultPanelOpen\(/);
   assert.doesNotMatch(resume, /setSandboxTab\(/);
 });
 
-test('the full-screen prep overlay drops on ready while the preview keeps local loading', async () => {
-  const [screen, resume, live, state] = await Promise.all([
+test('opening the workspace does not show a prep overlay, and files can load', async () => {
+  const [screen, resume, live, state, files] = await Promise.all([
     surface(WORKSPACE),
     surface('app/features/workspace/hooks/use-session-resume.ts'),
     surface(LIVE_TURN),
     surface('app/features/workspace/hooks/use-workspace-state.ts'),
+    surface(FILES_PANEL),
   ]);
 
-  assert.match(screen, /if \(!resume\.resumeChecked \|\| live\.sessionPreparing\)/);
-  assert.match(screen, /SessionPrepLoading/);
-  assert.match(screen, /restoring=\{resume\.workspaceRestoring\}/);
-  assert.doesNotMatch(
-    screen,
-    /if \([^)]*workspaceRestoring[^)]*\) \{\s*return \(/,
-    'workspace restore must not keep the full-screen overlay after ready',
-  );
-
-  assert.match(resume, /event\.data\.stage === 'ready'/);
-  assert.match(resume, /setResumeChecked\(true\);\s*setPrepStage\(null\)/);
-  assert.match(resume, /finally \{[\s\S]*setWorkspaceRestoring\(false\)/);
-
-  // The Code tab has no loading state of its own: an empty project is described
-  // as empty, not as still loading, so a first turn cannot sit on a spinner it
-  // was never actually waiting behind.
-  assert.doesNotMatch(state, /filesRefreshing/);
-  assert.doesNotMatch(live, /setFilesRefreshing/);
-  assert.doesNotMatch(resume, /setFilesRefreshing/);
-
-  assert.match(live, /onReady: \(\) => \{/);
-  assert.match(live, /setSessionPreparing\(false\)/);
-  assert.match(live, /options\.onReady\(\)/);
+  assert.doesNotMatch(screen, /SessionPrepLoading|sessionPreparing|workspaceRestoring|prepStage/);
+  assert.doesNotMatch(live, /sessionPreparing|runCreateSessionPrep|setPrepStage/);
+  assert.doesNotMatch(resume, /workspaceRestoring|setPrepStage|applyWorkspace/);
+  assert.match(screen, /useLazyPanel\(/);
+  assert.match(state, /filesLoading/);
+  assert.match(files, /copy\.loadingTree/);
+  assert.match(screen, /attention=\{workspace\.unseenPanel\}/);
 });
 
 test('the split workspace defaults to a 4:6 chat-to-panel ratio and can be dragged', async () => {

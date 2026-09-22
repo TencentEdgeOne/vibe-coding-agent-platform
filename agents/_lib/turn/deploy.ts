@@ -42,7 +42,7 @@ import {
   withLiveDeploymentUrl,
 } from './checkpoint.ts';
 import { createTurnLifecycle } from './lifecycle.ts';
-import { ensureDependencies, ensureWorkspace } from '../project/readiness.ts';
+import { activateSandbox } from '../lazy/sandbox.ts';
 import { bindLiveWorkspace } from '../session/live-workspace.ts';
 import { sendTurnResult } from './result.ts';
 
@@ -194,7 +194,7 @@ export async function runDeployPipeline(
     return;
   }
 
-  const { state } = await ensureWorkspace(context, conversationId, { send });
+  const { state, dependenciesReady } = await activateSandbox(context, conversationId, { send });
   if (bindSiteDomain(state, resolveRequestSiteDomain(context))) {
     await persistWorkspace(context, conversationId, state);
   }
@@ -306,7 +306,9 @@ export async function runDeployPipeline(
   let gatewayKey = '';
   try {
     await assertMakersProjectCompatible(context, state);
-    await ensureDependencies(context, state);
+    if (!await dependenciesReady) {
+      throw new Error('Project dependencies are not available for deploy.');
+    }
     const makers = await prepareMakersSession(context, state, { syncEnv: true });
     sandboxToken = makers.sandboxToken;
     sandboxEnv = makers.env;

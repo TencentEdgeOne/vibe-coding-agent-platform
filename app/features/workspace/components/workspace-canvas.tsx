@@ -35,7 +35,6 @@ export function WorkspaceCanvas({
   canSend,
   canDeployProject,
   publishing,
-  restoring,
   cache,
   makersModelsDocsUrl,
   handleDeployProject,
@@ -57,7 +56,6 @@ export function WorkspaceCanvas({
   canSend: boolean;
   canDeployProject: boolean;
   publishing: boolean;
-  restoring: boolean;
   cache: FileContentCache;
   makersModelsDocsUrl: string;
   handleDeployProject: () => void;
@@ -134,9 +132,16 @@ export function WorkspaceCanvas({
         <div className="workspace-panel-toggle">
           <ResultPanelToggle
             open={false}
+            attention={workspace.unseenPanel}
             showLabel={t.workspace.showPanel}
             hideLabel={t.workspace.hidePanel}
-            onToggle={() => workspace.setResultPanelOpen(true)}
+            attentionLabel={t.workspace.panelReady}
+            onToggle={() => {
+              if (workspace.unseenPanel) workspace.setSandboxTab('preview');
+              else if (!workspace.sandboxTab) workspace.setSandboxTab('files');
+              workspace.setUnseenPanel(false);
+              workspace.setResultPanelOpen(true);
+            }}
           />
         </div>
       )}
@@ -154,7 +159,7 @@ export function WorkspaceCanvas({
           conversationId={conversationId}
           previewControlsCopy={copy.previewControlsCopy}
           previewFrameCopy={copy.previewFrameCopy}
-          restoring={restoring}
+          restoring={workspace.previewLoading}
           cache={cache}
           loading={live.loading}
           handleDeployProject={handleDeployProject}

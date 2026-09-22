@@ -25,6 +25,7 @@ export function FilesPane({
         copy={copy}
         cache={cache}
         focusPath={workspace.filesFocusPath}
+        loading={workspace.filesLoading}
       />
     </div>
   );

@@ -25,9 +25,19 @@ export function useWorkspaceSnapshot(options: {
     if (data.preview?.url) preview.applyResumedPreview(data.preview);
   }, [preview, workspace]);
 
-  const refresh = useCallback(async (conversationId: string) => {
+  const refresh = useCallback(async (
+    conversationId: string,
+    options: { includePreview?: boolean } = {},
+  ) => {
     const snapshot = await fetchWorkspaceSnapshot(conversationId);
-    if (snapshot?.ok) applySnapshot(snapshot);
+    if (snapshot?.ok) {
+      if (options.includePreview === false) {
+        const { preview: _preview, ...rest } = snapshot;
+        applySnapshot(rest);
+      } else {
+        applySnapshot(snapshot);
+      }
+    }
     return snapshot;
   }, [applySnapshot]);
 

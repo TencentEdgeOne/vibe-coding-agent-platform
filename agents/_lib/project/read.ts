@@ -1,6 +1,6 @@
 import type { AgentContext } from '../runtime/context.ts';
 import { PREVIEW_BATCH_MAX_FILES } from '../constants.ts';
-import { getProjectState } from '../session/store.ts';
+import { activateSandbox } from '../lazy/sandbox.ts';
 import { readFileFromSandbox, readFilesFromSandbox } from './fs.ts';
 import { toAppRelPath } from '../utils/paths.ts';
 import { getRequestQueryParam, resolveConversationId } from '../runtime/request.ts';
@@ -37,7 +37,7 @@ export async function runFileReadPipeline(context: AgentContext): Promise<Respon
     }, 400);
   }
 
-  const state = await getProjectState(context, conversationId);
+  const { state } = await activateSandbox(context, conversationId);
   const normalizedPaths = requestedPaths.map((path) => toAppRelPath(path, state.appDir));
   if (normalizedPaths.some((path) => !path)) {
     return json({ ok: false, error: 'invalid path' }, 400);

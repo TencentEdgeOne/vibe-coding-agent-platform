@@ -1,7 +1,7 @@
 import { tool as defineClaudeTool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import { summarizeToolOutput } from '../../../shared/timeline.ts';
-import { ensurePreview } from '../project/readiness.ts';
+import { ensurePreview } from '../lazy/preview.ts';
 import type { AgentContext } from '../runtime/context.ts';
 import type { ClaudeMcpTool, PreviewKind, ProjectState, StreamSend } from '../types.ts';
 import { stringifyToolResult } from '../utils/text.ts';

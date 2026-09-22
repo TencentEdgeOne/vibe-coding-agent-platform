@@ -3,7 +3,6 @@ import type { ModelOption } from '../../../shared/models';
 import type {
   PersistedActivityTurn,
   ResumeData,
-  SessionPrepMode,
   WorkspaceSnapshot,
 } from '../../../shared/protocol';
 
@@ -22,18 +21,8 @@ async function readJson<T>(response: Response): Promise<T | null> {
 export function openSessionStream(
   conversationId: string,
   signal?: AbortSignal,
-  options: {
-    model?: string;
-    language?: Locale;
-    mode?: SessionPrepMode;
-  } = {},
 ) {
-  const params = new URLSearchParams();
-  if (options.model) params.set('model', options.model);
-  if (options.language) params.set('language', options.language);
-  if (options.mode) params.set('mode', options.mode);
-  const query = params.toString();
-  return fetch(`/session${query ? `?${query}` : ''}`, {
+  return fetch('/session', {
     method: 'GET',
     headers: conversationHeaders(conversationId),
     signal,
@@ -133,9 +122,11 @@ export async function stopChatTask(
   turn: PersistedActivityTurn,
   options: { discardProject?: boolean } = {},
 ) {
+  // No makers-conversation-id. Sticky routing would pin this request to the
+  // instance that is stuck in the run, and abortActiveRun could not reach it.
   return fetch('/stop', {
     method: 'POST',
-    headers: conversationHeaders(conversationId),
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       conversation_id: conversationId,
       turn,

@@ -1,4 +1,4 @@
-import { ensurePreview } from '../project/readiness.ts';
+import { ensurePreview } from '../lazy/preview.ts';
 import { describeMissingMakersRuntimeToken } from '../makers/token.ts';
 import {
   MAKERS_DEV_PORT_DRIFT_EXIT,

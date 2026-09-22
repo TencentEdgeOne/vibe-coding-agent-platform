@@ -24,23 +24,12 @@ type StreamEvent = {
 };
 
 function streamLabel(event: StreamEvent) {
-  if (event.type === 'session_prep') return `${event.data?.stage}:${event.data?.status}`;
   return event.type;
 }
 
-function delay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function sessionContext(options: {
-  conversationId: string;
-  mode: 'create' | 'restore';
-  model?: string;
-  language?: string;
-  delaySetJSON?: number;
-}) {
+function sessionContext(conversationId: string) {
   const inner = createMemoryBlobStore();
-  const stats = { setJSONs: 0 };
+  const stats = { setJSONs: 0, sandbox: 0 };
   const blobStore: BlobStoreLike = {
     set: (key, value, extra) => inner.set(key, value, extra),
     delete: (key) => inner.delete(key),
@@ -48,29 +37,37 @@ function sessionContext(options: {
     get: (key, extra) => inner.get(key, extra),
     async setJSON(key, value, extra) {
       stats.setJSONs += 1;
-      if (options.delaySetJSON) await delay(options.delaySetJSON);
       return inner.setJSON(key, value, extra);
     },
   };
+  const touch = async () => {
+    stats.sandbox += 1;
+  };
   const context = {
-    conversation_id: options.conversationId,
+    conversation_id: conversationId,
     blobStore,
-    request: {
-      query: {
-        mode: options.mode,
-        ...(options.model ? { model: options.model } : {}),
-        ...(options.language ? { language: options.language } : {}),
-      },
-    },
     sandbox: {
-      extendTimeout: async () => {},
-      restore: async () => ({ restored: false }),
+      extendTimeout: touch,
+      restore: async () => {
+        stats.sandbox += 1;
+        return { restored: false };
+      },
+      getHost: async () => {
+        stats.sandbox += 1;
+        return '';
+      },
       files: {
-        makeDir: async () => {},
-        exists: async () => false,
+        makeDir: touch,
+        exists: async () => {
+          stats.sandbox += 1;
+          return false;
+        },
       },
       commands: {
-        run: async () => ({ exitCode: 0, stdout: '', stderr: '' }),
+        run: async () => {
+          stats.sandbox += 1;
+          return { exitCode: 0, stdout: '', stderr: '' };
+        },
       },
     },
   } as unknown as AgentContext;
@@ -86,79 +83,20 @@ async function collectSessionEvents(context: AgentContext) {
   return events;
 }
 
-test('restore session SSE skips an empty conversation patch and interleaves history with warmup', async () => {
-  const fixture = sessionContext({
-    conversationId: 'cid-restore-stream',
-    mode: 'restore',
-  });
-  const events = await collectSessionEvents(fixture.context);
-  const labels = events.map(streamLabel);
+test('opening a session emits history only and does not touch the sandbox', async () => {
+  const empty = sessionContext('cid-open-empty');
+  const emptyEvents = await collectSessionEvents(empty.context);
+  assert.deepEqual(emptyEvents.map(streamLabel), ['resume_history']);
+  assert.equal(empty.stats.sandbox, 0);
+  assert.equal(empty.stats.setJSONs, 0);
 
-  assert.equal(fixture.stats.setJSONs, 0);
-  assert.deepEqual(labels.slice(0, 2), ['conversation:running', 'conversation:done']);
-  const ready = labels.indexOf('ready:done');
-  assert.ok(ready >= 0, 'restore must emit ready');
-  assert.ok(labels.includes('resume_history'));
-  assert.ok(labels.indexOf('resume_history') < ready);
-  assert.ok(labels.indexOf('sandbox:running') < ready);
-  assert.ok(labels.indexOf('agent:running') < ready);
-  assert.ok(labels.indexOf('resume_history') > labels.indexOf('conversation:done'));
-  assert.ok(
-    labels.indexOf('sandbox:running') > labels.indexOf('conversation:done'),
-    'restore still finishes conversation before the warmup merge',
-  );
-  assert.ok(!labels.includes('workspace:running'));
-  assert.ok(!labels.includes('resume_workspace'));
-});
-
-test('restore session SSE emits ready before workspace events', async () => {
-  const fixture = sessionContext({
-    conversationId: 'cid-restore-ready',
-    mode: 'restore',
-  });
-  const current = await patchConversationRecord(fixture.context, 'cid-restore-ready', {});
-  await patchConversationRecord(fixture.context, 'cid-restore-ready', {
+  const created = sessionContext('cid-open-created');
+  const current = await patchConversationRecord(created.context, 'cid-open-created', {});
+  await patchConversationRecord(created.context, 'cid-open-created', {
     projectState: { ...current.projectState, created: true },
   });
-
-  const events = await collectSessionEvents(fixture.context);
-  const labels = events.map(streamLabel);
-  const ready = labels.indexOf('ready:done');
-  const workspace = labels.findIndex((label) => (
-    label === 'workspace:running' || label === 'resume_workspace'
-  ));
-
-  assert.ok(ready >= 0, 'restore must emit ready');
-  assert.ok(workspace >= 0, 'a created project must resume the workspace');
-  assert.ok(ready < workspace, 'ready must precede workspace and preview events');
-  assert.ok(labels.includes('resume_history'));
-  assert.ok(labels.indexOf('resume_history') < ready);
-  const preview = labels.indexOf('preview:running');
-  if (preview >= 0) assert.ok(ready < preview);
-});
-
-test('create session SSE runs conversation with sandbox warmup and still starts in order', async () => {
-  const fixture = sessionContext({
-    conversationId: 'cid-create-stream',
-    mode: 'create',
-    model: 'kimi-k2.6',
-    language: 'en',
-    delaySetJSON: 40,
-  });
-  const events = await collectSessionEvents(fixture.context);
-  const labels = events.map(streamLabel);
-
-  const conversationRunning = labels.indexOf('conversation:running');
-  const sandboxRunning = labels.indexOf('sandbox:running');
-  const agentRunning = labels.indexOf('agent:running');
-  assert.ok(conversationRunning >= 0 && sandboxRunning >= 0 && agentRunning >= 0);
-  assert.ok(conversationRunning < sandboxRunning);
-  assert.ok(sandboxRunning < agentRunning);
-  assert.ok(
-    labels.indexOf('sandbox:done') < labels.indexOf('conversation:done'),
-    'conversation:done is no longer a gate in front of sandbox:done',
-  );
-  assert.equal(labels.at(-1), 'ready:done');
-  assert.ok(!labels.includes('resume_history'));
-  assert.ok(!labels.includes('workspace:running'));
+  const createdEvents = await collectSessionEvents(created.context);
+  assert.deepEqual(createdEvents.map(streamLabel), ['resume_history']);
+  assert.equal(created.stats.sandbox, 0);
+  assert.ok(!createdEvents.some((event) => event.type === 'session_prep' || event.type === 'resume_workspace'));
 });

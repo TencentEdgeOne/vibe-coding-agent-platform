@@ -3,11 +3,10 @@ import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { createMemoryBlobStore } from '../agents/_lib/session/store.ts';
 import {
-  ensureDependencies,
-  ensurePreview,
-  ensureSandbox,
-  ensureWorkspace,
-} from '../agents/_lib/project/readiness.ts';
+  activateSandbox,
+  dependenciesReady,
+} from '../agents/_lib/lazy/sandbox.ts';
+import { ensurePreview } from '../agents/_lib/lazy/preview.ts';
 import { createProjectState } from '../agents/_lib/project/state.ts';
 import type { AgentContext, BlobStoreLike } from '../agents/_lib/runtime/context.ts';
 
@@ -121,7 +120,7 @@ test('a project with no package.json still gets a preview', async () => {
   // true for it. This used to read as a failure and blocked the resume path
   // while the same site previewed fine inside a chat turn.
   const state = createProjectState('cid');
-  assert.equal(await ensureDependencies(context, state), true);
+  assert.equal(await dependenciesReady(context, state), true);
 
   state.created = true;
   const preview = await ensurePreview(context, 'cid', state);
@@ -144,43 +143,31 @@ test('a deployed preview is returned untouched, with no sandbox work', async () 
   assert.equal(calls.commands, 0, 'and no process in this sandbox to probe');
 });
 
-test('the sandbox level is settled once per request, not once per asker', async () => {
+test('activation is settled once per request', async () => {
   const { context, calls } = fakeReadySandbox();
 
-  await ensureSandbox(context, 'cid');
-  await ensureSandbox(context, 'cid');
+  await activateSandbox(context, 'cid-once');
+  await activateSandbox(context, 'cid-once');
   assert.equal(calls.extendTimeout, 1, 'a live sandbox stays live for the rest of the request');
   assert.equal(calls.makeDir, 2, 'sessionDir and appDir, once for both askers');
-
-  await ensureWorkspace(context, 'cid');
-  assert.equal(calls.extendTimeout, 1, 'the level above inherits level 1 rather than repeating it');
-  // The workspace level re-creates the directories after touching the tree,
-  // because a snapshot restore unpacks over appDir and the layout repair moves
-  // its contents. That pair is the cost of the restore, not of asking twice.
-  assert.equal(calls.makeDir, 4);
+  assert.equal(calls.commands, 0, 'a project that was never created is not probed');
+  assert.equal(calls.restore, 0, 'and nothing is restored');
 });
 
-test('a failed level can be retried inside the same request', async () => {
+test('a failed activation can be retried inside the same request', async () => {
   const { context, calls } = fakeReadySandbox();
   const sandbox = (context as unknown as { sandbox: Record<string, unknown> }).sandbox;
-  let failures = 1;
-  sandbox.extendTimeout = async () => {
-    calls.extendTimeout += 1;
-    if (failures-- > 0) throw new Error('sandbox is waking up');
-  };
-  // extendTimeout failures are swallowed by design, so fail the step after it.
   const makeDir = (sandbox.files as { makeDir: () => Promise<void> }).makeDir;
   let dirFailures = 1;
   (sandbox.files as { makeDir: () => Promise<void> }).makeDir = async () => {
+    calls.makeDir += 1;
     if (dirFailures-- > 0) throw new Error('sandbox is waking up');
     return makeDir();
   };
 
-  await assert.rejects(ensureSandbox(context, 'cid'), /waking up/);
-  // A rejection is not kept, so the level is askable again rather than poisoned
-  // for the rest of the request.
-  const state = await ensureSandbox(context, 'cid');
-  assert.equal(state.appDir, 'projects/cid/app');
+  await assert.rejects(activateSandbox(context, 'cid-retry'), /waking up/);
+  const handle = await activateSandbox(context, 'cid-retry');
+  assert.equal(handle.state.appDir, 'projects/cid-retry/app');
 });
 
 test('the readiness chain owns previews, and chat does not start one after a turn', async () => {

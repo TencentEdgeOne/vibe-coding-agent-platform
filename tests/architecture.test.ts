@@ -169,7 +169,7 @@ test('session kernel and makers CLI live under agents/_lib', async () => {
     'agents/_lib/session/transcript.ts',
     'agents/transcript.ts',
     'agents/_lib/session/live.ts',
-    'agents/_lib/session/prepare.ts',
+    'agents/_lib/lazy/sandbox.ts',
     'agents/_lib/session/projection.ts',
     'agents/_lib/makers/session.ts',
     'agents/_lib/makers/cli-dev.ts',

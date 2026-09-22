@@ -20,12 +20,13 @@ export function useWorkspaceState() {
   const [download, setDownload] = useState<LinkInfo | null>(null);
   const [downloadBusy, setDownloadBusy] = useState(false);
   const [build, setBuild] = useState<BuildInfo | null>(null);
-  // The Code tab is what the user watches while files land, and it is ready the
-  // moment the tree arrives — a preview may still be minutes of npm install away.
-  const [sandboxTab, setSandboxTab] = useState<SandboxTab | null>('files');
+  const [sandboxTab, setSandboxTab] = useState<SandboxTab | null>(null);
   const [fileTree, setFileTree] = useState<FileTree | null>(null);
   const [filesFocusPath, setFilesFocusPath] = useState<string | null>(null);
-  const [resultPanelOpen, setResultPanelOpen] = useState(true);
+  const [filesLoading, setFilesLoading] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [unseenPanel, setUnseenPanel] = useState(false);
+  const [resultPanelOpen, setResultPanelOpen] = useState(false);
   const [dismissedDeployTurnId, setDismissedDeployTurnId] = useState('');
   const [gatewayNeeded, setGatewayNeeded] = useState(false);
   const [gatewayDeferred, setGatewayDeferred] = useState(false);
@@ -40,7 +41,10 @@ export function useWorkspaceState() {
     setBuild(null);
     setFileTree(null);
     setFilesFocusPath(null);
-    setResultPanelOpen(true);
+    setFilesLoading(false);
+    setPreviewLoading(false);
+    setUnseenPanel(false);
+    setResultPanelOpen(false);
     setDismissedDeployTurnId('');
     setGatewayNeeded(false);
     setGatewayDeferred(false);
@@ -48,7 +52,7 @@ export function useWorkspaceState() {
     setGatewaySavedVisible(false);
     setGatewayPromptVariant('default');
     setGatewayBusy(false);
-    setSandboxTab('files');
+    setSandboxTab(null);
   }, []);
 
   async function handleDownload(conversationId: string | null, failedMessage: string) {
@@ -98,6 +102,12 @@ export function useWorkspaceState() {
     setFileTree,
     filesFocusPath,
     setFilesFocusPath,
+    filesLoading,
+    setFilesLoading,
+    previewLoading,
+    setPreviewLoading,
+    unseenPanel,
+    setUnseenPanel,
     resultPanelOpen,
     setResultPanelOpen,
     dismissedDeployTurnId,

@@ -6,24 +6,22 @@ import {
 } from '../../../../shared/timeline';
 import type { UiCopy } from '@/app/i18n';
 import type { LiveTurnApi } from './use-live-turn';
-import type { SessionResumeApi } from './use-session-resume';
 import type { WorkspaceStateApi } from './use-workspace-state';
 
 export function useDeployOffer(options: {
   t: UiCopy;
   workspace: WorkspaceStateApi;
   live: LiveTurnApi;
-  resume: SessionResumeApi;
 }) {
-  const { t, workspace, live, resume } = options;
+  const { t, workspace, live } = options;
   const messages = live.messages;
   const hasDeployableProject = Boolean(workspace.download?.url);
   const publishing = workspace.deployment?.status === 'running';
   const deployRunning = live.loading || live.stopping || publishing;
-  const canDeployProject = hasDeployableProject && !deployRunning && !resume.workspaceRestoring;
+  const canDeployProject = hasDeployableProject && !deployRunning;
   const deployOfferKind = resolveDeployOffer(messages, {
     canDownload: hasDeployableProject,
-    loading: deployRunning || resume.workspaceRestoring,
+    loading: deployRunning,
     hasLiveDeployment: workspace.deployment?.status === 'success',
   });
   const deployOfferTurnId = lastFinishedAssistant(messages)?.id || '';

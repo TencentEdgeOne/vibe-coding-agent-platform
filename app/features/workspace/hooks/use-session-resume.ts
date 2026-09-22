@@ -1,6 +1,8 @@
 'use client';
 
-import { useEffect, useRef, useState, type MutableRefObject } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type MutableRefObject } from 'react';
+
+const useClientLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
 import { dropTrailingSummaryEcho } from '../../../../shared/timeline';
 import type { Locale } from '@/app/i18n';
 import {
@@ -13,46 +15,41 @@ import type {
   ChatMessage,
   ChatStreamEvent,
   ResumeData,
-  SessionPrepStage,
   SessionStreamEvent,
 } from '@/app/types/workspace';
 import { consumeEventStream } from '../sse';
 import { openSessionStream } from '../workspace-api';
 import type { LiveTurnApi } from './use-live-turn';
 import type { WorkspaceStateApi } from './use-workspace-state';
-import type { WorkspaceSnapshotApi } from './use-workspace-snapshot';
 
 export function useSessionResume(options: {
   workspace: WorkspaceStateApi;
   live: LiveTurnApi;
-  snapshot: WorkspaceSnapshotApi;
   setConversationId: (id: string | null) => void;
   setModel: (model: string) => void;
   setLanguage: (language: Locale) => void;
   conversationIdRef: MutableRefObject<string | null>;
   workspaceEpochRef: MutableRefObject<number>;
-  workspaceRestoringRef: MutableRefObject<boolean>;
 }) {
   const {
     workspace,
     live,
-    snapshot,
     setConversationId,
     setModel,
     setLanguage,
     conversationIdRef,
     workspaceEpochRef,
-    workspaceRestoringRef,
   } = options;
 
-  const [resumeChecked, setResumeChecked] = useState(true);
-  const [workspaceRestoring, setWorkspaceRestoring] = useState(false);
-  const [prepStage, setPrepStage] = useState<SessionPrepStage | null>(null);
+  // False on the server and the client's first render. Reading localStorage
+  // here would show the home stage on the server and hide it for a returning
+  // visitor, and hydration would fail.
+  const [resumeChecked, setResumeChecked] = useState(false);
   const resumeAbortControllerRef = useRef<AbortController | null>(null);
 
-  useEffect(() => {
-    workspaceRestoringRef.current = workspaceRestoring;
-  }, [workspaceRestoring, workspaceRestoringRef]);
+  useClientLayoutEffect(() => {
+    if (!getStoredConversationId()) setResumeChecked(true);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -182,26 +179,11 @@ export function useSessionResume(options: {
         workspace.setGatewayNeeded(false);
       }
       workspace.setDeployment(data.deployment ?? null);
-      if (data.hasProject || data.needsWorkspace || activeTask) {
-        if (data.hasProject || data.needsWorkspace) {
-          setWorkspaceRestoring(true);
-        }
-      }
       const liveTaskId = activeTask?.id
         && nextMessages.some((item) => item.id === activeTask.id && item.status === 'running')
         ? activeTask.id
         : null;
       return { restored: true, liveTaskId };
-    };
-
-    const applyWorkspace = (data: ResumeData) => {
-      if (data.gatewayNeeded) {
-        workspace.setGatewayNeeded(true);
-        workspace.setGatewayDeferred(false);
-      } else if (data.gatewaySkipped) {
-        workspace.setGatewayDeferred(true);
-      }
-      snapshot.applySnapshot(data);
     };
 
     const resumeController = new AbortController();
@@ -214,9 +196,7 @@ export function useSessionResume(options: {
         } | null,
       };
       try {
-        const response = await openSessionStream(existing, resumeController.signal, {
-          mode: 'restore',
-        });
+        const response = await openSessionStream(existing, resumeController.signal);
         const contentType = response.headers.get('content-type') || '';
         if (!response.ok || !response.body || !contentType.includes('text/event-stream')) {
           return;
@@ -224,21 +204,6 @@ export function useSessionResume(options: {
 
         await consumeEventStream<SessionStreamEvent>(response, (event) => {
           if (cancelled || workspaceEpoch !== workspaceEpochRef.current || event.type === 'ping') return;
-
-          if (event.type === 'session_prep' && event.data?.stage) {
-            if (event.data.stage === 'ready') {
-              // Workspace and preview stages keep streaming after `ready`; the files and
-              // preview panels carry their own loading state, so the full-screen loader
-              // does not have to wait for the stream to close.
-              setResumeChecked(true);
-              setPrepStage(null);
-              return;
-            }
-            if (event.data.status === 'running') {
-              setPrepStage(event.data.stage);
-            }
-            return;
-          }
 
           if (event.type === 'resume_history' && event.data?.ok) {
             const historyData = event.data;
@@ -248,7 +213,6 @@ export function useSessionResume(options: {
               conversationIdRef.current = null;
               setConversationId(null);
               setResumeChecked(true);
-              setPrepStage(null);
             }
 
             if (liveTaskId) {
@@ -263,16 +227,6 @@ export function useSessionResume(options: {
             return;
           }
 
-          if (event.type === 'resume_workspace' && event.data?.ok) {
-            applyWorkspace(event.data);
-            return;
-          }
-
-          if (event.type === 'file_changed' && event.data?.paths?.length) {
-            void snapshot.pullFiles(existing, event.data.paths.filter(Boolean));
-            return;
-          }
-
           liveAttach.session?.handleStreamEvent(event as ChatStreamEvent);
         });
       } catch (error) {
@@ -282,9 +236,7 @@ export function useSessionResume(options: {
       } finally {
         if (!cancelled) {
           setResumeChecked(true);
-          setPrepStage(null);
           if (workspaceEpoch === workspaceEpochRef.current) {
-            setWorkspaceRestoring(false);
             liveAttach.session?.finish();
           }
         }
@@ -303,9 +255,6 @@ export function useSessionResume(options: {
   return {
     resumeChecked,
     setResumeChecked,
-    workspaceRestoring,
-    setWorkspaceRestoring,
-    prepStage,
     resumeAbortControllerRef,
   };
 }

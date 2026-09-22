@@ -42,7 +42,7 @@ test('session is GET restore; turns go through /prompt and /deploy', async () =>
   assert.match(deploy, /onRequestPost/);
   assert.match(deploy, /kind: 'deploy'/);
   assert.match(tasks, /export async function\* iterateLiveChatTaskEvents/);
-  assert.match(client, /fetch\(`\/session/);
+  assert.match(client, /fetch\('\/session'/);
   assert.match(client, /fetch\('\/prompt',[\s\S]*?method: 'POST'/);
   assert.match(client, /fetch\('\/deploy',[\s\S]*?method: 'POST'/);
   assert.doesNotMatch(client, /fetch\('\/session-model'/);
@@ -69,11 +69,11 @@ test('initial session restore is one progressive SSE request that can attach a l
   assert.match(route, /onRequestGet/);
   assert.match(route, /createProjectResumeStreamResponse/);
   assert.match(pipeline, /type: 'resume_history'/);
-  assert.match(pipeline, /type: 'resume_workspace'/);
-  assert.match(pipeline, /sessionPrepSse/);
+  assert.doesNotMatch(pipeline, /type: 'resume_workspace'/);
+  assert.doesNotMatch(pipeline, /sessionPrepSse/);
   assert.match(pipeline, /iterateLiveChatTaskEvents/);
   assert.doesNotMatch(pipeline, /streamUrl: `\/chat\?runId=/);
-  assert.match(client, /fetch\(`\/session/);
+  assert.match(client, /fetch\('\/session'/);
 });
 
 test('the session tab reads the raw JSONL transcript and does not project it', async () => {
@@ -121,16 +121,24 @@ test('an untouched new project does not persist an empty conversation', async ()
   assert.doesNotMatch(startBlock, /createConversationId\(/);
 });
 
-test('stop sends makers-conversation-id like every other agent route', async () => {
+// Sticky routing pins makers-conversation-id to one agent instance. /stop is the
+// only route that must omit it: abortActiveRun has to reach a stuck instance,
+// and the header would pin the request to that same instance.
+test('/stop is the only agent route that omits makers-conversation-id', async () => {
   const client = await surface('app/features/workspace/workspace-api.ts');
   const start = client.indexOf('export async function stopChatTask');
   const end = client.indexOf('export function fetchProjectArchive');
   const stopFn = client.slice(start, end);
 
   assert.ok(start >= 0 && end > start);
-  assert.match(stopFn, /headers: conversationHeaders\(conversationId\)/);
+  assert.match(stopFn, /No makers-conversation-id/);
+  assert.doesNotMatch(stopFn, /conversationHeaders\(/);
+  assert.doesNotMatch(stopFn, /'makers-conversation-id'/);
   assert.match(stopFn, /conversation_id: conversationId/);
-  assert.doesNotMatch(stopFn, /AGENT_CONVERSATION_ID_REQUIRED/);
+  assert.match(stopFn, /'content-type': 'application\/json'/);
+  const others = client.replace(stopFn, '');
+  assert.match(others, /conversationHeaders\(/);
+  assert.match(others, /'makers-conversation-id': conversationId/);
 });
 
 test('starting a new project does not wait for the old stop request', async () => {
@@ -138,14 +146,14 @@ test('starting a new project does not wait for the old stop request', async () =
   const client = await surface('app/features/workspace/workspace-api.ts');
   const stopRoute = await readFile('agents/stop.ts', 'utf8');
   const abortIndex = stopRoute.indexOf('abortActiveRun');
-  const snapshotIndex = stopRoute.indexOf('if (!discardProject)');
+  const snapshotIndex = stopRoute.indexOf('if (!discardProject &&');
 
   assert.match(screen, /void live\.stopCurrentTask\(\{ discardProject: true \}\)/);
   assert.match(screen, /startNewProject\(\)/);
   assert.doesNotMatch(screen, /await live\.stopCurrentTask/);
   assert.match(client, /options\.discardProject \? \{ discardProject: true \} : \{\}/);
   assert.ok(abortIndex >= 0 && snapshotIndex > abortIndex);
-  assert.match(stopRoute, /if \(!discardProject\) \{[\s\S]*?persistProjectSnapshot/);
+  assert.match(stopRoute, /if \(!discardProject && sandboxWasActivated\(conversationId\)\) \{[\s\S]*?persistProjectSnapshot/);
 });
 
 test('workspace persistence uses the sandbox SDK and Blob state.json, not context.store', async () => {

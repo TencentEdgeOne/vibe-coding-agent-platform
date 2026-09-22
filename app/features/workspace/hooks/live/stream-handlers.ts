@@ -208,6 +208,11 @@ export function createLiveChatSession(sessionOptions: LiveChatSessionOptions): L
       }
       if (event.data.preview) {
         preview.activatePreview(event.data.preview, activatedPreviewRevisions);
+        if (!workspace.resultPanelOpen) {
+          workspace.setSandboxTab('preview');
+          workspace.setUnseenPanel(false);
+          workspace.setResultPanelOpen(true);
+        }
       }
       if (event.data.download) {
         workspace.setDownload(event.data.download);
