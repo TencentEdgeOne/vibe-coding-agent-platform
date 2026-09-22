@@ -19,6 +19,7 @@ import {
 } from '../../../shared/web-search.ts';
 import { buildLoadMakersSkillTool } from './makers-skills.ts';
 import { buildWriteProjectFileTool } from './project-tools.ts';
+import { buildDeployProjectTool, DEPLOY_PROJECT_TOOL_NAME } from './deploy-tools.ts';
 import { buildStartPreviewTool } from './preview-tools.ts';
 
 export type LiveTurnCallbacks = {
@@ -147,6 +148,23 @@ export function assembleAgentTools(session: LiveSessionHandle) {
         session.flags.previewTouched = true;
         if (preview.url) session.getCallbacks().onPreviewReady?.(preview);
       },
+      get send() {
+        return session.getCallbacks().send;
+      },
+    }),
+    buildDeployProjectTool({
+      context,
+      conversationId: session.conversationId,
+      get state() {
+        return session.getState();
+      },
+      get send() {
+        return session.getCallbacks().send;
+      },
+      onDeploymentStatus: (deployment) => {
+        session.flags.deploymentTouched = true;
+        session.getCallbacks().onDeploymentStatus?.(deployment);
+      },
     }),
   ];
   const mcpAllowedTools = [
@@ -154,6 +172,7 @@ export function assembleAgentTools(session: LiveSessionHandle) {
     `mcp__${mcpServerName}__load_makers_skill`,
     `mcp__${mcpServerName}__write_project_file`,
     `mcp__${mcpServerName}__start_preview`,
+    `mcp__${mcpServerName}__${DEPLOY_PROJECT_TOOL_NAME}`,
     'Skill',
   ];
 

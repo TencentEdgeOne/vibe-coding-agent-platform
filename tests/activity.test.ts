@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { summarizeToolInput, summarizeToolOutput } from '../shared/timeline.ts';
+import { summarizeToolInput, summarizeToolOutput, toolPaintsOwnProgress } from '../shared/timeline.ts';
 
 test('tool summaries redact secrets and project paths', () => {
   const summary = summarizeToolInput('mcp__edgeone__commands', {
@@ -57,6 +57,42 @@ test('glob and skill inputs keep every field instead of a short label', () => {
   });
   assert.match(skill, /makers-agents/);
   assert.match(skill, /platform\/sse-protocol\.md/);
+});
+
+test('deploy and preview rows hide empty arguments and model-facing results', () => {
+  assert.equal(summarizeToolInput('mcp__edgeone-sandbox__deploy_project', {}), '');
+  assert.equal(summarizeToolInput('mcp__edgeone-sandbox__start_preview', { restart: true }), '');
+  assert.equal(toolPaintsOwnProgress('mcp__edgeone-sandbox__deploy_project'), true);
+  assert.equal(toolPaintsOwnProgress('mcp__edgeone-sandbox__start_preview'), true);
+  assert.equal(toolPaintsOwnProgress('commands'), false);
+
+  const published = summarizeToolOutput(JSON.stringify({
+    status: 'published',
+    url: 'https://demo.edgeone.app',
+    note: 'Tell the user in their language and write this complete URL.',
+  }), '', 'mcp__edgeone-sandbox__deploy_project');
+  assert.equal(published, 'https://demo.edgeone.app');
+
+  const deployError = summarizeToolOutput(JSON.stringify({
+    status: 'error',
+    error: 'The sandbox image does not provide the CLI yet.',
+    instruction: 'Stop. Do not inspect PATH.',
+  }), '', 'deploy_project');
+  assert.equal(deployError, 'The sandbox image does not provide the CLI yet.');
+
+  const preview = summarizeToolOutput(JSON.stringify({
+    status: 'success',
+    preview: { url: 'https://sandbox.example/?access_token=secret-token' },
+    note: 'The preview panel is already showing this URL. Do not put it in your reply.',
+  }), '', 'mcp__edgeone-sandbox__start_preview');
+  assert.equal(preview, '');
+  assert.doesNotMatch(preview, /access_token|Do not put it/);
+});
+
+test('a plain failure from either tool stays readable', () => {
+  const error = 'Failed to start edgeone makers dev.';
+  assert.equal(summarizeToolOutput(error, '', 'start_preview'), error);
+  assert.equal(summarizeToolOutput(error, '', 'deploy_project'), error);
 });
 
 test('tool output is capped at eight kilobytes', () => {

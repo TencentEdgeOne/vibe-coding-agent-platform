@@ -163,3 +163,34 @@ test('tool_use keeps command and phase fields on the same row', () => {
     assert.match(tool.inputSummary || '', /\*\*\/\*/);
   }
 });
+
+test('a settled preview result shows nothing, even when the raw result is still attached', () => {
+  let turn: PersistedActivityTurn = {
+    id: 'turn-1',
+    user: 'Build',
+    assistant: '',
+    status: 'completed',
+    createdAt: 1,
+    activities: [],
+  };
+  turn = applyStreamEvent(turn, {
+    type: 'tool_use',
+    data: { id: 't1', name: 'mcp__edgeone-sandbox__start_preview', outputSummary: '12s' },
+  });
+  turn = applyStreamEvent(turn, {
+    type: 'tool_result',
+    data: {
+      id: 't1',
+      ok: true,
+      outputSummary: '',
+      preview: '{"status":"success","note":"Do not put it in your reply."}',
+      status: 'completed',
+    },
+  });
+  const tool = turn.activities[0];
+  assert.equal(tool.kind, 'tool');
+  if (tool.kind === 'tool') {
+    assert.equal(tool.outputSummary, '');
+    assert.equal(tool.status, 'completed');
+  }
+});

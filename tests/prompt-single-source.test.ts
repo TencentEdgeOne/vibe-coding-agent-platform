@@ -129,15 +129,14 @@ test('the prompt keeps the sandbox corrections the skills cannot know about', ()
   // in a prefix that must stay constant, and it would be the value that was
   // true when this process started rather than the one the command receives.
   assert.doesNotMatch(prompt, /--area (?:global|overseas)/);
-  assert.match(prompt, /pins the project this conversation publishes to and its publish area/);
   assert.match(
     prompt,
     new RegExp(`sandbox\\.getHost\\(${PREVIEW_PUBLIC_PORT}\\).*${PREVIEW_PATH_PREFIX}`),
   );
-  // The host owns the deploy project name, so the prompt must not hand the
-  // model a -n to copy, edit, or replace after a name conflict.
-  assert.match(prompt, /edgeone makers deploy --json once/);
-  assert.match(prompt, /Never pass -n, invent a project name/);
+  // Publishing is a tool the deploy button asks for by sending a user turn.
+  // Teaching the CLI here would make every coding turn a chance to publish.
+  assert.doesNotMatch(prompt, /edgeone makers deploy --json/);
+  assert.doesNotMatch(prompt, /deploy_project/);
   assert.doesNotMatch(prompt, /vibe-coding-playground/);
   assert.match(prompt, /one read-only edgeone --version check is allowed/);
   assert.match(prompt, /errorCode=MAKERS_CLI_UNAVAILABLE, stop immediately/);
@@ -221,8 +220,8 @@ test('the prompt keeps its tool contracts and workspace boundary', () => {
   // that replaced the ban.
   assert.match(prompt, /start_preview is how you ask for the preview/);
   assert.match(prompt, /do not start a preview server through commands/);
-  assert.match(prompt, /Run edgeone makers deploy only when the user explicitly asks/);
-  assert.doesNotMatch(prompt, /publish_preview|deploy_to_makers|get_preview_link/);
+  assert.doesNotMatch(prompt, /Run edgeone makers deploy/);
+  assert.doesNotMatch(prompt, /publish_preview|deploy_to_makers|get_preview_link|deploy_project/);
   assert.match(prompt, /I can only help create or modify web projects/);
 });
 

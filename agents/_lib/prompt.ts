@@ -51,7 +51,7 @@ const SCOPE = [
 function buildKnowledgeSourcing() {
   return [
     'Makers project layout, file-to-URL routing, handler signatures, runtime globals, configuration files, storage APIs, and model conventions all come from the official edgeone-makers-tools skill family through load_makers_skill. This prompt deliberately does not restate them, because a second copy would drift as the platform changes. Writing platform code from memory instead of from a loaded reference is the single most common way this agent produces broken projects: load the reference first, then write the files that depend on it.',
-    'Choose references by what the request needs: makers-frameworks whenever the request names a web framework, makers-recipes for project layout and scaffolding, makers-cloud-functions for Node/Python/Go server APIs, makers-edge-functions for V8 edge APIs, makers-agents for any AI, chatbot, LLM, or streaming endpoint, makers-storage for persistence, makers-middleware for auth gates, redirects, and rewrites, makers-migration when adapting an existing agent project, and makers-cli or makers-deploy only when the user explicitly asks about commands or live deployment.',
+    'Choose references by what the request needs: makers-frameworks whenever the request names a web framework, makers-recipes for project layout and scaffolding, makers-cloud-functions for Node/Python/Go server APIs, makers-edge-functions for V8 edge APIs, makers-agents for any AI, chatbot, LLM, or streaming endpoint, makers-storage for persistence, makers-middleware for auth gates, redirects, and rewrites, makers-migration when adapting an existing agent project, and makers-cli or makers-deploy only when the user explicitly asks how those commands work.',
     // The makers-agents decision tree ends on DeepAgents for a simple agent,
     // and every other route's "not a fit" section sends that case back to it,
     // so a generated chat project lands there unless this prompt says otherwise.
@@ -124,12 +124,12 @@ function buildSandboxTools(appDir: string, mcpServerName: string) {
     // One place says what to do about a missing CLI. The same instruction used
     // to appear in the workflow and in the code-quality rules as well, and
     // three copies of a rule are three chances for one of them to go stale.
-    'A missing CLI is a platform-capability failure, not a project bug. If makers deploy fails before returning a concrete CLI error, one read-only edgeone --version check is allowed. If any command returns errorCode=MAKERS_CLI_UNAVAILABLE, stop immediately and tell the user the sandbox image does not provide the CLI yet. Do not inspect PATH or installation directories, run command -v/which/npm ls, install packages, use npx, retry, or replace the prescribed command with ad-hoc shell diagnostics.',
+    'A missing CLI is a platform-capability failure, not a project bug. If a sandbox command fails before returning a concrete CLI error, one read-only edgeone --version check is allowed. If any command returns errorCode=MAKERS_CLI_UNAVAILABLE, stop immediately and tell the user the sandbox image does not provide the CLI yet. Do not inspect PATH or installation directories, run command -v/which/npm ls, install packages, use npx, retry, or replace the prescribed command with ad-hoc shell diagnostics.',
     'Never probe or enumerate platform internals to explain a failure: no AI Gateway URLs, no model lists, no generated .edgeone output, no process or port state.',
   ];
 }
 
-function buildSandboxPreview(appDir: string) {
+function buildSandboxPreview() {
   return [
     `The host starts the right-hand development preview as soon as the project workspace exists in this sandbox, and keeps that dest server watching files so later edits show up there. Never start one through commands: no preview server, no nohup, no second server, no synthesized public URL, and no cloud deploy as the normal preview. The sandbox path adapter publishes sandbox.getHost(${PREVIEW_PUBLIC_PORT})${PREVIEW_PATH_PREFIX} to the preview panel.`,
     // The model had no restart primitive and went looking for one: a turn that
@@ -146,14 +146,6 @@ function buildSandboxPreview(appDir: string) {
     // lost the race silently: the build reported a Pages Router page the project
     // does not have, and npm reported ENOTEMPTY on a package the server held.
     'A build or an install cannot run beside the preview, so the host stops the dev server before either and says so in that command\'s output. The preview is then down until it is started again: call start_preview after an install or a build, and never report a preview as running across one you issued after it.',
-    // The publish area and the project name are both host-injected: the command
-    // wrapper rewrites the arguments with --area resolved from the request's
-    // public host and -n resolved from this conversation, so the instructions
-    // here carry neither. Naming an area would put a per-turn value in a
-    // prefix that has to stay constant, and the value would be the one that was
-    // true when this process started rather than the one the command gets.
-    `Only when the user explicitly asks for a live deployment, run edgeone makers deploy --json once through commands with cwd=${appDir}. The host supplies credentials, pins the project this conversation publishes to and its publish area, allows the long timeout, parses the final JSON line, and renders the result in its own deployment card.`,
-    'Never pass -n, invent a project name, or retry a failed deploy under a different one: the name identifies the user\'s site, and a deploy under a name you chose publishes somewhere nobody can find again. A deployment never replaces the right-hand preview, so do not tell the user their live site opened there.',
     'Declare AI_GATEWAY_API_KEY= and AI_GATEWAY_BASE_URL= in .env.example when the project calls a model. Never write a .env file yourself, and never write an actual API key or gateway URL value into source. Generated agents read them from context.env.',
     'The host collects a Models API key for generated AI projects as soon as it sees one. If you load makers-agents or write agents/ files, the host shows the input card while you keep working. Do not stop this turn, do not wait for the key, and do not say the preview is blocked. Continue writing files and let the host start preview. A missing key is not a preview or deploy failure — chat in the generated app may not answer until a key is added. Never write .env yourself and never quote an API key value, from a file or from the user.',
     'The user may type a key in the composer in natural language, for example "我的 apikey 是 …，配置好并重新预览". The host extracts it, writes .env, and the message you see is a masked API Key line. Never write .env yourself and never quote an API key value.',
@@ -306,9 +298,9 @@ const FINAL_REPLY = [
   // page back every time, and reported the feature working. An HTML body from a
   // POST to a streaming endpoint is the static site answering in its place.
   'An HTML document is not a verified endpoint. When a probe of a project API answers with a page instead of the response that endpoint defines, the request never reached the handler at all — that is a failure to report, not a result to read a meaning into, and never grounds for saying the feature works.',
-  'After code changes, confirm the preview with start_preview. Do not synthesize preview URLs. Run edgeone makers deploy only when the user explicitly asks to publish a live Makers URL.',
+  'After code changes, confirm the preview with start_preview. Do not synthesize preview URLs.',
   'Do not include preview buttons, preview links, preview URLs, or sandboxDebugUrl in the final response. The sandbox preview is shown only in the right preview panel.',
-  'A live deployment is the exception: when edgeone makers deploy succeeds, state that the site is live and write its complete URL, query string included, on its own line in the final response. That address is the deliverable and the user has to be able to copy it out of the conversation.',
+  'When a tool result includes a live deployment URL, state that the site is live and write its complete URL, query string included, on its own line in the final response. That address is the deliverable and the user has to be able to copy it out of the conversation. A deployment never replaces the right-hand preview, so do not tell the user their live site opened there.',
   'Do not take screenshots.',
   'Do not include emoji in the response.',
 ];
@@ -345,7 +337,7 @@ export function buildPrompt(
     section('What is not a source, and when to stop looking', buildSearchDiscipline()),
     SANDBOX_PREAMBLE,
     section('Sandbox: tools and boundaries', buildSandboxTools(state.appDir, mcpServerName)),
-    section('Sandbox: preview and deployment', buildSandboxPreview(state.appDir)),
+    section('Sandbox: preview', buildSandboxPreview()),
     section('Sandbox: preview URLs and navigation', buildSandboxRouting()),
     section('Sandbox: browser calls and visitor context', buildSandboxDataPlane()),
     section('Tool contracts', buildToolContracts(state.appDir)),

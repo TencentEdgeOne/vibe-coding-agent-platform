@@ -29,7 +29,7 @@ export function gatewayBaseUrlForAgentFramework(framework?: string | null) {
 export const GATEWAY_CREDENTIALS_PAUSE_MESSAGE = [
   'AI_GATEWAY_API_KEY is not set in the project .env.',
   'The user has been shown the API key input card.',
-  'Do not run edgeone makers deploy until they provide a key or skip.',
+  'Do not call deploy_project or run a deploy command until they provide a key or skip.',
   'A missing key is not a preview failure, but a live publish still needs the card answered.',
 ].join(' ');
 

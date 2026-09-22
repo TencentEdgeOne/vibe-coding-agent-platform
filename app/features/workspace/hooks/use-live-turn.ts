@@ -17,7 +17,6 @@ import type {
   SessionPrepStage,
 } from '@/app/types/workspace';
 import {
-  startDeployTurn,
   startPromptTurn,
   stopChatTask,
 } from '../workspace-api';
@@ -213,23 +212,18 @@ export function useLiveTurn(options: {
           setSessionPreparing(false);
           setPrepStage(null);
         }
-      const response = isDeploy
-        ? await startDeployTurn({
-            conversationId: requestConversationId,
-            turnId: assistantMessageId,
-            language,
-            ...(inboundApiKey ? { apiKey: inboundApiKey } : {}),
-            signal: requestAbortController.signal,
-          })
-        : await startPromptTurn({
-            conversationId: requestConversationId,
-            message: displayMessage,
-            turnId: assistantMessageId,
-            model: modelRef.current,
-            language,
-            ...(inboundApiKey ? { apiKey: inboundApiKey } : {}),
-            signal: requestAbortController.signal,
-          });
+      // A deploy click is the same kind of turn as a typed request. The message
+      // names deploy_project; the tool publishes. The flag only keeps this from
+      // clearing the composer or opening a new project.
+      const response = await startPromptTurn({
+        conversationId: requestConversationId,
+        message: displayMessage,
+        turnId: assistantMessageId,
+        model: modelRef.current,
+        language,
+        ...(inboundApiKey ? { apiKey: inboundApiKey } : {}),
+        signal: requestAbortController.signal,
+      });
       await attachLiveChatStream({
         requestConversationId,
         assistantMessageId,

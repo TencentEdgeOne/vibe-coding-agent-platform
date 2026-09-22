@@ -7,6 +7,7 @@ import {
   sanitizeThinkingContent,
   summarizeToolInput,
   summarizeToolOutput,
+  toolPaintsOwnProgress,
   type NarrationEmitState,
 } from '../../../shared/timeline.ts';
 import {
@@ -352,8 +353,10 @@ export function createProgressEmitter(options: {
     const progress = typeof toolUse.name === 'string' ? inferToolProgress(toolName, toolUse.input) : {};
     const hasInput = toolUse.input !== undefined || Boolean(toolUse.inputJson);
     const parsedSummary = hasInput ? summarizeToolInput(toolName, toolUse.input, options.appDir) : '';
-    const inputSummary = parsedSummary
-      || (toolUse.inputJson ? summarizeToolOutput(toolUse.inputJson, options.appDir) : '');
+    const inputSummary = toolPaintsOwnProgress(toolName)
+      ? ''
+      : parsedSummary
+        || (toolUse.inputJson ? summarizeToolOutput(toolUse.inputJson, options.appDir) : '');
     const outputSummary = toolUse.outputSummary || '';
     const progressSignature = JSON.stringify({
       name: toolName,

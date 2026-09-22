@@ -112,7 +112,9 @@ export const en = {
     copyMessage: 'Copy message',
     messageCopied: 'Copied',
     scrollToLatest: 'Jump to latest',
-    deployRequest: 'Deploy this project to production',
+    // The wording the deploy button sends as the user's turn. It is an ordinary
+    // prompt: the agent calls deploy_project, which is what actually publishes.
+    deployRequest: 'Call only the deploy_project tool to publish this project. Do not modify any files and do not run any other command.',
     deployNeedsProject: 'Deploy becomes available once a project is generated',
     deployNeedsIdle: 'Deploy becomes available once the current task finishes',
     deployOffer: 'Deploy this project to production?',

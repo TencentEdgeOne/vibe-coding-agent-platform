@@ -1,9 +1,11 @@
 import { tool as defineClaudeTool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
+import { summarizeToolOutput } from '../../../shared/timeline.ts';
 import { ensurePreview } from '../project/readiness.ts';
-import type { ClaudeMcpTool, PreviewKind, ProjectState } from '../types.ts';
 import type { AgentContext } from '../runtime/context.ts';
+import type { ClaudeMcpTool, PreviewKind, ProjectState, StreamSend } from '../types.ts';
 import { stringifyToolResult } from '../utils/text.ts';
+import { commandCallId } from './command-stream.ts';
 
 const startPreviewInputSchema = {
   restart: z.boolean().optional().describe(
@@ -20,6 +22,7 @@ export type PreviewToolLifecycle = {
     sandboxDebugUrl?: string;
     kind?: PreviewKind;
   }) => void;
+  send?: StreamSend;
 };
 
 /**
@@ -38,9 +41,20 @@ export function buildStartPreviewTool(lifecycle: PreviewToolLifecycle) {
     'start_preview',
     'Bring up the live preview for the current project and return its public URL. Verifies that the pages and any generated API or agent routes actually answer, so use it to confirm the project runs before telling the user it is done. Safe to call more than once: a healthy dev server is reused rather than restarted.',
     startPreviewInputSchema,
-    async (input) => {
+    async (input, extra) => {
+      const toolUseId = commandCallId(extra);
+      const report = (text: string) => {
+        if (!toolUseId || !lifecycle.send) return;
+        const summary = summarizeToolOutput(text);
+        if (!summary) return;
+        lifecycle.send({
+          type: 'tool_use',
+          data: { id: toolUseId, outputSummary: summary },
+        });
+      };
       try {
         const options = input as { restart?: unknown };
+        report('Starting the preview');
         const preview = await ensurePreview(
           lifecycle.context,
           lifecycle.conversationId,
@@ -48,6 +62,7 @@ export function buildStartPreviewTool(lifecycle: PreviewToolLifecycle) {
           {
             verifyRoutes: true,
             forceRestart: options.restart === true,
+            onProgress: report,
           },
         );
         lifecycle.onPreviewReady?.(preview);

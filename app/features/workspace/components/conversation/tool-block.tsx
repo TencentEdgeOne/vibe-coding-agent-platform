@@ -1,6 +1,6 @@
 'use client';
 
-import { presentToolActivity, toolActionTier } from '@/app/lib/tool-activity';
+import { presentToolActivity } from '@/app/lib/tool-activity';
 import type { AssistantActivity } from '../../../../../shared/protocol';
 import { statusLabel } from './activity-blocks';
 import { ActivityDetail, ActivityRow } from './activity-row';
@@ -24,10 +24,6 @@ export function toolRowLabel(activity: { name: string; inputSummary?: string }, 
   return presentation.detailed ? `${named} · ${copy.referenceDetail}` : named;
 }
 
-export function toolRowTone(activity: { name: string; inputSummary?: string }) {
-  return toolActionTier(presentToolActivity(activity).action);
-}
-
 export function ToolBlock({ activity, copy }: {
   activity: ToolActivity;
   copy: ConversationCopy;
@@ -43,7 +39,6 @@ export function ToolBlock({ activity, copy }: {
       target={presentation.target}
       startedAt={activity.startedAt}
       endedAt={activity.endedAt}
-      tone={toolActionTier(presentation.action)}
       statusLabel={statusLabel(activity.status, copy)}
     >
       {hasDetail && (

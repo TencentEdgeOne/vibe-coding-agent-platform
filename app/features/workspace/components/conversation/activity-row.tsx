@@ -7,9 +7,8 @@ import { formatActivityDuration, resolveDisclosure } from './activity-disclosure
 
 export { formatActivityDuration } from './activity-disclosure';
 
-/** How loudly a row reads. Platform work — a deploy, a preview — is what the
- *  user is actually waiting on; file work is the bookkeeping underneath it. */
-export type ActivityTone = 'platform' | 'file' | 'quiet';
+/** Some rows sit quieter than others; ordinary tool work uses the default. */
+export type ActivityTone = 'file' | 'quiet';
 
 function useActivityDisclosure(status: ActivityStatus) {
   const [override, setOverride] = useState<boolean | null>(null);

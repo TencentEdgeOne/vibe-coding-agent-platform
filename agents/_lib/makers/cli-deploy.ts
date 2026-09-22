@@ -580,8 +580,9 @@ export type MakersDeployOutcome =
 /**
  * The single reading of what the CLI just did.
  *
- * Two callers publish — the model through its command tool, and the deploy
- * button through its own pipeline — and a disagreement between them would show
+ * Callers publish through one reading of the CLI log — the deploy_project
+ * tool, a direct makers deploy command, and the deterministic pipeline — and
+ * a disagreement between them would show
  * as a deployment the UI calls failed while the site is live, or the reverse.
  */
 export function readMakersDeployOutcome(

@@ -134,9 +134,9 @@ export const zh = {
     // something the user takes elsewhere, so the reply offers to copy it.
     copyLink: '复制链接',
     linkCopied: '已复制',
-    // The wording the deploy button sends as the user's turn, so the
-    // transcript reads the same whether it was clicked or typed.
-    deployRequest: '把这个项目部署到线上',
+    // The wording the deploy button sends as the user's turn. It is an ordinary
+    // prompt: the agent calls deploy_project, which is what actually publishes.
+    deployRequest: '请只调用 deploy_project 把当前项目部署到线上，不要修改文件，也不要执行别的命令。',
     deployNeedsProject: '生成项目后即可一键部署',
     deployNeedsIdle: '当前任务结束后即可部署',
     deployOffer: '要把当前项目部署上线吗？',

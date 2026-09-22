@@ -218,13 +218,56 @@ export function summarizeToolInput(name: string, input: unknown, projectDir = ''
         : '';
     return truncate(redactInlineSecrets(projectDir ? command.split(projectDir).join('<project>') : command));
   }
+  // Neither call takes an argument a reader can use. Dumping `{}` only opens
+  // the row onto an empty input.
+  if (shortName === 'deploy_project' || shortName === 'start_preview') return '';
 
   return truncate(JSON.stringify(safeValue(record, projectDir), null, 2));
 }
 
-export function summarizeToolOutput(value: string, projectDir = '', _name = '') {
+/**
+ * Deploy and preview paint the row themselves. An elapsed-seconds ping would
+ * replace a live deploy log with "12s", and a preview has nothing to report
+ * until it finishes — the row already shows how long it has been running.
+ */
+export function toolPaintsOwnProgress(name: string) {
+  const shortName = name.replace(/^mcp__[^_]+__/, '');
+  return shortName === 'deploy_project' || shortName === 'start_preview';
+}
+
+/**
+ * What of a platform tool result belongs in the transcript.
+ *
+ * The result is written for the model: a note telling it what to say, and for
+ * a preview a URL that carries an access token. The row keeps the part a
+ * person can act on. An empty string means the row should show nothing.
+ * `undefined` means this text is not one of those results.
+ */
+function userFacingPlatformResult(name: string, value: string): string | undefined {
+  const shortName = name.replace(/^mcp__[^_]+__/, '');
+  if (shortName !== 'deploy_project' && shortName !== 'start_preview') return undefined;
+  const trimmed = value.trim();
+  if (!trimmed.startsWith('{')) return undefined;
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(trimmed) as Record<string, unknown>;
+  } catch {
+    return undefined;
+  }
+  if (shortName === 'deploy_project') {
+    if (typeof parsed.url === 'string' && parsed.url.trim()) return parsed.url.trim();
+    if (typeof parsed.error === 'string' && parsed.error.trim()) return parsed.error.trim();
+    return '';
+  }
+  if (parsed.status === 'success') return '';
+  if (typeof parsed.error === 'string' && parsed.error.trim()) return parsed.error.trim();
+  return '';
+}
+
+export function summarizeToolOutput(value: string, projectDir = '', name = '') {
   const withoutProjectPath = projectDir ? value.split(projectDir).join('<project>') : value;
-  return truncate(redactInlineSecrets(withoutProjectPath));
+  const faced = userFacingPlatformResult(name, withoutProjectPath);
+  return truncate(redactInlineSecrets(faced === undefined ? withoutProjectPath : faced));
 }
 
 export type ToolAction =
@@ -277,10 +320,6 @@ export type ToolPresentation = {
   detailed?: boolean;
 };
 
-/** The steps a user waits on with their site open, and the only two that put
- *  work in front of them. */
-const PLATFORM_ACTIONS = new Set<ToolAction>(['Create preview', 'Deploy project']);
-
 /** Reading a reference is bookkeeping like any other read, so the row reads as
  *  plain as one. It still keeps a row of its own: the topic is the point of the
  *  row, and a fold would hide it behind a generic label. */
@@ -289,10 +328,6 @@ const ROW_OWNING_ACTIONS = new Set<ToolAction>([
   'Create preview',
   'Deploy project',
 ]);
-
-export function toolActionTier(action: ToolAction): 'platform' | 'file' {
-  return PLATFORM_ACTIONS.has(action) ? 'platform' : 'file';
-}
 
 /** Whether a step is one a fold would hide, rather than a run to summarise. */
 function keepsOwnRowAction(action: ToolAction): boolean {
@@ -508,6 +543,12 @@ export function presentToolActivity(
   }
   if (name.includes('write project file') || name.includes('files write') || name.includes('write files')) {
     return { action: previouslyReadPaths.has(target) ? 'Edit file' : 'Write file', target };
+  }
+  if (name === 'deploy project') {
+    return { action: 'Deploy project' };
+  }
+  if (name === 'start preview') {
+    return { action: 'Create preview' };
   }
   if (name === 'commands' || name.includes('command')) {
     if (/\bedgeone\s+makers\s+deploy\b/i.test(target)) return { action: 'Deploy project' };
@@ -867,7 +908,9 @@ export function applyStreamEvent(
               ...activity,
               status: event.data.status || (event.data.ok ? 'completed' : 'failed'),
               command: event.data.command || activity.command,
-              outputSummary: event.data.outputSummary || event.data.preview || activity.outputSummary,
+              // An empty summary is a decision to show nothing. Falling through to
+              // the raw result would put the model's note back on the row.
+              outputSummary: event.data.outputSummary ?? event.data.preview ?? activity.outputSummary,
               endedAt: event.data.endedAt || Date.now(),
             }
           : activity

@@ -104,7 +104,7 @@ test('publishing restarts the preview without paying for the smoke gates again',
 
   // The gates cost a real model call, and the project did not change.
   assert.match(preview, /const verifyRoutes = options\.verifyRoutes !== false/);
-  assert.match(preview, /if \(verifyRoutes\) \{\s*await assertGeneratedRoutesReady/);
+  assert.match(preview, /if \(verifyRoutes\) \{[\s\S]*?await assertGeneratedRoutesReady/);
   for (const source of [pipeline, wrapper]) {
     assert.match(source, /startPreviewServer\([\s\S]{0,80}?verifyRoutes: false/);
   }
@@ -173,6 +173,22 @@ test('a failed publish shows the CLI output on the card and one line in the chat
   assert.match(pipeline, /\$\{copy\.failedPrefix\}\$\{summarizeDeployError\(error\)\}/);
 });
 
+test('the deploy button sends a user turn that names deploy_project', async () => {
+  const [zh, en, assemble, prompt] = await Promise.all([
+    surface(I18N),
+    readFile('app/i18n/en.ts', 'utf8'),
+    readFile('agents/_lib/tools/assemble.ts', 'utf8'),
+    readFile('agents/_lib/prompt.ts', 'utf8'),
+  ]);
+
+  assert.match(zh, /请只调用 deploy_project 把当前项目部署到线上/);
+  assert.match(en, /Call only the deploy_project tool to publish this project/);
+  assert.match(assemble, /buildDeployProjectTool/);
+  assert.match(assemble, /mcp__\$\{mcpServerName\}__\$\{DEPLOY_PROJECT_TOOL_NAME\}/);
+  assert.doesNotMatch(prompt, /deploy_project/);
+  assert.doesNotMatch(prompt, /edgeone makers deploy --json once/);
+});
+
 test('a publish reads as one row in the transcript, whoever started it', () => {
   // What the pipeline records for its own run.
   assert.equal(
@@ -185,6 +201,10 @@ test('a publish reads as one row in the transcript, whoever started it', () => {
       name: 'mcp__sandbox__commands',
       inputSummary: JSON.stringify({ command: "edgeone makers deploy -n 'vibe-coding-1234' --json" }),
     }).action,
+    'Deploy project',
+  );
+  assert.equal(
+    presentToolActivity({ name: 'mcp__edgeone-sandbox__deploy_project' }).action,
     'Deploy project',
   );
 });
@@ -299,7 +319,10 @@ test('publishing leaves the composer and the files panel alone', async () => {
   assert.match(body, /if \(isStartingFromHome\) \{[\s\S]*?runCreateSessionPrep/);
   assert.match(live, /openSessionStream/);
   assert.match(body, /startPromptTurn\(/);
-  assert.match(body, /startDeployTurn\(/);
+  assert.match(body, /message: displayMessage/);
+  // The click is a user turn. The agent calls deploy_project; this hook does
+  // not open the deterministic /deploy pipeline.
+  assert.doesNotMatch(body, /startDeployTurn\(/);
   // Only the composer is cleared, and only for a generation turn.
   assert.match(body, /if \(!isDeploy\) \{\s*setInput\(''\);\s*\}/);
   assert.doesNotMatch(body, /setFilesRefreshing/);

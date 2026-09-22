@@ -8,7 +8,6 @@ export {
   presentToolActivity,
   resolveDeployOffer,
   sealOpenThinking,
-  toolActionTier,
   type DeployOfferMessage,
   type ReferenceTopic,
   type ToolAction,

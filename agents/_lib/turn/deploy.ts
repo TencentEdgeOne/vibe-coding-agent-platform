@@ -47,7 +47,7 @@ import { bindLiveWorkspace } from '../session/live-workspace.ts';
 import { sendTurnResult } from './result.ts';
 
 /** Used when an API caller asks to publish without wording the request itself. */
-const DEPLOY_TIMEOUT_SECONDS = 600;
+export const DEPLOY_TIMEOUT_SECONDS = 600;
 
 /** Only has to start the background script, so it never needs the publish budget. */
 const DEPLOY_LAUNCH_TIMEOUT_SECONDS = 120;
@@ -114,7 +114,7 @@ function summarizeDeployError(error: string) {
  * polls — they are a view, and a view that drops bytes must not be able to
  * turn a live site into a reported failure.
  */
-async function publishWithProgress(
+export async function publishWithProgress(
   context: AgentContext,
   target: { projectName: string; appDir: string; env: Record<string, string>; area: string },
   onTail: (tail: string) => void,

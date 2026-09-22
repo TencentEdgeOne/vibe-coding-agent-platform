@@ -30,7 +30,7 @@ import type {
   ProjectState,
 } from '../types.ts';
 import { detectFatalToolError, truncateForStream } from '../utils/text.ts';
-import { sanitizeAssistantText, summarizeToolOutput } from '../../../shared/timeline.ts';
+import { sanitizeAssistantText, summarizeToolOutput, toolPaintsOwnProgress } from '../../../shared/timeline.ts';
 import { parseEchoedExitCode } from '../makers/tool-phase.ts';
 import { buildPrompt } from '../prompt.ts';
 import { getConversationRecord, patchConversationRecord } from './store.ts';
@@ -314,6 +314,13 @@ async function pumpSession(session: LiveQuerySession) {
             const echoedExit = parseEchoedExitCode(text);
             const commandFailed = typeof echoedExit === 'number' && echoedExit !== 0;
             const toolFailed = record.is_error === true || commandFailed;
+            const outputSummary = summarizeToolOutput(text, session.getState().appDir, toolName);
+            // A preview that came up keeps the log it painted while starting.
+            // Replacing that with the tool result would put the model's note,
+            // and a URL that carries an access token, on the row instead.
+            const keepPaintedLog = outputSummary === ''
+              && !toolFailed
+              && toolPaintsOwnProgress(toolName);
             session.turn?.onProgress?.({
               type: 'tool_result',
               data: {
@@ -321,8 +328,10 @@ async function pumpSession(session: LiveQuerySession) {
                 toolName,
                 ...(toolContext?.command ? { command: toolContext.command } : {}),
                 ok: !toolFailed,
-                preview: truncateForStream(text, 8_000),
-                outputSummary: summarizeToolOutput(text, session.getState().appDir, toolName),
+                ...(keepPaintedLog ? {} : {
+                  preview: truncateForStream(text, 8_000),
+                  outputSummary,
+                }),
                 status: toolFailed ? 'failed' : 'completed',
                 endedAt: Date.now(),
               },
@@ -355,12 +364,14 @@ async function pumpSession(session: LiveQuerySession) {
         };
         const toolUseId = typeof progressEvent.tool_use_id === 'string' ? progressEvent.tool_use_id : '';
         const toolContext = progress.toolContextById.get(toolUseId);
+        const toolName = progressEvent.tool_name || toolContext?.name || '';
+        if (toolPaintsOwnProgress(toolName)) continue;
         const elapsed = typeof progressEvent.elapsed_time_seconds === 'number'
           ? Math.max(0, Math.round(progressEvent.elapsed_time_seconds))
           : 0;
         progress.emitToolUseProgress({
           id: toolUseId,
-          name: progressEvent.tool_name || toolContext?.name || '<unknown>',
+          name: toolName || '<unknown>',
           outputSummary: elapsed ? `${elapsed}s` : 'running',
         });
         continue;

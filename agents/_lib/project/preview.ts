@@ -106,6 +106,61 @@ export function rewritePreviewAccessToken(existingUrl: string, token: string) {
   }
 }
 
+/** How often a running preview may repaint the log a person is watching. */
+const PREVIEW_LOG_POLL_MS = 2000;
+
+const sleep = (ms: number) => new Promise((resolve) => { setTimeout(resolve, ms); });
+
+/**
+ * The stage, then the log underneath it.
+ *
+ * The stage is what is happening before the log exists — an install that has
+ * not printed yet, a server that has not opened its file. Once the log has
+ * lines, they are the process, and the stage stays as the heading so a tail
+ * of framework output still says which step it belongs to.
+ */
+export function formatPreviewProgress(stage: string, log = '') {
+  const body = log.trim();
+  return body ? `${stage}\n\n${body}` : stage;
+}
+
+/**
+ * The tail of a file some other command is writing, until `stop` says the
+ * command has finished.
+ *
+ * The launcher keeps the dev server's own output in a file and does not return
+ * until the server answers, so awaiting that command is a blank row for as
+ * long as the boot takes. Reading the file from a second command is what
+ * makes the wait visible. A read that fails says nothing about the boot.
+ */
+export async function followSandboxLog(
+  context: AgentContext,
+  logPath: string,
+  stop: () => boolean,
+  onTail: (tail: string) => void,
+) {
+  let previous = '';
+  while (!stop()) {
+    await sleep(PREVIEW_LOG_POLL_MS);
+    if (stop()) return;
+    try {
+      const poll = await runSandboxCommand(
+        context,
+        `tail -n 40 ${shellQuote(logPath)} 2>/dev/null || true`,
+        { timeout: 15 },
+      );
+      const tail = poll.stdout.trim();
+      if (tail && tail !== previous) {
+        previous = tail;
+        onTail(tail);
+      }
+    } catch {
+      // A missed read is not a failed preview. The command writing the file
+      // is still the thing that decides the outcome.
+    }
+  }
+}
+
 /**
  * `verifyRoutes: false` is for bringing a preview back after a deploy stopped
  * it. The functional gates cost a real model call against the generated agent,
@@ -115,7 +170,12 @@ export function rewritePreviewAccessToken(existingUrl: string, token: string) {
 export async function startPreviewServer(
   context: AgentContext,
   state: ProjectState,
-  options: { verifyRoutes?: boolean; forceRestart?: boolean } = {},
+  options: {
+    verifyRoutes?: boolean;
+    forceRestart?: boolean;
+    /** Live text for the row a person is watching. Absent callers stay quiet. */
+    onProgress?: (text: string) => void;
+  } = {},
 ) {
   const verifyRoutes = options.verifyRoutes !== false;
   await assertMakersProjectCompatible(context, state);
@@ -134,6 +194,7 @@ export async function startPreviewServer(
     if (warm.exitCode === 0) {
       try {
         if (verifyRoutes) {
+          options.onProgress?.(formatPreviewProgress('Checking that the pages answer'));
           await assertGeneratedRoutesReady(context, state);
         }
         return previewServerInfo(launchCommand, false);
@@ -146,24 +207,40 @@ export async function startPreviewServer(
     }
   }
 
+  options.onProgress?.(formatPreviewProgress('Preparing the preview'));
   const makers = await prepareMakersSession(context, state);
 
-  const startResult = await runSandboxCommand(
-    context,
-    buildMakersDevBackgroundCommand({
-      makersPort: MAKERS_DEV_PORT,
-      previewPort: PREVIEW_SERVER_PORT,
-      previewPath: PREVIEW_PATH_PREFIX,
-      projectName: makers.projectName,
-      assetPrefixEnvName: PREVIEW_ASSET_PREFIX_ENV,
-      forceRestart,
-    }),
-    {
-      cwd: state.appDir,
-      timeout: MAKERS_DEV_LAUNCH_TIMEOUT_SECONDS,
-      env: makers.env,
-    },
-  );
+  options.onProgress?.(formatPreviewProgress('Starting the preview server'));
+  let launchStopped = false;
+  let launchLog = '';
+  const followingLaunch = options.onProgress
+    ? followSandboxLog(context, MAKERS_DEV_LOG_PATH, () => launchStopped, (tail) => {
+      launchLog = redactSecret(redactSecret(tail, makers.sandboxToken), makers.gatewayKey);
+      options.onProgress?.(formatPreviewProgress('Starting the preview server', launchLog));
+    })
+    : Promise.resolve();
+  let startResult: Awaited<ReturnType<typeof runSandboxCommand>>;
+  try {
+    startResult = await runSandboxCommand(
+      context,
+      buildMakersDevBackgroundCommand({
+        makersPort: MAKERS_DEV_PORT,
+        previewPort: PREVIEW_SERVER_PORT,
+        previewPath: PREVIEW_PATH_PREFIX,
+        projectName: makers.projectName,
+        assetPrefixEnvName: PREVIEW_ASSET_PREFIX_ENV,
+        forceRestart,
+      }),
+      {
+        cwd: state.appDir,
+        timeout: MAKERS_DEV_LAUNCH_TIMEOUT_SECONDS,
+        env: makers.env,
+      },
+    );
+  } finally {
+    launchStopped = true;
+    await followingLaunch;
+  }
   const startOutput = [startResult.stdout, startResult.stderr].filter(Boolean).join('\n');
   const capturedExitCode = parseMakersDevExitCode(startOutput);
   if (
@@ -184,6 +261,7 @@ export async function startPreviewServer(
   }
 
   if (verifyRoutes) {
+    options.onProgress?.(formatPreviewProgress('Checking that the pages answer', launchLog));
     await assertGeneratedRoutesReady(context, state);
   }
 

@@ -29,6 +29,8 @@ import { separateLegacyMakersDeployment } from './state.ts';
 import { markCreated, persistWorkspace, publishPreview } from './workspace-store.ts';
 import {
   assertPreviewServerReady,
+  followSandboxLog,
+  formatPreviewProgress,
   isPreviewServerReady,
   resolvePublicLinks,
   rewritePreviewAccessToken,
@@ -287,9 +289,12 @@ export async function ensureFileTree(
  * and is why a resume of a static site used to refuse to rebuild its preview
  * while the same site previewed fine inside a chat turn — the turn did not ask.
  */
+const NPM_INSTALL_LOG = '/tmp/edgeone-npm-install.log';
+
 export function ensureDependencies(
   context: AgentContext,
   state: ProjectState,
+  options: { onProgress?: (text: string) => void } = {},
 ): Promise<boolean> {
   // Keyed by the directory rather than the conversation: the install is a
   // property of the tree it runs in, and that is what two callers would collide
@@ -298,11 +303,39 @@ export function ensureDependencies(
     const files = requireSandbox(context).files;
     if (!(await files.exists(`${state.appDir}/package.json`))) return true;
     if (await files.exists(`${state.appDir}/node_modules`)) return true;
-    const installed = await runSandboxCommand(context, 'npm install --no-audit --no-fund', {
-      cwd: state.appDir,
-      timeout: READINESS_BUDGET_MS.dependencies / 1000,
+    const report = options.onProgress;
+    if (!report) {
+      const installed = await runSandboxCommand(context, 'npm install --no-audit --no-fund', {
+        cwd: state.appDir,
+        timeout: READINESS_BUDGET_MS.dependencies / 1000,
+      });
+      return installed.exitCode === 0;
+    }
+    report(formatPreviewProgress('Installing dependencies'));
+    let stopped = false;
+    let detail = '';
+    const following = followSandboxLog(context, NPM_INSTALL_LOG, () => stopped, (tail) => {
+      detail = tail;
+      report(formatPreviewProgress('Installing dependencies', tail));
     });
-    return installed.exitCode === 0;
+    let installed: Awaited<ReturnType<typeof runSandboxCommand>>;
+    try {
+      installed = await runSandboxCommand(
+        context,
+        `npm install --no-audit --no-fund > ${NPM_INSTALL_LOG} 2>&1`,
+        {
+          cwd: state.appDir,
+          timeout: READINESS_BUDGET_MS.dependencies / 1000,
+        },
+      );
+    } finally {
+      stopped = true;
+      await following;
+    }
+    if (installed.exitCode !== 0) {
+      throw new Error(detail.trim() || 'npm install failed');
+    }
+    return true;
   });
 }
 
@@ -327,6 +360,8 @@ export type EnsurePreviewOptions = {
   verifyRoutes?: boolean;
   /** Take down a healthy process first. For the callers that know it is stale. */
   forceRestart?: boolean;
+  /** Live text for the row a person is watching. Absent callers stay quiet. */
+  onProgress?: (text: string) => void;
 };
 
 /**
@@ -392,7 +427,7 @@ async function resolvePreview(
   if (!await timeStage(
     'readiness:preview',
     { phase: 'dependencies' },
-    () => ensureDependencies(context, state),
+    () => ensureDependencies(context, state, { onProgress: options.onProgress }),
   )) {
     throw new Error('Project dependencies are not available for the preview.');
   }
@@ -403,7 +438,10 @@ async function resolvePreview(
   const server = await timeStage(
     'readiness:preview',
     { phase: 'server' },
-    () => startPreviewServer(context, state, { forceRestart: options.forceRestart }),
+    () => startPreviewServer(context, state, {
+      forceRestart: options.forceRestart,
+      onProgress: options.onProgress,
+    }),
   );
   await assertPreviewServerReady(context, server.readyPath);
 

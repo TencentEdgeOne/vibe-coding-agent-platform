@@ -11,10 +11,32 @@ import {
   buildGeneratedChatSmokeScript,
   buildPreviewProxyScript,
 } from '../agents/_lib/makers/cli-dev.ts';
-import { agentRoutesFromListing, generatedRoutesFromListing } from '../agents/_lib/project/preview.ts';
+import { agentRoutesFromListing, formatPreviewProgress, generatedRoutesFromListing } from '../agents/_lib/project/preview.ts';
 import { previewDisplayPathFromPath } from '../shared/preview-display-path.ts';
 import { readCommandsWrapSource } from './helpers/fixtures.ts';
 import { LIVE_TURN, PREVIEW_SURFACE, WORKSPACE, surface } from './helpers/source.ts';
+
+test('a preview that is still starting shows the stage and then the server log', () => {
+  assert.equal(formatPreviewProgress('Starting the preview server'), 'Starting the preview server');
+  assert.equal(
+    formatPreviewProgress('Starting the preview server', 'Running at: http://localhost:8088\n'),
+    'Starting the preview server\n\nRunning at: http://localhost:8088',
+  );
+});
+
+test('start_preview paints the dev server log on its own row while it boots', async () => {
+  const [tool, preview, live, deployTool] = await Promise.all([
+    readFile('agents/_lib/tools/preview-tools.ts', 'utf8'),
+    readFile('agents/_lib/project/preview.ts', 'utf8'),
+    readFile('agents/_lib/session/live.ts', 'utf8'),
+    readFile('agents/_lib/tools/deploy-tools.ts', 'utf8'),
+  ]);
+  assert.match(tool, /onProgress: report/);
+  assert.match(preview, /followSandboxLog\(context, MAKERS_DEV_LOG_PATH/);
+  assert.match(preview, /Installing dependencies|Starting the preview server/);
+  assert.match(live, /keepPaintedLog/);
+  assert.match(deployTool, /onProgress:/);
+});
 
 test('preview address bar shows the application route without the gateway prefix', async () => {
   const screen = await surface(WORKSPACE);
