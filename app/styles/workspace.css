@@ -1,7 +1,7 @@
 /* ============================================================
    Workspace — the split canvas: chat column on the left, the
    preview/code/session result panel on the right. The default
-   split is 3:7; a gutter between the columns updates
+   split is 4:6; a gutter between the columns updates
    --workspace-chat-share.
 
    These rules are intentionally unlayered. Tailwind v4 emits its
@@ -11,7 +11,7 @@
    ============================================================ */
 
 .workspace-shell {
-  --workspace-chat-share: 30%;
+  --workspace-chat-share: 40%;
   display: flex;
   position: relative;
   width: 100%;

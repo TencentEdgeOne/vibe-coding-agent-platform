@@ -9,9 +9,9 @@ import {
   workspaceShellClassName,
 } from '../app/features/workspace/workspace-split.ts';
 
-test('the default chat share is three tenths, so the split is 3:7', () => {
-  assert.equal(WORKSPACE_CHAT_SHARE_DEFAULT, 3 / 10);
-  assert.equal(workspaceChatShareCss(WORKSPACE_CHAT_SHARE_DEFAULT), '30.00%');
+test('the default chat share is four tenths, so the split is 4:6', () => {
+  assert.equal(WORKSPACE_CHAT_SHARE_DEFAULT, 4 / 10);
+  assert.equal(workspaceChatShareCss(WORKSPACE_CHAT_SHARE_DEFAULT), '40.00%');
 });
 
 test('dragging the split keeps both columns above their minimum widths', () => {
@@ -21,7 +21,7 @@ test('dragging the split keeps both columns above their minimum widths', () => {
   assert.equal(clampWorkspaceChatShare(1, width), 1 - WORKSPACE_PANEL_MIN_PX / width);
 });
 
-test('an unusable shell width falls back to the default 3:7 split', () => {
+test('an unusable shell width falls back to the default 4:6 split', () => {
   assert.equal(clampWorkspaceChatShare(0.8, 200), WORKSPACE_CHAT_SHARE_DEFAULT);
   assert.equal(clampWorkspaceChatShare(Number.NaN, 1000), WORKSPACE_CHAT_SHARE_DEFAULT);
 });

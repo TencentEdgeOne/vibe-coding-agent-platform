@@ -216,14 +216,14 @@ test('the full-screen prep overlay drops on ready while the preview keeps local 
   assert.match(live, /options\.onReady\(\)/);
 });
 
-test('the split workspace defaults to a 3:7 chat-to-panel ratio and can be dragged', async () => {
+test('the split workspace defaults to a 4:6 chat-to-panel ratio and can be dragged', async () => {
   const [css, screen] = await Promise.all([
     readFile('app/styles/workspace.css', 'utf8'),
     surface(WORKSPACE),
   ]);
   const stacked = css.slice(css.indexOf('@media (max-width: 900px)'));
 
-  assert.match(css, /--workspace-chat-share:\s*30%/);
+  assert.match(css, /--workspace-chat-share:\s*40%/);
   assert.match(css, /flex: 0 0 var\(--workspace-chat-share\)/);
   assert.match(screen, /function WorkspaceSplitHandle\(/);
   assert.match(screen, /role="separator"/);

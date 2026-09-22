@@ -1,5 +1,5 @@
-// Chat : panel is 3 : 7, so the conversation column owns three tenths.
-export const WORKSPACE_CHAT_SHARE_DEFAULT = 3 / 10;
+// Chat : panel is 4 : 6, so the conversation column owns four tenths.
+export const WORKSPACE_CHAT_SHARE_DEFAULT = 4 / 10;
 export const WORKSPACE_CHAT_SHARE_STEP = 0.02;
 export const WORKSPACE_CHAT_MIN_PX = 280;
 export const WORKSPACE_PANEL_MIN_PX = 360;
