@@ -350,6 +350,11 @@ test('every assistant turn keeps its own status rail through completion', async 
   assert.match(styles, /\.agent-status-bar\.is-sticky \{[\s\S]*?position: sticky;/);
   assert.match(styles, /\.agent-status-bar-indicator i \{[\s\S]*?animation: agent-status-bar-breathe/);
   assert.match(styles, /@keyframes agent-status-bar-breathe/);
+  assert.match(
+    styles,
+    /\.conversation-composer-dock \{[\s\S]*?position: relative;[\s\S]*?z-index: 4;/,
+  );
+  assert.match(styles, /\.model-picker-menu \{[\s\S]*?z-index: 20;/);
   assert.doesNotMatch(styles, /agent-running-spin/);
   assert.match(zh, /activityPreparingAgent: '正在准备 Agent'/);
   assert.match(en, /activityPreparingAgent: 'Preparing the agent'/);

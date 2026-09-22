@@ -676,6 +676,10 @@
 /* Offer sits in this dock so it shares the composer's side margins. */
 .conversation-composer-dock {
   display: flex;
+  /* The model menu opens upward from here. Keep the whole dock above the
+     sticky status bar so the menu is never covered by the stream. */
+  position: relative;
+  z-index: 4;
   flex-direction: column;
   margin: 12px 18px 18px;
 }
