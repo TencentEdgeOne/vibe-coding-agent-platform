@@ -98,25 +98,6 @@ export function startPromptTurn(options: {
   });
 }
 
-export function startDeployTurn(options: {
-  conversationId: string;
-  turnId: string;
-  language?: Locale;
-  apiKey?: string;
-  signal?: AbortSignal;
-}) {
-  return fetch('/deploy', {
-    method: 'POST',
-    headers: conversationHeaders(options.conversationId),
-    body: JSON.stringify({
-      turnId: options.turnId,
-      ...(options.language ? { language: options.language } : {}),
-      ...(options.apiKey ? { apiKey: options.apiKey } : {}),
-    }),
-    signal: options.signal,
-  });
-}
-
 export async function stopChatTask(
   conversationId: string,
   turn: PersistedActivityTurn,

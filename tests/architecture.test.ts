@@ -62,7 +62,6 @@ test('shared modules remain runtime agnostic', async () => {
 const AGENT_ROUTE_FILES = new Set([
   'agents/session.ts',
   'agents/prompt.ts',
-  'agents/deploy.ts',
   'agents/preview.ts',
   'agents/stop.ts',
   'agents/file.ts',
@@ -177,7 +176,6 @@ test('session kernel and makers CLI live under agents/_lib', async () => {
     'shared/timeline.ts',
     'shared/protocol.ts',
     'agents/prompt.ts',
-    'agents/deploy.ts',
   ]) {
     await access(target);
   }

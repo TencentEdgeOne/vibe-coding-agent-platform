@@ -368,7 +368,7 @@ test('the conversation card waits until the turn finishes, then submits as an ag
   assert.doesNotMatch(applyClient, /message:/);
   const promptTurn = api.slice(
     api.indexOf('export function startPromptTurn'),
-    api.indexOf('export function startDeployTurn'),
+    api.indexOf('export async function stopChatTask'),
   );
   assert.doesNotMatch(promptTurn, /gatewaySkip/);
   assert.match(promptRoute, /!message && \(apiKey \|\| gatewaySkip\)/);

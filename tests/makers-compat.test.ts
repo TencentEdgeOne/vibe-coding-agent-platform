@@ -69,12 +69,6 @@ test('the SDK session is wired to the vendored skills and the extracted prompt',
   );
 });
 
-test('package.json without scripts.build is not a thrown verification failure', async () => {
-  const source = await readFile('agents/_lib/project/scaffold.ts', 'utf8');
-  assert.doesNotMatch(source, /process\.exit\(p\.scripts && p\.scripts\.build \? 0 : 2\)/);
-  assert.match(source, /buildFlag === 'yes'/);
-});
-
 test('direct sandbox CLI replaces custom tools while retaining relevant compatibility checks', async () => {
   const [agent, projectTools, commandTools, compatibility] = await Promise.all([
     readFile('agents/_lib/session/live.ts', 'utf8'),

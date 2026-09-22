@@ -73,19 +73,3 @@ export async function runWorkspaceSnapshotPipeline(context: AgentContext): Promi
     }, 500);
   }
 }
-
-export async function runPreviewStatusPipeline(context: AgentContext): Promise<Response> {
-  const { conversationId } = resolveConversationId(context, { allowQuery: true });
-  if (!conversationId) {
-    return jsonResponse({ ok: false, error: 'missing conversation_id' }, 400);
-  }
-  const state = await getProjectState(context, conversationId);
-  const preview = previewLinkFromState(state);
-  return jsonResponse({
-    ok: true,
-    stage: 'preview',
-    conversation_id: conversationId,
-    ...(preview.url ? { preview } : {}),
-    deployment: state.deployment,
-  });
-}

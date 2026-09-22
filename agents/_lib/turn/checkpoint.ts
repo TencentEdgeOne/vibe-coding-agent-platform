@@ -1,24 +1,11 @@
 import { requireSandbox, type AgentContext } from '../runtime/context.ts';
-import { getFileTree } from '../project/fs.ts';
-import type { FileTreeItem, ProjectState, StreamSend } from '../types.ts';
+import type { ProjectState } from '../types.ts';
 export {
   compactUserFacingReply,
   replyLocaleFor,
   resolveFinishedTurn,
   withLiveDeploymentUrl,
 } from '../../../shared/user-facing-reply.ts';
-
-/** The preview link as the frontend expects it, or nothing when none is live. */
-export function previewLinkFromState(state: ProjectState) {
-  if (!state.previewUrl) {
-    return {};
-  }
-  return {
-    url: state.previewUrl,
-    sandboxDebugUrl: state.sandboxDebugUrl,
-    kind: state.previewKind,
-  };
-}
 
 /**
  * Remove a preview link the model echoed back.
@@ -169,75 +156,6 @@ export function createProjectCheckpointController(
       dirty = true;
       await kick();
       return lastSucceeded;
-    },
-  };
-}
-
-// Shorter than the checkpoint window: the Files panel is on screen, so the tree
-// should look live, and a stale listing is more noticeable than a stale backup.
-const FILE_TREE_DEBOUNCE_MS = 400;
-
-export type FileTreePushController = {
-  /** Coalesce a mid-turn push; the tree is read once per quiet period. */
-  schedule: () => void;
-  /** Read and push now, for the callers that act on the tree's contents. */
-  flush: (fallbackMessage: string) => Promise<FileTreeItem[]>;
-};
-
-// Listing the tree costs a sandbox `find`, and the agent writes files in bursts,
-// so a push per write bought one round trip per file for a panel that only ever
-// shows the newest listing. Bursts now collapse into a single read, and reads
-// never overlap.
-export function createFileTreePushController(
-  context: AgentContext,
-  state: ProjectState,
-  send: StreamSend,
-): FileTreePushController {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let chain: Promise<FileTreeItem[]> = Promise.resolve([]);
-
-  const read = async (fallbackMessage: string) => {
-    try {
-      const items = await getFileTree(context, state);
-      send({
-        type: 'file_tree',
-        data: {
-          root: state.appDir,
-          items,
-        },
-      });
-      return items;
-    } catch (error) {
-      // Non-fatal: the turn reuses whatever listing it already has for the
-      // closing workspace event, and GET /workspace remains a pull fallback.
-
-      console.warn('[file-tree]', error instanceof Error ? error.message : fallbackMessage);
-      return [];
-    }
-  };
-
-  const kick = (fallbackMessage: string) => {
-    chain = chain.then(
-      () => read(fallbackMessage),
-      () => read(fallbackMessage),
-    );
-    return chain;
-  };
-
-  return {
-    schedule() {
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => {
-        timer = undefined;
-        void kick('Failed to read the file list.');
-      }, FILE_TREE_DEBOUNCE_MS);
-    },
-    flush(fallbackMessage: string) {
-      if (timer) {
-        clearTimeout(timer);
-        timer = undefined;
-      }
-      return kick(fallbackMessage);
     },
   };
 }

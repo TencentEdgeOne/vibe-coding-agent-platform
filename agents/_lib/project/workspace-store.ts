@@ -1,4 +1,4 @@
-import type { BuildInfo, DeploymentInfo, PreviewKind } from '../../../shared/protocol.ts';
+import type { DeploymentInfo, PreviewKind } from '../../../shared/protocol.ts';
 import { isMakersDeployUrl } from '../../../shared/makers-url.ts';
 import type { PersistCapable } from '../runtime/context.ts';
 import { saveProjectState } from '../session/store.ts';
@@ -27,14 +27,6 @@ export function clearPreview(state: ProjectState) {
   state.sandboxDebugUrl = undefined;
   state.previewPublished = undefined;
   state.previewKind = undefined;
-  return state;
-}
-
-export function resetWorkspaceFields(state: ProjectState) {
-  state.created = false;
-  clearPreview(state);
-  state.deployment = undefined;
-  state.lastBuild = undefined;
   return state;
 }
 
@@ -75,11 +67,6 @@ export function bindMakersTenantId(state: ProjectState, tenantId: string) {
 
 export function bindMakersApiRegion(state: ProjectState, region: 'china' | 'global') {
   state.makersApiRegion = region;
-  return state;
-}
-
-export function setLastBuild(state: ProjectState, build: BuildInfo) {
-  state.lastBuild = build;
   return state;
 }
 

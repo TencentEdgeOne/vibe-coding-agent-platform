@@ -185,24 +185,12 @@ export async function saveChatTask(
   await patchConversationRecord(context, conversationId, { chatTask: task });
 }
 
-export async function getModelPreference(context: { blobStore?: BlobStoreLike }, conversationId: string) {
-  return (await getConversationRecord(context, conversationId)).modelPreference?.trim() || '';
-}
-
 export async function saveModelPreference(
   context: { blobStore?: BlobStoreLike },
   conversationId: string,
   model: string,
 ) {
   await patchConversationRecord(context, conversationId, { modelPreference: model.trim() });
-}
-
-export async function getLanguagePreference(
-  context: { blobStore?: BlobStoreLike },
-  conversationId: string,
-) {
-  const value = (await getConversationRecord(context, conversationId)).languagePreference;
-  return value === 'zh' || value === 'en' ? value : '';
 }
 
 export async function saveLanguagePreference(

@@ -319,9 +319,7 @@ test('sandbox, session, and preview routes declare the lazy boundary', async () 
   assert.match(resume, /await activateSandbox\(context, conversationId\)/);
 
   assert.match(snapshot, /export async function loadWorkspaceSnapshot[\s\S]*?activateSandbox/);
-  const status = snapshot.slice(snapshot.indexOf('export async function runPreviewStatusPipeline'));
-  assert.match(status, /getProjectState/);
-  assert.doesNotMatch(status, /activateSandbox/);
+  assert.doesNotMatch(snapshot, /runPreviewStatusPipeline/);
   assert.match(read, /activateSandbox/);
   assert.match(download, /activateSandbox/);
   assert.match(stop, /sandboxWasActivated\(conversationId\)/);

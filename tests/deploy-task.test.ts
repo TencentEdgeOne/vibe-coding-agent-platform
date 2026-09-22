@@ -9,19 +9,14 @@ import { CONVERSATION, I18N, LIVE_TURN, NEW_PROJECT, WORKSPACE, surface } from '
 // task slot: whichever starts first makes the other wait, and a refresh
 // mid-publish reconnects through the stream the frontend already knows.
 test('publishing occupies the chat task slot instead of a route of its own', async () => {
-  const [tasks, route, resume, client] = await Promise.all([
+  const [tasks, resume, client] = await Promise.all([
     readFile('agents/_lib/session/task.ts', 'utf8'),
-    readFile('agents/deploy.ts', 'utf8'),
     readFile('agents/_lib/session/resume.ts', 'utf8'),
     surface('app/features/workspace/workspace-api.ts'),
   ]);
 
   assert.match(tasks, /kind === 'deploy'[\s\S]*?runDeployPipeline/);
-  assert.match(route, /kind: 'deploy'/);
-  assert.match(route, /language: String\(body\.language/);
-  assert.match(client, /fetch\('\/deploy'/);
-  assert.match(client, /language: options\.language/);
-  assert.doesNotMatch(route, /siteDomain: String\(body\?\.siteDomain/);
+  assert.doesNotMatch(client, /fetch\('\/deploy'/);
   assert.doesNotMatch(client, /siteDomain: options\.siteDomain/);
   assert.doesNotMatch(resume, /streamUrl: `\/chat\?runId=/);
   assert.match(resume, /iterateLiveChatTaskEvents/);
@@ -326,8 +321,7 @@ test('publishing leaves the composer and the files panel alone', async () => {
   assert.doesNotMatch(body, /runCreateSessionPrep|sessionPreparing|openSessionStream/);
   assert.match(body, /startPromptTurn\(/);
   assert.match(body, /message: displayMessage/);
-  // The click is a user turn. The agent calls deploy_project; this hook does
-  // not open the deterministic /deploy pipeline.
+  // The click is a user turn. This hook never opens a route of its own.
   assert.doesNotMatch(body, /startDeployTurn\(/);
   // Only the composer is cleared, and only for a generation turn. A deploy
   // click and an API key card both send a prompt without touching the draft.

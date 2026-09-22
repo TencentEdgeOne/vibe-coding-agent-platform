@@ -39,9 +39,3 @@ export function truncateForStream(text: string, max: number): string {
   if (text.length <= max) return text;
   return `${text.slice(0, max)}…(truncated ${text.length - max}b)`;
 }
-
-export function truncateForPrompt(text: string, max: number): string {
-  if (!text) return '';
-  if (text.length <= max) return text;
-  return `${text.slice(0, max)}\n\n[Log truncated; ${text.length - max} characters were omitted]`;
-}

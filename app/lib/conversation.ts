@@ -1,5 +1,4 @@
 import type { AssistantActivity, ChatMessage } from '../types/workspace';
-import { sanitizeThinkingContent as timelineSanitizeThinkingContent } from '../../shared/timeline.ts';
 
 const CONVERSATION_STORAGE_KEY = 'vibe-coding-platform-conversation-id';
 
@@ -114,10 +113,6 @@ export function markLastTurnStopped(
   };
 }
 
-export function sanitizeThinkingContent(value: string) {
-  return timelineSanitizeThinkingContent(value);
-}
-
 export function extractProjectName() {
   if (typeof window === 'undefined') {
     return {
@@ -180,19 +175,4 @@ export function base64ToBlob(base64: string, contentType: string): Blob {
     bytes[i] = binary.charCodeAt(i);
   }
   return new Blob([bytes], { type: contentType });
-}
-
-export function downloadTextFile(filename: string, content: string, mimeType = 'application/x-ndjson') {
-  if (typeof document === 'undefined') {
-    return;
-  }
-  const blob = new Blob([content], { type: `${mimeType};charset=utf-8` });
-  const objectUrl = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = objectUrl;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(objectUrl);
 }

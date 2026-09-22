@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import test from 'node:test';
-import { repairNestedAppDirLayout } from '../agents/_lib/project/scaffold.ts';
+import { repairNestedAppDirLayout } from '../agents/_lib/project/layout.ts';
 import { projectState } from './helpers/fixtures.ts';
 
 const execFileAsync = promisify(execFile);

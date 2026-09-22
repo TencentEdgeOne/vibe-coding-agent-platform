@@ -26,10 +26,9 @@ test('the model menu is an edge function, not an agent route', async () => {
   await assert.rejects(access('agents/models.ts'));
 });
 
-test('session is GET restore; turns go through /prompt and /deploy', async () => {
+test('session is GET restore; turns go through /prompt', async () => {
   const session = await readFile('agents/session.ts', 'utf8');
   const prompt = await readFile('agents/prompt.ts', 'utf8');
-  const deploy = await readFile('agents/deploy.ts', 'utf8');
   const preview = await readFile('agents/preview.ts', 'utf8');
   const tasks = await readFile('agents/_lib/session/task.ts', 'utf8');
   const client = await surface('app/features/workspace/workspace-api.ts');
@@ -39,12 +38,10 @@ test('session is GET restore; turns go through /prompt and /deploy', async () =>
   assert.doesNotMatch(session, /onRequestPost/);
   assert.match(prompt, /onRequestPost/);
   assert.match(prompt, /kind: 'prompt'/);
-  assert.match(deploy, /onRequestPost/);
-  assert.match(deploy, /kind: 'deploy'/);
   assert.match(tasks, /export async function\* iterateLiveChatTaskEvents/);
   assert.match(client, /fetch\('\/session'/);
   assert.match(client, /fetch\('\/prompt',[\s\S]*?method: 'POST'/);
-  assert.match(client, /fetch\('\/deploy',[\s\S]*?method: 'POST'/);
+  assert.doesNotMatch(client, /fetch\('\/deploy'/);
   assert.doesNotMatch(client, /fetch\('\/session-model'/);
   assert.doesNotMatch(client, /fetch\('\/chat'/);
   assert.doesNotMatch(client, /fetch\('\/resume'/);
@@ -52,11 +49,11 @@ test('session is GET restore; turns go through /prompt and /deploy', async () =>
   assert.doesNotMatch(client, /resetProject/);
   assert.match(preview, /onRequestPost/);
   assert.match(preview, /runProjectResumePreviewPipeline/);
-  assert.match(preview, /onRequestGet/);
-  assert.match(preview, /runPreviewStatusPipeline/);
+  assert.doesNotMatch(preview, /onRequestGet/);
   assert.match(client, /fetch\('\/preview',[\s\S]*?method: 'POST'/);
   await assert.rejects(access('agents/chat.ts'));
   await assert.rejects(access('agents/resume.ts'));
+  await assert.rejects(access('agents/deploy.ts'));
   await assert.rejects(access('agents/session-model.ts'));
   await assert.rejects(access('agents/session/index.ts'));
 });
@@ -181,7 +178,7 @@ test('workspace snapshot and preview status are pullable without the chat stream
 
   assert.match(workspace, /onRequestGet/);
   assert.match(workspace, /runWorkspaceSnapshotPipeline/);
-  assert.match(preview, /onRequestGet/);
+  assert.doesNotMatch(preview, /onRequestGet/);
   assert.match(client, /fetch\('\/workspace'/);
   assert.match(client, /fetch\(`\/file\?paths=/);
   assert.match(

@@ -815,7 +815,6 @@ test('uses the sandbox-provided CLI without installing or prewarming it', async 
     'agents/_lib/tools/commands-wrap.ts',
     'agents/_lib/makers/project.ts',
     'agents/_lib/project/preview.ts',
-    'agents/_lib/project/scaffold.ts',
     'agents/_lib/turn/chat.ts',
     'agents/_lib/session/resume.ts',
   ];
