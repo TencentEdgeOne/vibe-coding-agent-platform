@@ -628,6 +628,53 @@ export const SMOKE_EXIT = {
   route: 40,
 } as const;
 
+/** Stable marker a smoke script prints so its verdict survives the sandbox layer. */
+export const SMOKE_RESULT_PREFIX = 'MAKERS_SMOKE_RESULT:';
+
+export type SmokeResultKind =
+  | 'transport'
+  | 'application'
+  | 'route'
+  | 'complete';
+
+export type SmokeResult = {
+  kind: SmokeResultKind;
+  /** Present only for a failure: the body, log or explanation the script captured. */
+  detail: string;
+};
+
+export function parseSmokeResult(output: string): SmokeResult | undefined {
+  const escaped = output.replace(/\\n/g, '\n');
+  const lines = escaped.split(/\r?\n/);
+  let markerIndex = -1;
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    if (lines[index].startsWith(SMOKE_RESULT_PREFIX)) {
+      markerIndex = index;
+      break;
+    }
+  }
+  if (markerIndex < 0) return undefined;
+
+  const value = lines[markerIndex].slice(SMOKE_RESULT_PREFIX.length).trim();
+  const code = Number(value);
+  const knownCode = (Object.values(SMOKE_EXIT) as readonly number[]).includes(code);
+  const kind = value && knownCode
+    ? value === String(SMOKE_EXIT.transport)
+      ? 'transport'
+      : value === String(SMOKE_EXIT.application)
+        ? 'application'
+        : 'route'
+    : value === 'complete'
+      ? 'complete'
+      : undefined;
+  if (!kind) return undefined;
+
+  return {
+    kind,
+    detail: lines.slice(markerIndex + 1).join('\n').trim(),
+  };
+}
+
 /**
  * Budget for the generated /chat smoke test.
  *
@@ -676,9 +723,13 @@ export function buildGeneratedChatSmokeScript({
   return [
     `body=${tmpPathPrefix}-$$-body`,
     `headers=${tmpPathPrefix}-$$-headers`,
-    // The failing body is echoed to stderr below, so nothing is lost by cleaning
-    // up: leaving one file per probe behind would just fill /tmp.
+    // The verdict and body are echoed below, so cleaning up loses nothing and
+    // leaving one file per probe behind would just fill /tmp.
     "trap 'rm -f \"$body\" \"$headers\"' EXIT",
+    // A non-zero shell exit is collapsed by the sandbox into an exception that
+    // drops stdout and stderr. Keeping the shell at zero and reporting the
+    // verdict in a marker is what lets the real /chat response reach the caller.
+    'set +e',
     'attempt=0',
     'while :; do',
     '  attempt=$((attempt + 1))',
@@ -698,29 +749,35 @@ export function buildGeneratedChatSmokeScript({
     '  http=$(awk \'NR==1 {print $2}\' "$headers" 2>/dev/null)',
     '  if [ "$status" -eq 0 ] && [ "$http" = "200" ]; then break; fi',
     `  if [ "$attempt" -lt ${attempts} ]; then sleep ${retrySleepSeconds}; continue; fi`,
-    `  echo "Generated /chat endpoint did not return HTTP 200 after ${attempts} attempts." >&2`,
-    '  cat "$body" >&2 2>/dev/null || true',
-    `  exit ${transportExit}`,
+    `  echo "${SMOKE_RESULT_PREFIX}${transportExit}"`,
+    `  echo "Generated /chat endpoint did not return HTTP 200 after ${attempts} attempts."`,
+    '  cat "$body" 2>/dev/null || true',
+    '  exit 0',
     'done',
     // An HTML document from a POST to an SSE endpoint is the static site
     // answering: makers dev fell through to index.html because it never mounted
     // the route. It comes back 200, so every check below would read it as a
     // malformed reply from a handler that was in fact never reached.
     'if grep -qiE \'^[[:space:]]*<(!doctype|html)\' "$body"; then',
-    '  echo "POST /chat returned an HTML document, so makers dev never mounted the route and served the static page instead." >&2',
-    '  head -c 400 "$body" >&2 2>/dev/null || true',
-    `  exit ${routeExit}`,
+    `  echo "${SMOKE_RESULT_PREFIX}${routeExit}"`,
+    '  echo "POST /chat returned an HTML document, so makers dev never mounted the route and served the static page instead."',
+    '  head -c 400 "$body" 2>/dev/null || true',
+    '  exit 0',
     'fi',
     'if ! grep -q \'data:\' "$body" || ! grep -q \'\\[DONE\\]\' "$body"; then',
-    '  echo "Generated /chat endpoint did not return a complete SSE stream." >&2',
-    '  cat "$body" >&2 2>/dev/null || true',
-    `  exit ${applicationExit}`,
+    `  echo "${SMOKE_RESULT_PREFIX}${applicationExit}"`,
+    '  echo "Generated /chat endpoint did not return a complete SSE stream. Every SSE stream must end with data: [DONE]."',
+    '  cat "$body" 2>/dev/null || true',
+    '  exit 0',
     'fi',
     'if grep -Eq \'"(event|type)"[[:space:]]*:[[:space:]]*"(error|error_message)"\' "$body"; then',
-    '  echo "Generated /chat endpoint returned an SSE error event." >&2',
-    '  cat "$body" >&2 2>/dev/null || true',
-    `  exit ${applicationExit}`,
+    `  echo "${SMOKE_RESULT_PREFIX}${applicationExit}"`,
+    '  echo "Generated /chat endpoint returned an SSE error event."',
+    '  cat "$body" 2>/dev/null || true',
+    '  exit 0',
     'fi',
+    `echo "${SMOKE_RESULT_PREFIX}complete"`,
+    'exit 0',
   ].join('\n');
 }
 

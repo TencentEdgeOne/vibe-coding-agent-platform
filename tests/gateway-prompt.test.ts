@@ -416,7 +416,8 @@ test('the host still writes .env from a chat sentence', async () => {
   assert.match(prompt, /配置好并重新预览/);
   assert.match(prompt, /shows the input card after this turn, not during it/);
   assert.match(prompt, /API Key: sk-••••••••wxyz/);
-  assert.match(prompt, /Call start_preview once with restart:true and do nothing else/);
+  assert.match(prompt, /Call start_preview with restart:true/);
+  assert.match(prompt, /fix the named generated files and call start_preview again/);
 });
 
 test('applying a key or skip emits gateway_credentials resolved', async () => {

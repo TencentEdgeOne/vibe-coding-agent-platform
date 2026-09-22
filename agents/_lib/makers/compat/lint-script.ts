@@ -104,6 +104,45 @@ function hasValidAgentEntry(source, file) {
     || /export\s+(?:const|let|var)\s+onRequest(?:Get|Post|Put|Patch|Delete|Head|Options)?\s*=/.test(source);
 }
 
+function localImportSpecifiers(source) {
+  const specifiers = [];
+  const pattern = /(?:from\s*|import\s*\()\s*['"](\.{1,2}\/[^'"]+)['"]/g;
+  let match;
+  while ((match = pattern.exec(source))) specifiers.push(match[1]);
+  return specifiers;
+}
+
+function resolveLocalAgentFile(fromFile, specifier) {
+  const base = path.posix.normalize(path.posix.join(path.posix.dirname(fromFile), specifier));
+  const candidates = [
+    base,
+    base + '.ts',
+    base + '.tsx',
+    base + '.js',
+    base + '.mjs',
+    base + '.cjs',
+    base + '/index.ts',
+    base + '/index.tsx',
+    base + '/index.js',
+    base + '/index.mjs',
+    base + '/index.cjs',
+  ];
+  return candidates.find((candidate) => files.includes(candidate));
+}
+
+// The terminal frame may live in the route or in a local helper it imports.
+// Resolving those imports keeps the check from demanding a second copy of the
+// protocol in every endpoint that already shares createSSEResponse.
+function sourceSendsDone(file, seen) {
+  if (!file || seen.has(file)) return false;
+  seen.add(file);
+  const source = readLintSource(file);
+  if (/\[DONE\]/.test(source)) return true;
+  return localImportSpecifiers(source).some((specifier) => (
+    sourceSendsDone(resolveLocalAgentFile(file, specifier), seen)
+  ));
+}
+
 walk('.');
 
 const packageJson = fs.existsSync('package.json') ? readJson('package.json') : {};
@@ -207,6 +246,27 @@ if (agentFiles.length > 0) {
         'MKR009',
         file,
         'gpt-4o-mini is not a valid Makers default; use the model documented by the makers-agents skill.',
+      );
+    }
+  }
+
+  // The preview only gets a model answer after a key is configured, so a
+  // generated /chat stream that never closes is invisible until the exact
+  // moment the user starts trying to chat. The smoke gate now reports it as a
+  // project problem, and this lint catches the same omission one step earlier,
+  // before makers dev starts.
+  for (const file of agentEntries) {
+    const source = readLintSource(file);
+    const usesSseHelper = /\bcreateSSEResponse\s*\(/.test(source)
+      || /\bsseEvent\s*\(/.test(source);
+    if (usesSseHelper && !sourceSendsDone(file, new Set())) {
+      addError(
+        'MKR023',
+        file,
+        'this agent streams SSE but never sends the terminal data: [DONE] frame. Every generated '
+          + 'agent stream must close with data: [DONE] on success, error, and abort paths — put it in '
+          + 'the stream generator finally block or in the shared createSSEResponse helper, not only '
+          + 'after the happy-path loop.',
       );
     }
   }

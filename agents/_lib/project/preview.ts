@@ -18,6 +18,7 @@ import {
   buildMakersDevBackgroundCommand,
   buildMakersDevLaunchCommand,
   parseMakersDevExitCode,
+  parseSmokeResult,
 } from '../makers/cli-dev.ts';
 import { makersFileSemantic } from '../../../shared/makers-file-semantics.ts';
 import { redactSecret } from '../makers/cli-deploy.ts';
@@ -475,17 +476,31 @@ async function assertGeneratedAgentChatReady(
     }),
     { cwd: state.appDir, timeout: GENERATED_CHAT_SMOKE.commandTimeoutSeconds },
   );
-  if (smoke.exitCode === 0) return;
+  const result = parseSmokeResult([smoke.stdout, smoke.stderr].filter(Boolean).join('\n'));
+  if (result?.kind === 'complete') return;
+  if (smoke.exitCode !== 0) {
+    throw smokeFailure(
+      smoke.exitCode,
+      [smoke.stderr, smoke.stdout].filter(Boolean).join('\n')
+        || 'Generated /chat endpoint smoke test failed.',
+      "The preview server itself is healthy: fix the generated agent's response, and makers dev will pick it up on save. Restarting the dev server will not change this. Do not probe external gateways or runtime internals.",
+    );
+  }
+  if (!result) {
+    throw new Error(
+      `Generated /chat endpoint smoke test did not report a verdict.\n${smoke.stdout || smoke.stderr}`,
+    );
+  }
 
-  let detail = smoke.stderr || smoke.stdout || 'Generated /chat endpoint smoke test failed.';
+  let detail = result.detail || 'Generated /chat endpoint smoke test failed.';
   // Only for an unmounted route: for a reply that arrived and was wrong, the
   // reply itself is the evidence and the server log has nothing to add.
-  if (smoke.exitCode === SMOKE_EXIT.route) {
+  if (result.kind === 'route') {
     const log = await readMakersDevLog(context);
     if (log) detail = `${detail}\n--- makers dev log ---\n${log}`;
   }
   throw smokeFailure(
-    smoke.exitCode,
+    SMOKE_EXIT[result.kind],
     detail,
     "The preview server itself is healthy: fix the generated agent's response, and makers dev will pick it up on save. Restarting the dev server will not change this. Do not probe external gateways or runtime internals.",
   );

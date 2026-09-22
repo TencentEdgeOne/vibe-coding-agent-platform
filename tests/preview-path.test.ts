@@ -10,6 +10,7 @@ import {
   buildGeneratedApiSmokeScript,
   buildGeneratedChatSmokeScript,
   buildPreviewProxyScript,
+  parseSmokeResult,
 } from '../agents/_lib/makers/cli-dev.ts';
 import { agentRoutesFromListing, formatPreviewProgress, generatedRoutesFromListing } from '../agents/_lib/project/preview.ts';
 import { previewDisplayPathFromPath } from '../shared/preview-display-path.ts';
@@ -230,9 +231,13 @@ function startStubChatServer(handler: http.RequestListener) {
 }
 
 function runShell(script: string) {
-  return new Promise<number>((resolve) => {
-    execFile('sh', ['-c', script], { timeout: 120_000 }, (error) => {
-      resolve(typeof error?.code === 'number' ? error.code : 0);
+  return new Promise<{ exitCode: number; output: string }>((resolve) => {
+    execFile('sh', ['-c', script], { timeout: 120_000 }, (error, stdout, stderr) => {
+      const failed = error as (Error & { code?: number; stdout?: string; stderr?: string }) | null;
+      resolve({
+        exitCode: typeof failed?.code === 'number' ? failed.code : 0,
+        output: `${stdout || ''}${stderr || ''}`,
+      });
     });
   });
 }
@@ -314,14 +319,28 @@ test('the chat smoke script separates a rebuilding server from a broken reply', 
         conversationId: 'preview-smoke-test-run',
         retrySleepSeconds: 0,
       });
-      return { name: testCase.name, expected: testCase.expected, actual: await runShell(script) };
+      const result = await runShell(script);
+      return {
+        name: testCase.name,
+        expected: testCase.expected,
+        actual: parseSmokeResult(result.output)?.kind,
+        exitCode: result.exitCode,
+      };
     } finally {
       await new Promise((resolve) => server.close(resolve));
     }
   }));
 
   for (const result of results) {
-    assert.equal(result.actual, result.expected, result.name);
+    const expectedKind = result.expected === SMOKE_EXIT.transport
+      ? 'transport'
+      : result.expected === SMOKE_EXIT.application
+        ? 'application'
+        : result.expected === SMOKE_EXIT.route
+          ? 'route'
+          : 'complete';
+    assert.equal(result.actual, expectedKind, result.name);
+    assert.equal(result.exitCode, 0, `${result.name} must keep stdout visible to the host`);
   }
 });
 
@@ -380,10 +399,11 @@ test('the API route probe only fails on server errors and hangs', async () => {
         routes: testCase.routes,
         retrySleepSeconds: 0,
       });
+      const result = await runShell(script);
       return {
         name: testCase.name,
         expected: testCase.expected,
-        actual: await runShell(script),
+        actual: result.exitCode,
       };
     } finally {
       await new Promise((resolve) => server.close(resolve));
@@ -410,6 +430,8 @@ test('probes really pause between attempts outside the tests', () => {
 
   assert.match(chat, /sleep 2;/);
   assert.match(api, /sleep 2;/);
+  assert.match(chat, /MAKERS_SMOKE_RESULT:/);
+  assert.match(chat, /set \+e/);
 });
 
 test('only static routes are probed, and they come from the shared route mapping', async () => {

@@ -392,6 +392,79 @@ export function onRequest(context) {
   assert.match(output, /makers-edge-functions/);
 });
 
+// A generated /chat stream that omits the terminal frame only fails after a key
+// is configured, because that is when the preview smoke makes a real model call.
+// Catching it here keeps the first symptom out of the preview panel.
+test('Makers lint requires a generated SSE handler to send data: [DONE]', async () => {
+  const result = await runLintFixture({
+    'edgeone.json': '{"agents":{"framework":"langgraph"}}',
+    '.env.example': 'AI_GATEWAY_API_KEY=\nAI_GATEWAY_BASE_URL=\n',
+    'agents/chat.ts': `
+import { createSSEResponse, sseEvent } from './_shared';
+export async function onRequest() {
+  return createSSEResponse(async function* () {
+    yield sseEvent({ type: 'ai_response', content: 'hello' });
+  });
+}
+`,
+  });
+  const output = `${result.stderr}\n${result.stdout}`;
+
+  assert.equal(result.exitCode, 2);
+  assert.match(output, /MKR023.*agents\/chat\.ts/);
+  assert.match(output, /terminal data: \[DONE\] frame/);
+  assert.match(output, /finally/);
+});
+
+test('Makers lint accepts an SSE handler that closes in a finally block', async () => {
+  const result = await runLintFixture({
+    'edgeone.json': '{"agents":{"framework":"langgraph"}}',
+    '.env.example': 'AI_GATEWAY_API_KEY=\nAI_GATEWAY_BASE_URL=\n',
+    'agents/chat.ts': `
+import { createSSEResponse, sseEvent } from './_shared';
+export async function onRequest() {
+  return createSSEResponse(async function* () {
+    try {
+      yield sseEvent({ type: 'ai_response', content: 'hello' });
+    } finally {
+      yield 'data: [DONE]\\n\\n';
+    }
+  });
+}
+`,
+  });
+  const output = `${result.stderr}\n${result.stdout}`;
+
+  assert.equal(result.exitCode, 0, output);
+  assert.doesNotMatch(output, /MKR023/);
+});
+
+test('Makers lint accepts the terminal frame in a shared SSE helper', async () => {
+  const result = await runLintFixture({
+    'edgeone.json': '{"agents":{"framework":"langgraph"}}',
+    '.env.example': 'AI_GATEWAY_API_KEY=\nAI_GATEWAY_BASE_URL=\n',
+    'agents/_shared.ts': `
+export async function* withDone(source) {
+  try {
+    yield* source;
+  } finally {
+    yield 'data: [DONE]\\n\\n';
+  }
+}
+`,
+    'agents/chat.ts': `
+import { withDone } from './_shared';
+export async function onRequest() {
+  return new Response(withDone([]));
+}
+`,
+  });
+  const output = `${result.stderr}\n${result.stdout}`;
+
+  assert.equal(result.exitCode, 0, output);
+  assert.doesNotMatch(output, /MKR023/);
+});
+
 test('Makers lint leaves framework-native middleware to the framework', async () => {
   const result = await runLintFixture({
     'package.json': '{"dependencies":{"next":"latest"}}',
