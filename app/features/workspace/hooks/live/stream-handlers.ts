@@ -1,5 +1,6 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { cacheConversationId } from '@/app/lib/conversation';
+import { mergeFileTreeWrites } from '@/app/lib/file-tree';
 import type {
   AssistantStatus,
   ChatMessage,
@@ -166,7 +167,20 @@ export function createLiveChatSession(sessionOptions: LiveChatSessionOptions): L
       const paths = event.data.paths.filter(Boolean);
       const cid = conversationIdRef.current || sessionOptions.requestConversationId;
       if (cid && paths.length > 0) {
-        void snapshot.pullFiles(cid, paths).then(() => {
+        const merge = (sizes = new Map<string, number | undefined>()) => {
+          workspace.setFileTree((current) => mergeFileTreeWrites(
+            current,
+            paths.map((path) => {
+              const size = sizes.get(path);
+              return { path, ...(typeof size === 'number' ? { size } : {}) };
+            }),
+          ));
+        };
+        void snapshot.pullFiles(cid, paths).then((files) => {
+          merge(new Map(files.map((file) => [file.path, file.size])));
+        }, () => {
+          merge();
+        }).finally(() => {
           if (!openedFirstFile && paths[0]) revealFirstFile(paths[0]);
         });
       } else if (!openedFirstFile && paths[0]) {
