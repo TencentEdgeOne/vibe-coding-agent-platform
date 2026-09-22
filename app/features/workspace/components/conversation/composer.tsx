@@ -8,6 +8,7 @@ import type { ConversationCopy, ModelOption } from './types';
 export const Composer = memo(function Composer({
   input,
   loading,
+  stopping,
   canSend,
   copy,
   models,
@@ -19,6 +20,7 @@ export const Composer = memo(function Composer({
 }: {
   input: string;
   loading: boolean;
+  stopping: boolean;
   canSend: boolean;
   copy: ConversationCopy;
   models: readonly ModelOption[];
@@ -34,16 +36,21 @@ export const Composer = memo(function Composer({
   };
 
   return (
-    <form onSubmit={submit} className="conversation-composer">
+    <form
+      onSubmit={submit}
+      className={`conversation-composer${stopping ? ' is-stopping' : ''}`}
+      aria-busy={stopping}
+    >
       <textarea
         value={input}
         onChange={(event) => onInputChange(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
             event.preventDefault();
-            if (!loading && canSend) onSubmit();
+            if (!loading && !stopping && canSend) onSubmit();
           }
         }}
+        disabled={stopping}
         placeholder={copy.placeholder}
         rows={1}
       />
@@ -53,12 +60,29 @@ export const Composer = memo(function Composer({
         models={models}
         value={model}
         ariaLabel={copy.modelLabel}
-        disabled={loading}
+        disabled={loading || stopping}
         onChange={onModelChange}
       />
-      {loading ? (
-        <button type="button" className="composer-stop" onClick={onStop} title={copy.stop} aria-label={copy.stop}>
-          <Square className="size-3" fill="currentColor" />
+      {loading || stopping ? (
+        <button
+          type="button"
+          className={`composer-stop${stopping ? ' is-stopping' : ''}`}
+          onClick={onStop}
+          disabled={stopping}
+          title={stopping ? copy.stopping : copy.stop}
+          aria-label={stopping ? copy.stopping : copy.stop}
+          aria-busy={stopping}
+        >
+          {stopping ? (
+            <span className="composer-stop-spinner" aria-hidden="true" />
+          ) : (
+            <Square className="size-3" fill="currentColor" />
+          )}
+          {stopping && (
+            <span className="composer-stop-label" role="status" aria-live="polite">
+              {copy.stopping}
+            </span>
+          )}
         </button>
       ) : (
         <button type="submit" className="composer-send" disabled={!canSend} title={copy.send} aria-label={copy.send}>

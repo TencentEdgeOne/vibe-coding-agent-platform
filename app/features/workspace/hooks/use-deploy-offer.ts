@@ -19,7 +19,7 @@ export function useDeployOffer(options: {
   const messages = live.messages;
   const hasDeployableProject = Boolean(workspace.download?.url);
   const publishing = workspace.deployment?.status === 'running';
-  const deployRunning = live.loading || publishing;
+  const deployRunning = live.loading || live.stopping || publishing;
   const canDeployProject = hasDeployableProject && !deployRunning && !resume.workspaceRestoring;
   const deployOfferKind = resolveDeployOffer(messages, {
     canDownload: hasDeployableProject,

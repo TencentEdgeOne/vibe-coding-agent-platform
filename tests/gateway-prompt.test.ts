@@ -335,7 +335,10 @@ test('the conversation card waits until the turn finishes, then submits as an ag
   assert.doesNotMatch(card, /baseUrl/);
   assert.equal(DEFAULT_AI_GATEWAY_BASE_URL, 'https://ai-gateway.edgeone.link/v1');
   assert.equal(AI_GATEWAY_ORIGIN, 'https://ai-gateway.edgeone.link');
-  assert.match(screen, /gatewayPrompt=\{workspace\.gatewayNeeded && !live\.loading \? \{/);
+  assert.match(
+    screen,
+    /gatewayPrompt=\{workspace\.gatewayNeeded && !live\.loading && !live\.stopping \? \{/,
+  );
   assert.match(screen, /gatewayRequest\.replace\('\{key\}', maskApiKey\(apiKey\)\)/);
   assert.match(screen, /maskApiKey/);
   assert.doesNotMatch(screen, /live\.applyGateway\(\{ apiKey \}\)/);
@@ -354,7 +357,7 @@ test('the conversation card waits until the turn finishes, then submits as an ag
   assert.doesNotMatch(live, /setGatewaySavedVisible\(true\)/);
   assert.match(live, /gatewayKeyApplied/);
   assert.match(live, /async function applyGateway/);
-  assert.match(live, /if \(!trimmed \|\| loading\) return/);
+  assert.match(live, /if \(!trimmed \|\| loading \|\| stopping \|\| stopInFlightRef\.current\) return/);
   assert.match(live, /extractApiKeyFromUserText\(trimmed\)/);
   assert.match(live, /inboundApiKey \? \{ apiKey: inboundApiKey \}/);
   assert.match(api, /function applyGatewayDecision/);

@@ -239,7 +239,10 @@ test('the deploy button is disabled until a project exists and nothing is runnin
 
   assert.match(screen, /const hasDeployableProject = Boolean\(workspace\.download\?\.url\)/);
   assert.match(screen, /const publishing = workspace\.deployment\?\.status === 'running'/);
-  assert.match(screen, /const deployRunning = live\.loading \|\| publishing/);
+  assert.match(
+    screen,
+    /const deployRunning = live\.loading \|\| live\.stopping \|\| publishing/,
+  );
   assert.match(
     screen,
     /const canDeployProject = hasDeployableProject && !deployRunning && !resume\.workspaceRestoring/,

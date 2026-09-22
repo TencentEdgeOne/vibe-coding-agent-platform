@@ -4,7 +4,7 @@ import { markLastTurnStopped } from '../app/lib/conversation.ts';
 import { STOPPED_TURN_REPLY, replyLocaleFor } from '../shared/user-facing-reply.ts';
 import type { ChatMessage } from '../app/types/workspace.ts';
 
-const STOPPED = STOPPED_TURN_REPLY.en;
+const STOPPED = '';
 
 function runningTurn(): ChatMessage[] {
   return [
@@ -102,6 +102,6 @@ test('the stopped reply is one definition, in the language of the request', () =
   // Mixed input follows the CJK it contains, which is how the request reads.
   assert.equal(replyLocaleFor('给 landing page 加个表单'), 'zh');
 
-  assert.match(STOPPED_TURN_REPLY.zh, /已停止/);
-  assert.match(STOPPED_TURN_REPLY.en, /^Generation stopped\./);
+  assert.equal(STOPPED_TURN_REPLY.zh, '');
+  assert.equal(STOPPED_TURN_REPLY.en, '');
 });

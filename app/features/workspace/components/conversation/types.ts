@@ -30,6 +30,7 @@ export type ConversationCopy = {
   placeholder: string;
   send: string;
   stop: string;
+  stopping: string;
   modelLabel: string;
   copyLink: string;
   linkCopied: string;

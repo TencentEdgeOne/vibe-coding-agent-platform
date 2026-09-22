@@ -7,26 +7,29 @@ import {
 } from './agent-status-bar-phase';
 import type { AgentTurnStatus, ConversationCopy, ConversationMessage } from './types';
 
-export function AgentStatusBar({ status, preparing, sticky, copy, message }: {
+export function AgentStatusBar({ status, preparing, stopping, sticky, copy, message }: {
   status: AgentTurnStatus;
   preparing: boolean;
+  stopping: boolean;
   sticky: boolean;
   copy: ConversationCopy;
   message: Pick<ConversationMessage, 'status' | 'startedAt' | 'endedAt' | 'activities'>;
 }) {
   const [now, setNow] = useState(() => Date.now());
-  const active = status === 'running';
+  const state = resolveAgentStatusBarPhase(status, preparing, stopping);
+  const active = state === 'running' || state === 'stopping';
   useEffect(() => {
     if (!active) return;
     const id = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, [active]);
 
-  const state = resolveAgentStatusBarPhase(status, preparing);
   const label = state === 'preparing'
     ? copy.preparingAgent
     : state === 'running'
       ? copy.running
+      : state === 'stopping'
+        ? copy.stopping
       : state === 'completed'
         ? copy.completed
         : state === 'failed'

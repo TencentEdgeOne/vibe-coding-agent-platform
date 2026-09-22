@@ -1035,6 +1035,11 @@
   line-height: 20px;
 }
 
+.conversation-composer textarea:disabled {
+  cursor: wait;
+  color: var(--n-500);
+}
+
 .composer-send,
 .composer-stop {
   display: grid;
@@ -1050,7 +1055,34 @@
     background var(--t-fast) ease,
     box-shadow var(--t-fast) ease,
     opacity var(--t-fast) ease,
-    transform var(--t-fast) ease;
+  transform var(--t-fast) ease;
+}
+
+.composer-stop.is-stopping {
+  display: inline-flex;
+  width: auto;
+  min-width: 28px;
+  align-items: center;
+  gap: 6px;
+  cursor: wait;
+  border-radius: var(--r-full);
+  padding: 0 10px;
+  opacity: 0.72;
+}
+
+.composer-stop-spinner {
+  display: block;
+  width: 12px;
+  height: 12px;
+  flex: 0 0 12px;
+  border: 1.5px solid color-mix(in srgb, var(--n-0) 45%, transparent);
+  border-top-color: var(--n-0);
+  border-radius: 50%;
+  animation: activity-row-spin 700ms linear infinite;
+}
+
+.composer-stop-label {
+  white-space: nowrap;
 }
 
 .composer-send:disabled {

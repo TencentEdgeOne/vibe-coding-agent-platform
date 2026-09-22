@@ -45,6 +45,7 @@ export function useWorkspaceCopy(t: UiCopy, options: {
     placeholder: t.workspace.changePlaceholder,
     send: t.workspace.send,
     stop: t.workspace.stop,
+    stopping: t.workspace.stopping,
     modelLabel: t.workspace.modelLabel,
     copyLink: t.workspace.copyLink,
     linkCopied: t.workspace.linkCopied,

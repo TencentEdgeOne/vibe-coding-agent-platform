@@ -5,7 +5,6 @@ export {
   compactUserFacingReply,
   replyLocaleFor,
   resolveFinishedTurn,
-  STOPPED_TURN_REPLY,
   withLiveDeploymentUrl,
 } from '../../../shared/user-facing-reply.ts';
 

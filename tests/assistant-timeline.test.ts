@@ -100,10 +100,10 @@ test('trailingTimelineContent keeps leftover reply after the last streamed text'
   assert.equal(
     trailingTimelineContent(
       'Writing files',
-      'Generation stopped. You can continue with another change.',
+      '',
       'stopped',
     ),
-    'Generation stopped. You can continue with another change.',
+    '',
   );
   assert.equal(trailingTimelineContent('Thinking', 'Boom', 'error'), 'Boom');
   assert.equal(trailingTimelineContent('Thinking', 'Thinking more', 'running'), '');

@@ -3,6 +3,7 @@ import type { AgentTurnStatus, ConversationMessage } from './types';
 export type AgentStatusBarPhase =
   | 'preparing'
   | 'running'
+  | 'stopping'
   | 'completed'
   | 'failed'
   | 'stopped';
@@ -22,7 +23,9 @@ export function isAgentPreparing(
 export function resolveAgentStatusBarPhase(
   status: AgentTurnStatus,
   preparing: boolean,
+  stopping = false,
 ): AgentStatusBarPhase {
+  if (stopping) return 'stopping' as const;
   if (status === 'done') return 'completed' as const;
   if (status === 'error') return 'failed' as const;
   if (status === 'running' && preparing) return 'preparing' as const;

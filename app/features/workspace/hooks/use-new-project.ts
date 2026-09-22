@@ -38,6 +38,7 @@ export function useNewProject(options: {
     resume.resumeAbortControllerRef.current = null;
     live.activeTurnIdRef.current = '';
     live.stoppingRef.current = false;
+    live.resetStopping();
     loadingRef.current = false;
     conversationIdRef.current = null;
     clearCachedConversationId();
@@ -53,7 +54,7 @@ export function useNewProject(options: {
   }
 
   function handleNewProject() {
-    if (live.loadingRef.current) {
+    if (live.loadingRef.current || live.stopping) {
       setNewProjectConfirmOpen(true);
       return;
     }

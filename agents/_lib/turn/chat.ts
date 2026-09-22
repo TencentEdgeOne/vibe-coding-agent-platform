@@ -22,7 +22,6 @@ import {
   createProjectCheckpointController,
   isGenericCompletionReply,
   replyLocaleFor,
-  STOPPED_TURN_REPLY,
   stripReturnedPreviewLinks,
   withLiveDeploymentUrl,
   buildRequirementConclusionFallback,
@@ -33,7 +32,6 @@ import { applyUserGatewayDecision } from '../project/gateway.ts';
 import { resolveGatewayUserTurn } from '../../../shared/gateway-secret.ts';
 import { sendTurnResult } from './result.ts';
 import type { ChatResponse } from '../../../shared/protocol.ts';
-import type { ReplyLocale } from '../../../shared/user-facing-reply.ts';
 
 function slimResult(
   conversationId: string,
@@ -57,7 +55,6 @@ export async function runChatPipeline(
 ) {
   const { conversationId } = resolveConversationId(context);
   const abortSignal = context?.request?.signal as AbortSignal | undefined;
-  const replyLocale = replyLocaleFor(message);
 
   if (!message) {
     sendTurnResult(send, slimResult(conversationId, {
@@ -198,14 +195,13 @@ export async function runChatPipeline(
   });
 
   if (modelResult.stopped || abortSignal?.aborted) {
-    const stoppedReply = STOPPED_TURN_REPLY[replyLocale];
-    await finalizeTurn(stoppedReply, 'stopped', {
+    await finalizeTurn('', 'stopped', {
       withSnapshot: modelResult.projectTouched,
     });
     finishResult({
       ok: false,
       stopped: true,
-      reply: stoppedReply,
+      reply: '',
     });
     return;
   }

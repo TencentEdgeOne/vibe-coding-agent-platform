@@ -19,13 +19,13 @@ export function replyLocaleFor(text: string): ReplyLocale {
 }
 
 /**
- * The reply a stopped turn keeps. Written on both sides of the wire — the client
- * marks the turn stopped the moment the button is pressed, /stop persists it —
- * so a single definition is what keeps the text from changing on reload.
+ * A stopped turn has no assistant prose. The status rail says what happened;
+ * the conversation keeps only what the agent actually produced before the
+ * stop, and both sides of the wire agree on that empty reply.
  */
 export const STOPPED_TURN_REPLY: Readonly<Record<ReplyLocale, string>> = {
-  zh: '已停止本次生成，你可以继续描述下一步修改。',
-  en: 'Generation stopped. You can continue with another change.',
+  zh: '',
+  en: '',
 };
 
 export function compactUserFacingReply(text: string, fallback: string) {

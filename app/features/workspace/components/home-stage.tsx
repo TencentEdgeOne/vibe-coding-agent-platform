@@ -13,6 +13,7 @@ type HomeStageProps = {
   placeholder: string;
   canSend: boolean;
   loading: boolean;
+  stopping: boolean;
   models: readonly ModelOption[];
   model: string;
   onModelChange: (model: string) => void;
@@ -37,6 +38,7 @@ export function HomeStage({
   placeholder,
   canSend,
   loading,
+  stopping,
   models,
   model,
   onModelChange,
@@ -47,7 +49,7 @@ export function HomeStage({
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
-      onSend();
+      if (!loading && !stopping && canSend) onSend();
     }
   };
 
@@ -72,6 +74,7 @@ export function HomeStage({
             onKeyDown={handleKeyDown}
             placeholder={placeholder || copy.home.placeholder}
             rows={3}
+            disabled={stopping}
           />
           <div className="home-composer-actions">
             <div className="home-examples">
@@ -97,12 +100,12 @@ export function HomeStage({
               models={models}
               value={model}
               ariaLabel={copy.workspace.modelLabel}
-              disabled={loading}
+              disabled={loading || stopping}
               onChange={onModelChange}
             />
             <button type="submit" disabled={!canSend} className="home-submit">
-              {loading ? <span className="home-submit-spinner" /> : <Sparkles />}
-              {copy.home.fastBuild}
+              {loading || stopping ? <span className="home-submit-spinner" /> : <Sparkles />}
+              {stopping ? copy.workspace.stopping : copy.home.fastBuild}
             </button>
           </div>
         </form>

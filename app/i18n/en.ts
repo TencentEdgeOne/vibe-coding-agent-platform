@@ -58,6 +58,7 @@ export const en = {
     changePlaceholder: 'Ask for a change',
     send: 'Send',
     stop: 'Stop generation',
+    stopping: 'Stopping task…',
     modelLabel: 'Select model',
     activityPreparingAgent: 'Preparing the agent',
     activityRunning: 'Running',

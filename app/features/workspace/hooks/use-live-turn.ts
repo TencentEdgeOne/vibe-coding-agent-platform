@@ -2,21 +2,15 @@
 
 import { useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { extractApiKeyFromUserText } from '../../../../shared/gateway-secret';
-import { replyLocaleFor, STOPPED_TURN_REPLY } from '../../../../shared/user-facing-reply';
 import type { Locale } from '@/app/i18n';
 import {
   cacheConversationId,
   createConversationId,
   createMessageId,
   getOrCreateCachedConversationId,
-  markLastTurnStopped,
 } from '@/app/lib/conversation';
-import type {
-  AssistantStatus,
-  ChatMessage,
-  SessionPrepStage,
-} from '@/app/types/workspace';
-import { startPromptTurn, stopChatTask } from '../workspace-api';
+import type { AssistantStatus, ChatMessage, SessionPrepStage } from '@/app/types/workspace';
+import { startPromptTurn } from '../workspace-api';
 import type { PreviewSurfaceApi } from './use-preview-surface';
 import type { WorkspaceStateApi } from './use-workspace-state';
 import type { WorkspaceSnapshotApi } from './use-workspace-snapshot';
@@ -27,6 +21,8 @@ import {
   type LiveChatSession,
 } from './live/stream-handlers';
 import { createApplyGateway } from './live/use-gateway';
+import { beginStop } from './live/stop';
+import { useStoppingState } from './live/use-stopping';
 
 export function useLiveTurn(options: {
   language: Locale;
@@ -69,6 +65,8 @@ export function useLiveTurn(options: {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const stoppingState = useStoppingState();
+  const { stopping, setStopping, stopInFlightRef, resetStopping } = stoppingState;
   const [sessionPreparing, setSessionPreparing] = useState(false);
   const [prepStage, setPrepStage] = useState<SessionPrepStage | null>(null);
   const messagesRef = useRef<ChatMessage[]>([]);
@@ -134,7 +132,7 @@ export function useLiveTurn(options: {
     apiKey?: string;
   } = {}) {
     const trimmed = message.trim();
-    if (!trimmed || loading) return;
+    if (!trimmed || loading || stopping || stopInFlightRef.current) return;
 
     const providedKey = (sendOptions.apiKey || '').trim();
     const extractedKey = providedKey ? null : extractApiKeyFromUserText(trimmed);
@@ -288,33 +286,32 @@ export function useLiveTurn(options: {
 
   function stopCurrentTask(stopOptions: { discardProject?: boolean } = {}) {
     const cid = conversationIdRef.current || conversationId;
-    if (!loadingRef.current || !cid || stoppingRef.current) return null;
+    if (!loadingRef.current || !cid || stoppingRef.current || stopInFlightRef.current) return null;
     stoppingRef.current = true;
-    const currentUserMessage = [...messagesRef.current]
-      .reverse()
-      .find((message) => message.role === 'user')?.content || '';
-    const stoppedText = STOPPED_TURN_REPLY[replyLocaleFor(currentUserMessage)];
-    const stopped = markLastTurnStopped(messagesRef.current, stoppedText);
-    setMessages(stopped.messages);
+    stopInFlightRef.current = true;
+    setStopping(true);
+    const workspaceEpoch = workspaceEpochRef.current;
+    const stop = beginStop({
+      conversationId: cid,
+      messages: messagesRef.current,
+      activeTurnId: activeTurnIdRef.current,
+      stopOptions,
+      workspaceEpoch,
+      currentWorkspaceEpoch: () => workspaceEpochRef.current,
+      onSettled: () => {
+        stopInFlightRef.current = false;
+        setStopping(false);
+      },
+    });
+    setMessages(stop.messages);
     setLoading(false);
     setSessionPreparing(false);
     setPrepStage(null);
     workspace.setGatewayNeeded(false);
     workspace.setGatewayBusy(false);
     workspace.setGatewaySavedVisible(false);
-
-    const stoppedTurn = {
-      id: activeTurnIdRef.current,
-      user: stopped.userContent,
-      assistant: stoppedText,
-      status: 'stopped' as const,
-      createdAt: Date.now(),
-      activities: stopped.activities,
-    };
-
-    const stopRequest = stopChatTask(cid, stoppedTurn, stopOptions).catch(() => null);
     chatAbortControllerRef.current?.abort();
-    return stopRequest;
+    return stop.request;
   }
 
   const applyGateway = createApplyGateway({
@@ -331,6 +328,8 @@ export function useLiveTurn(options: {
     setInput,
     loading,
     setLoading,
+    stopping,
+    resetStopping,
     loadingRef,
     messagesRef,
     chatAbortControllerRef,

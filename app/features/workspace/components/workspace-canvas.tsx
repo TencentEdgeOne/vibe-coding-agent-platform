@@ -74,6 +74,7 @@ export function WorkspaceCanvas({
           messages={live.messages}
           input={live.input}
           loading={live.loading}
+          stopping={live.stopping}
           canSend={canSend}
           compact
           models={models}
@@ -88,7 +89,7 @@ export function WorkspaceCanvas({
           onDismissDeployOffer={() => {
             if (deployOfferTurnId) workspace.setDismissedDeployTurnId(deployOfferTurnId);
           }}
-          gatewayPrompt={workspace.gatewayNeeded && !live.loading ? {
+          gatewayPrompt={workspace.gatewayNeeded && !live.loading && !live.stopping ? {
             title: t.workspace.gatewayPromptTitle,
             ...(workspace.gatewayPromptVariant === 'deploy'
               ? { description: t.workspace.gatewayPromptDeployHint }
@@ -105,7 +106,7 @@ export function WorkspaceCanvas({
           gatewayBusy={workspace.gatewayBusy}
           onGatewaySubmit={(values: { apiKey: string }) => {
             const apiKey = values.apiKey.trim();
-            if (!apiKey || workspace.gatewayBusy || live.loading) return;
+            if (!apiKey || workspace.gatewayBusy || live.loading || live.stopping) return;
             void live.sendMessage(
               t.workspace.gatewayRequest.replace('{key}', maskApiKey(apiKey)),
               { apiKey },

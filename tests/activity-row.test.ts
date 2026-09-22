@@ -341,6 +341,8 @@ test('every assistant turn keeps its own status rail through completion', async 
   assert.match(status, /copy\.completed/);
   assert.match(status, /copy\.failed/);
   assert.match(status, /copy\.stopped/);
+  assert.match(status, /copy\.stopping/);
+  assert.match(status, /state === 'stopping'/);
   assert.match(status, /role="status"/);
   assert.match(status, /\{active && \(/);
   assert.match(status, /className="agent-status-bar-indicator"/);
@@ -370,6 +372,7 @@ test('turn elapsed time ticks while running and freezes when done', () => {
 test('thinking alone is preparing, while a tool or visible text means running', () => {
   assert.equal(resolveAgentStatusBarPhase('running', true), 'preparing');
   assert.equal(resolveAgentStatusBarPhase('running', false), 'running');
+  assert.equal(resolveAgentStatusBarPhase('stopped', false, true), 'stopping');
   assert.equal(resolveAgentStatusBarPhase('done', false), 'completed');
   assert.equal(resolveAgentStatusBarPhase('error', false), 'failed');
   assert.equal(resolveAgentStatusBarPhase('stopped', false), 'stopped');

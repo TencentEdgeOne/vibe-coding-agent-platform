@@ -109,7 +109,7 @@ export function WorkspaceScreen() {
     loadingRef,
   });
 
-  const canSend = live.input.trim().length > 0 && !live.loading;
+  const canSend = live.input.trim().length > 0 && !live.loading && !live.stopping;
   const hasWorkspace = live.messages.length > 0
     || Boolean(preview.preview)
     || Boolean(workspace.deployment)
@@ -201,6 +201,7 @@ export function WorkspaceScreen() {
           placeholder={typedPlaceholder}
           canSend={canSend}
           loading={live.loading}
+          stopping={live.stopping}
           models={models}
           model={model}
           onModelChange={setModel}

@@ -72,6 +72,7 @@ export const zh = {
     changePlaceholder: '描述你想修改的内容',
     send: '发送',
     stop: '停止生成',
+    stopping: '正在停止任务…',
     // Labels the picker for screen readers only; the control itself shows the
     // model's own name, which is the more useful thing to read sighted.
     modelLabel: '选择模型',

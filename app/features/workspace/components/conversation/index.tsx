@@ -32,6 +32,7 @@ export const AgentConversation = memo(function AgentConversation({
   messages,
   input,
   loading,
+  stopping,
   canSend,
   compact,
   copy,
@@ -55,6 +56,7 @@ export const AgentConversation = memo(function AgentConversation({
   messages: ConversationMessage[];
   input: string;
   loading: boolean;
+  stopping: boolean;
   canSend: boolean;
   compact: boolean;
   copy: ConversationCopy;
@@ -80,6 +82,9 @@ export const AgentConversation = memo(function AgentConversation({
   const followOutputRef = useRef(true);
   const [following, setFollowing] = useState(true);
   const { style, setStyle } = useActivityStyle();
+  const stoppingTurnId = stopping
+    ? [...messages].reverse().find((message) => message.role === 'assistant')?.id || ''
+    : '';
   const signature = useMemo(() => {
     const last = messages[messages.length - 1];
     if (!last) return '0';
@@ -147,6 +152,7 @@ export const AgentConversation = memo(function AgentConversation({
                 key={message.id}
                 message={message}
                 style={style}
+                stopping={message.id === stoppingTurnId}
                 followOutput={following}
                 copy={copy}
               />
@@ -185,6 +191,7 @@ export const AgentConversation = memo(function AgentConversation({
         <Composer
           input={input}
           loading={loading}
+          stopping={stopping}
           canSend={canSend}
           copy={copy}
           models={models}

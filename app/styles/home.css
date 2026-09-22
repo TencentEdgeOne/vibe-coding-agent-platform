@@ -88,6 +88,11 @@
   color: var(--n-400);
 }
 
+.home-composer textarea:disabled {
+  cursor: wait;
+  color: var(--n-500);
+}
+
 .home-composer-actions {
   display: flex;
   flex-wrap: wrap;
@@ -187,6 +192,11 @@
 .home-submit:disabled {
   cursor: not-allowed;
   opacity: 0.45;
+}
+
+.home-submit:disabled:has(.home-submit-spinner) {
+  cursor: wait;
+  opacity: 0.7;
 }
 
 .home-submit-spinner {

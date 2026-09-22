@@ -15,9 +15,10 @@ import { AgentStatusBar } from './agent-status-bar';
 import { Markdown } from './markdown';
 import type { ConversationCopy, ConversationMessage } from './types';
 
-export const AssistantTurn = memo(function AssistantTurn({ message, style, copy, followOutput }: {
+export const AssistantTurn = memo(function AssistantTurn({ message, style, stopping, copy, followOutput }: {
   message: ConversationMessage;
   style: ActivityStyle;
+  stopping: boolean;
   copy: ConversationCopy;
   followOutput: boolean;
 }) {
@@ -50,6 +51,7 @@ export const AssistantTurn = memo(function AssistantTurn({ message, style, copy,
       <AgentStatusBar
         status={status}
         preparing={preparing}
+        stopping={stopping}
         sticky={followOutput}
         copy={copy}
         message={message}
