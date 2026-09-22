@@ -236,6 +236,7 @@ test('direct makers dev is normalized, published, and reported through the lifec
     },
   };
   const [wrapped] = wrapSandboxTools([commandsTool], {
+    conversationId: 'cid-commands-wrap',
     context,
     state,
     onPreviewReady: ({ url }) => {
@@ -293,6 +294,7 @@ test('direct makers dev returns the captured CLI log instead of an unknown sandb
   } as unknown as ClaudeMcpTool;
   const state = projectState();
   const [wrapped] = wrapSandboxTools([commandsTool], {
+    conversationId: 'cid-commands-wrap',
     context: {
       env: {},
       sandbox: {
@@ -340,6 +342,7 @@ test('direct makers dev names the missing runtime key when the sandbox CLI canno
     }),
   } as unknown as ClaudeMcpTool;
   const [wrapped] = wrapSandboxTools([commandsTool], {
+    conversationId: 'cid-commands-wrap',
     context: {
       env: {},
       sandbox: {
@@ -394,6 +397,7 @@ test('direct makers deploy reports durable deployment state without replacing pr
   } as unknown as ClaudeMcpTool;
   const state = projectState();
   const [wrapped] = wrapSandboxTools([commandsTool], {
+    conversationId: 'cid-commands-wrap',
     context: {
       env: {},
       sandbox: {
@@ -462,6 +466,7 @@ test('a .dev host wraps preview without a --area the dev command cannot take', a
   } as unknown as ClaudeMcpTool;
   const state = projectState('projects/demo', { siteDomain: 'edgeone.dev' });
   const [wrapped] = wrapSandboxTools([commandsTool], {
+    conversationId: 'cid-commands-wrap',
     context: {
       env: {},
       sandbox: {
@@ -498,6 +503,7 @@ test('a .dev host wraps deploy onto the overseas area', async () => {
   } as unknown as ClaudeMcpTool;
   const state = projectState('projects/demo', { siteDomain: 'edgeone.dev' });
   const [wrapped] = wrapSandboxTools([commandsTool], {
+    conversationId: 'cid-commands-wrap',
     context: {
       env: {},
       sandbox: {
@@ -533,6 +539,7 @@ test('direct makers deploy surfaces the captured CLI failure', async () => {
   } as unknown as ClaudeMcpTool;
   const state = projectState();
   const [wrapped] = wrapSandboxTools([commandsTool], {
+    conversationId: 'cid-commands-wrap',
     context: {
       env: {},
       sandbox: {
@@ -610,6 +617,7 @@ test('live sandbox output patches the row of the command that produced it', asyn
     intervalMs: 0,
   });
   const [wrapped] = wrapSandboxTools([commandsTool], {
+    conversationId: 'cid-commands-wrap',
     context: context as never,
     state,
     commandStream: stream,
@@ -645,6 +653,7 @@ test('a command run without an output sink still executes', async () => {
   } as unknown as ClaudeMcpTool;
 
   const [wrapped] = wrapSandboxTools([commandsTool], {
+    conversationId: 'cid-commands-wrap',
     context: { env: {} } as never,
     state: projectState(),
     commandStream: null,

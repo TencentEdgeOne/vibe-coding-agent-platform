@@ -125,15 +125,21 @@ function buildSandboxTools(appDir: string, mcpServerName: string) {
 
 function buildSandboxPreview(appDir: string) {
   return [
-    `The host starts the right-hand development preview as soon as the project workspace exists in this sandbox, and keeps that dest server watching files so later edits show up there. Do not run a preview server, add nohup, start another server, synthesize a public URL, or use a cloud deploy as the normal preview. The sandbox path adapter publishes sandbox.getHost(${PREVIEW_PUBLIC_PORT})${PREVIEW_PATH_PREFIX} to the preview panel.`,
-    // The model has no restart primitive, and it went looking for one: a turn
-    // that changed dependencies under a running server tried to kill it, free
-    // its port, and relaunch it, none of which the host acts on.
-    'The host restarts the preview when generated endpoints are missing. Do not kill processes, free ports, or launch a preview server yourself — the host terminates the previous server before every launch.',
+    `The host starts the right-hand development preview as soon as the project workspace exists in this sandbox, and keeps that dest server watching files so later edits show up there. Never start one through commands: no preview server, no nohup, no second server, no synthesized public URL, and no cloud deploy as the normal preview. The sandbox path adapter publishes sandbox.getHost(${PREVIEW_PUBLIC_PORT})${PREVIEW_PATH_PREFIX} to the preview panel.`,
+    // The model had no restart primitive and went looking for one: a turn that
+    // changed dependencies under a running server tried to kill it, free its
+    // port, and relaunch it, none of which the host acts on. A prohibition with
+    // nothing behind it is what produced that, so start_preview is the answer
+    // rather than another sentence telling it not to.
+    'start_preview is how you ask for the preview, and the only way you may. It reuses a healthy dev server instead of restarting it, so calling it more than once is safe; pass restart:true only after changing something the server reads at startup, such as an environment variable, since file edits are picked up on save. Do not kill processes, free ports, or launch a preview server yourself — start_preview terminates the previous server before every launch, which is what makes a restart work rather than repeat.',
+    // The gates inside start_preview are the only thing in the turn that proves
+    // a generated route answers. The build does not: it compiles the handler
+    // without ever calling it.
+    'start_preview reports whether the pages and any generated API or agent routes actually answer, so call it after the project is written and fix what it reports before concluding the turn. A build that passes says the code compiles, not that it serves.',
     // A run installed dependencies and built while the preview was up, and both
     // lost the race silently: the build reported a Pages Router page the project
     // does not have, and npm reported ENOTEMPTY on a package the server held.
-    'A build or an install cannot run beside the preview, so the host stops the dev server before either and says so in that command\'s output. The preview is then down until the host starts it again. Do not report a preview as running across an install or a build you issued after it.',
+    'A build or an install cannot run beside the preview, so the host stops the dev server before either and says so in that command\'s output. The preview is then down until it is started again: call start_preview after an install or a build, and never report a preview as running across one you issued after it.',
     // The publish area and the project name are both host-injected: the command
     // wrapper rewrites the arguments with --area resolved from the request's
     // public host and -n resolved from this conversation, so the instructions
@@ -230,14 +236,14 @@ function buildNewProjectWorkflow(appDir: string) {
     '3. After the required references are loaded, write the project with write_project_file, one complete file per call and in dependency order. When a scaffolder ran, keep what it produced and use these calls to adapt it — the platform declarations and the entry route — rather than rewriting files it already got right. If agents/chat.ts is already in the workspace, edit that file; do not also write agents/chat/index.ts — both mount POST /chat. Otherwise write configuration and dependencies first, then styles and small modules, then the entry HTML, then any platform function or agent directories. Dependencies come before agent code specifically: the platform declarations an agent project needs are derived from the packages it declares, so a dependency file that arrives later cannot inform them.',
     `4. The host starts npm install in the background the moment package.json is written. When you run npm install yourself, that command waits for the background install and reports its result — it does not install twice. Run npm install inside ${appDir} only when the project has a package.json with dependencies that are not yet on disk (cd ${appDir} && npm install by default; Python packages are declared in the project's requirements file and installed by the platform). Do not invent nested ${appDir}/${appDir} paths.`,
     'Take every dependency name and version range from the reference you loaded for that framework, and copy its dependency block as written. Versions recalled from memory are the usual cause of peer-dependency conflicts and engine mismatches, and each one costs a rewrite plus a reinstall. If a reference pins a version or caps a range, keep the pin instead of widening it to latest.',
-    '5. The host starts the sandbox preview. Do not curl/fetch/code_interpreter the public URL and do not start a preview server.',
+    '5. Call start_preview and fix anything it reports. Do not curl/fetch/code_interpreter the public URL, and do not start a preview server through commands.',
   ];
 }
 
 function buildExistingProjectWorkflow(appDir: string) {
   return [
     `Use this workflow when ${appDir} already contains project files. Load only the specific Makers references required by the change with load_makers_skill, inspect only the project files directly related to the request, then make the smallest complete change needed.`,
-    'For bug reports, do not investigate platform internals, generated .edgeone files, running processes, ports, or external AI gateway behavior. Use at most one focused reproduction command before editing; after the edit, use at most one focused verification command. The host starts the sandbox preview.',
+    'For bug reports, do not investigate platform internals, generated .edgeone files, running processes, ports, or external AI gateway behavior. Use at most one focused reproduction command before editing; after the edit, use at most one focused verification command, then call start_preview to confirm the fix serves.',
   ];
 }
 
@@ -294,7 +300,7 @@ const FINAL_REPLY = [
   // page back every time, and reported the feature working. An HTML body from a
   // POST to a streaming endpoint is the static site answering in its place.
   'An HTML document is not a verified endpoint. When a probe of a project API answers with a page instead of the response that endpoint defines, the request never reached the handler at all — that is a failure to report, not a result to read a meaning into, and never grounds for saying the feature works.',
-  'After code changes, the host starts the sandbox preview. Do not synthesize preview URLs. Run edgeone makers deploy only when the user explicitly asks to publish a live Makers URL.',
+  'After code changes, confirm the preview with start_preview. Do not synthesize preview URLs. Run edgeone makers deploy only when the user explicitly asks to publish a live Makers URL.',
   'Do not include preview buttons, preview links, preview URLs, or sandboxDebugUrl in the final response. The sandbox preview is shown only in the right preview panel.',
   'A live deployment is the exception: when edgeone makers deploy succeeds, state that the site is live and write its complete URL, query string included, on its own line in the final response. That address is the deliverable and the user has to be able to copy it out of the conversation.',
   'Do not take screenshots.',

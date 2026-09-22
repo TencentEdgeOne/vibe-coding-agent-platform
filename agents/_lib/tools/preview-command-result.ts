@@ -1,8 +1,4 @@
-import {
-  previewFailureWarrantsRestart,
-  publishRunningPreview,
-  startPreviewServer,
-} from '../project/preview.ts';
+import { ensurePreview } from '../project/readiness.ts';
 import { describeMissingMakersRuntimeToken } from '../makers/token.ts';
 import {
   MAKERS_DEV_PORT_DRIFT_EXIT,
@@ -67,20 +63,17 @@ export async function handleDevCommandResult(
     };
   }
   try {
-    let preview;
-    try {
-      preview = await publishRunningPreview(lifecycle.context, lifecycle.state);
-    } catch (error) {
-      // The smoke test now retries through the rebuild window itself, so
-      // reaching here means the server never answered — restart it once.
-      // A generated agent that answers wrongly is reported as-is instead:
-      // its reply already proves the server and proxy work.
-      if (!previewFailureWarrantsRestart(error)) throw error;
-      await startPreviewServer(lifecycle.context, lifecycle.state);
-      preview = await publishRunningPreview(lifecycle.context, lifecycle.state, {
-        routesAlreadyVerified: true,
-      });
-    }
+    // The CLI reported success, so this is the verification half: the route
+    // gates, and a restart for a server that answers nothing. Both live in the
+    // readiness layer now, so the agent's own launch cannot drift from the one
+    // the host and the client get. `lifecycle.state` is the turn's live copy —
+    // the preview has to land on that one to reach its SSE stream.
+    const preview = await ensurePreview(
+      lifecycle.context,
+      lifecycle.conversationId,
+      lifecycle.state,
+      { verifyRoutes: true },
+    );
     lifecycle.onPreviewReady?.(preview);
     return appendText(result, JSON.stringify({
       status: 'success',

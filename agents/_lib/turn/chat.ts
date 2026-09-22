@@ -2,7 +2,7 @@ import type { AgentContext } from '../runtime/context.ts';
 import { AUTO_FIX_MAX_ATTEMPTS } from '../constants.ts';
 import { runCodingAgent } from '../session/live.ts';
 import { runVerification } from '../project/scaffold.ts';
-import { publishRunningPreview, startPreviewServer } from '../project/preview.ts';
+import { ensurePreview, ensureWorkspace } from '../project/readiness.ts';
 import {
   bindSiteDomain,
   persistWorkspace,
@@ -15,6 +15,7 @@ import type {
   AgentProgressEvent,
   DeploymentInfo,
   FileTreeItem,
+  PreviewKind,
   StreamSend,
 } from '../types.ts';
 import { toAppRelPath } from '../utils/paths.ts';
@@ -24,7 +25,6 @@ import {
   compactUserFacingReply,
   createFileTreePushController,
   createProjectCheckpointController,
-  extendExistingSandboxTimeout,
   isGenericCompletionReply,
   previewLinkFromState,
   replyLocaleFor,
@@ -36,7 +36,6 @@ import {
 } from './checkpoint.ts';
 import { bindLiveWorkspace } from '../session/live-workspace.ts';
 import { createTurnLifecycle } from './lifecycle.ts';
-import { prepareProjectWorkspace } from '../project/workspace.ts';
 import { applyUserGatewayDecision } from '../project/gateway.ts';
 import { resolveGatewayUserTurn } from '../../../shared/gateway-secret.ts';
 import { runAutoFixTurn } from './auto-fix.ts';
@@ -85,13 +84,7 @@ export async function runChatPipeline(
     return;
   }
 
-  await extendExistingSandboxTimeout(context);
-
-  const state = await prepareProjectWorkspace(
-    context,
-    conversationId,
-    send,
-  );
+  const { state } = await ensureWorkspace(context, conversationId, { send });
   if (bindSiteDomain(state, resolveRequestSiteDomain(context))) {
     await persistWorkspace(context, conversationId, state);
   }
@@ -170,22 +163,16 @@ export async function runChatPipeline(
     checkpoint.schedule();
   };
 
-  const handlePreviewReady = async (preview: { url?: string; sandboxDebugUrl?: string; kind?: 'sandbox' | 'makers' }) => {
-    const url = preview.url;
-    if (!url) {
+  /** Announce a preview whose state is already written. */
+  const announcePreview = (preview: { url?: string; sandboxDebugUrl?: string }) => {
+    if (!preview.url) {
       return;
     }
-    publishPreview(state, {
-      url,
-      sandboxDebugUrl: preview.sandboxDebugUrl,
-      kind: preview.kind,
-    });
-    await persistWorkspace(context, conversationId, state);
     send({
       type: 'preview_ready',
       data: {
         preview: {
-          url,
+          url: preview.url,
           sandboxDebugUrl: preview.sandboxDebugUrl,
           kind: state.previewKind,
         },
@@ -193,30 +180,50 @@ export async function runChatPipeline(
       },
     });
   };
-  let hostPreviewInFlight: Promise<boolean> | null = null;
+
+  /**
+   * A preview the agent brought up itself by running the Makers CLI. Nothing
+   * else has recorded that one, so this is where it enters the project state —
+   * unlike the host's own path below, where ensurePreview has already written it.
+   */
+  const handlePreviewReady = async (preview: { url?: string; sandboxDebugUrl?: string; kind?: PreviewKind }) => {
+    if (!preview.url) {
+      return;
+    }
+    publishPreview(state, {
+      url: preview.url,
+      sandboxDebugUrl: preview.sandboxDebugUrl,
+      kind: preview.kind,
+    });
+    await persistWorkspace(context, conversationId, state);
+    announcePreview(preview);
+  };
+  /**
+   * The preview, from wherever in this turn it is first noticed to be missing.
+   *
+   * There is no in-flight guard here any more: this turn asks four times, and
+   * deduplicating those — along with choosing between a token mint and a dev
+   * server boot — is ensurePreview's job. `verifyRoutes` is what makes this the
+   * expensive caller: a turn that may have just written a broken API route has
+   * to find that out here rather than let the user find it by clicking.
+   */
   const startHostPreview = async (reason: string) => {
-    if (hostPreviewInFlight) return hostPreviewInFlight;
-    hostPreviewInFlight = (async () => {
-      try {
-        await startPreviewServer(context, state);
-        const preview = await publishRunningPreview(context, state, { routesAlreadyVerified: true });
-        await handlePreviewReady(preview);
-        return Boolean(state.previewUrl);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        console.warn(reason, message);
-        send({
-          type: 'preview_ready',
-          data: {
-            preview: { error: message },
-          },
-        });
-        return false;
-      } finally {
-        hostPreviewInFlight = null;
-      }
-    })();
-    return hostPreviewInFlight;
+    try {
+      announcePreview(await ensurePreview(context, conversationId, state, {
+        verifyRoutes: true,
+      }));
+      return Boolean(state.previewUrl);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(reason, message);
+      send({
+        type: 'preview_ready',
+        data: {
+          preview: { error: message },
+        },
+      });
+      return false;
+    }
   };
   const handleDeploymentStatus = (deployment: DeploymentInfo) => {
     setDeployment(state, deployment);

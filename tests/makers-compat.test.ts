@@ -87,7 +87,10 @@ test('direct sandbox CLI replaces custom tools while retaining relevant compatib
   assert.doesNotMatch(projectTools, /publish_preview|deploy_to_makers|get_preview_link/);
   assert.match(commandTools, /buildMakersDevBackgroundCommand/);
   assert.match(commandTools, /buildMakersDeployCommand/);
-  assert.match(commandTools, /publishRunningPreview/);
+  // The CLI's own dev launch publishes through the readiness layer, which is
+  // also what the host and the client call, so the agent's preview cannot come
+  // from a code path of its own.
+  assert.match(commandTools, /ensurePreview\(/);
   assert.match(commandTools, /assertMakersProjectCompatible/);
   assert.match(compatibility, /agents\.framework is required/);
   assert.match(compatibility, /must declare AI_GATEWAY_API_KEY/);
@@ -117,11 +120,16 @@ test('specific Makers skill loader reads official references without changing th
 
 test('cold resume restores project dependencies without managing the sandbox CLI', async () => {
   const resume = await readFile('agents/_lib/session/resume.ts', 'utf8');
+  const readiness = await readFile('agents/_lib/project/readiness.ts', 'utf8');
   const client = await surface('app/features/workspace/workspace-api.ts');
-  assert.match(resume, /ensureProjectDependencies\(context, state\)/);
+  // A cold resume gets its install from the level that needs it rather than by
+  // asking for one itself, which is why resume no longer names dependencies.
+  assert.match(readiness, /ensureDependencies\(context, state\)/);
   assert.doesNotMatch(resume, /prewarmEdgeoneCli|npm install -g edgeone/);
-  assert.match(resume, /WORKSPACE_RESUME_BUDGET_MS = 600_000/);
-  assert.match(resume, /PREVIEW_RESTART_BUDGET_MS = 540_000/);
+  // The budgets live together so the preview's can be read against the install
+  // and dev server boot that happen inside it.
+  assert.match(readiness, /preview: 540_000/);
+  assert.match(readiness, /workspace: 600_000/);
   assert.match(client, /PREVIEW_CLIENT_TIMEOUT_MS = 620_000/);
 });
 

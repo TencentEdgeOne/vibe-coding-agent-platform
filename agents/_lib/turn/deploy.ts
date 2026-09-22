@@ -38,13 +38,11 @@ import {
 import { resolveConversationId, resolveRequestSiteDomain } from '../runtime/request.ts';
 import {
   createProjectCheckpointController,
-  ensureProjectDependencies,
-    extendExistingSandboxTimeout,
-    replyLocaleFor,
-    withLiveDeploymentUrl,
+  replyLocaleFor,
+  withLiveDeploymentUrl,
 } from './checkpoint.ts';
 import { createTurnLifecycle } from './lifecycle.ts';
-import { prepareProjectWorkspace } from '../project/workspace.ts';
+import { ensureDependencies, ensureWorkspace } from '../project/readiness.ts';
 import { bindLiveWorkspace } from '../session/live-workspace.ts';
 import { sendTurnResult } from './result.ts';
 
@@ -197,9 +195,7 @@ export async function runDeployPipeline(
     return;
   }
 
-  await extendExistingSandboxTimeout(context);
-
-  const state = await prepareProjectWorkspace(context, conversationId, send);
+  const { state } = await ensureWorkspace(context, conversationId, { send });
   if (bindSiteDomain(state, resolveRequestSiteDomain(context))) {
     await persistWorkspace(context, conversationId, state);
   }
@@ -311,7 +307,7 @@ export async function runDeployPipeline(
   let gatewayKey = '';
   try {
     await assertMakersProjectCompatible(context, state);
-    await ensureProjectDependencies(context, state);
+    await ensureDependencies(context, state);
     const makers = await prepareMakersSession(context, state, { syncEnv: true });
     sandboxToken = makers.sandboxToken;
     sandboxEnv = makers.env;

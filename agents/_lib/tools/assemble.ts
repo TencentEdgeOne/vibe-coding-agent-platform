@@ -19,6 +19,7 @@ import {
 } from '../../../shared/web-search.ts';
 import { buildLoadMakersSkillTool } from './makers-skills.ts';
 import { buildWriteProjectFileTool } from './project-tools.ts';
+import { buildStartPreviewTool } from './preview-tools.ts';
 
 export type LiveTurnCallbacks = {
   onProjectFilesChanged?: (file?: { path: string; content: string }) => void | Promise<void>;
@@ -136,11 +137,23 @@ export function assembleAgentTools(session: LiveSessionHandle) {
       },
     }),
     writeProjectFileTool,
+    buildStartPreviewTool({
+      context,
+      conversationId: session.conversationId,
+      get state() {
+        return session.getState();
+      },
+      onPreviewReady: (preview) => {
+        session.flags.previewTouched = true;
+        if (preview.url) session.getCallbacks().onPreviewReady?.(preview);
+      },
+    }),
   ];
   const mcpAllowedTools = [
     ...edgeoneMcp.allowedTools.filter(offerSandboxTool),
     `mcp__${mcpServerName}__load_makers_skill`,
     `mcp__${mcpServerName}__write_project_file`,
+    `mcp__${mcpServerName}__start_preview`,
     'Skill',
   ];
 

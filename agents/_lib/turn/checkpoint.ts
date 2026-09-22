@@ -1,6 +1,5 @@
 import { requireSandbox, type AgentContext } from '../runtime/context.ts';
 import { getFileTree } from '../project/fs.ts';
-import { runSandboxCommand } from '../project/commands.ts';
 import type { FileTreeItem, ProjectState, StreamSend } from '../types.ts';
 export {
   compactUserFacingReply,
@@ -21,50 +20,6 @@ export function previewLinkFromState(state: ProjectState) {
     kind: state.previewKind,
   };
 }
-
-/**
- * Install only when the sandbox actually came back empty. A restored snapshot
- * carries source without node_modules, and both the preview server and the
- * Makers build need dependencies on disk.
- */
-export async function ensureProjectDependencies(context: AgentContext, state: ProjectState) {
-  const hasPackageJson = await requireSandbox(context).files.exists(`${state.appDir}/package.json`);
-  if (!hasPackageJson) {
-    return false;
-  }
-  const hasNodeModules = await requireSandbox(context).files.exists(`${state.appDir}/node_modules`);
-  if (hasNodeModules) {
-    return true;
-  }
-  const installed = await runSandboxCommand(context, 'npm install --no-audit --no-fund', {
-    cwd: state.appDir,
-    timeout: 300,
-  });
-  return installed.exitCode === 0;
-}
-
-const SANDBOX_EXTENSION_SECONDS = 1800;
-
-/** Reject if `promise` does not settle within `ms`. Clears the timer on settle. */
-export async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<T>((_, reject) => {
-        timer = setTimeout(() => {
-          reject(new Error(`${label} timed out after ${Math.round(ms / 1000)}s`));
-        }, ms);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
-
-type SandboxWithTimeoutExtension = {
-  extendTimeout?: (seconds: number) => unknown;
-};
 
 export function stripReturnedPreviewLinks(text: string, previewUrl?: string) {
   if (!text || !previewUrl) {
@@ -124,23 +79,6 @@ export function isGenericCompletionReply(text: string) {
   return normalized === '已编写完成，请查看结果'
     || normalized === '已完成，请查看结果'
     || /^theagentdidnotreturnanythingdisplayable$/i.test(normalized);
-}
-
-export async function extendExistingSandboxTimeout(context: AgentContext) {
-  const sandbox = context?.sandbox as SandboxWithTimeoutExtension | undefined;
-  if (!sandbox || typeof sandbox.extendTimeout !== 'function') {
-    return;
-  }
-
-  try {
-    await sandbox.extendTimeout(SANDBOX_EXTENSION_SECONDS);
-  } catch (error) {
-    console.warn('[sandbox]', {
-      stage: 'extend-timeout-failed',
-      seconds: SANDBOX_EXTENSION_SECONDS,
-      error: error instanceof Error ? error.message : String(error || ''),
-    });
-  }
 }
 
 // Persist the project through the sandbox SDK. Archive bytes travel directly from

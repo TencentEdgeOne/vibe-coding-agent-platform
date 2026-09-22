@@ -7,22 +7,20 @@ import {
 import { hasLiveChatTask, isChatTaskActive, iterateLiveChatTaskEvents, markOrphanedTaskFailed } from './task.ts';
 import { loadTranscriptJsonl } from './transcript.ts';
 import { projectTranscript, turnsToMessages } from './projection.ts';
-import { assertPreviewServerReady, resolvePublicLinks, rewritePreviewAccessToken, startPreviewServer } from '../project/preview.ts';
-import { getFileTree } from '../project/fs.ts';
-import { separateLegacyMakersDeployment } from '../project/state.ts';
-import { restoreProjectWorkspace } from '../project/workspace.ts';
 import {
-  clearPreview,
-  persistWorkspace,
-  publishPreview,
-} from '../project/workspace-store.ts';
+  ensureFileTree,
+  ensurePreview,
+  ensureWorkspace,
+  READINESS_BUDGET_MS,
+} from '../project/readiness.ts';
+import { separateLegacyMakersDeployment } from '../project/state.ts';
+import { clearPreview, persistWorkspace } from '../project/workspace-store.ts';
 import type { FileTreeItem, PersistedActivity, PersistedActivityTurn, ProjectState } from '../types.ts';
 import { createSSEResponse, sseEvent } from '../runtime/sse.ts';
 import { mergeSseGenerators } from '../runtime/merge.ts';
-import { isMakersDeployUrl } from '../../../shared/makers-url.ts';
 import { isMakersDeployCommand, isMakersDevCommand } from '../makers/tool-phase.ts';
 import { resolveConversationId, getRequestQueryParam } from '../runtime/request.ts';
-import { ensureProjectDependencies, withTimeout } from '../turn/checkpoint.ts';
+import { withTimeout } from '../utils/timeout.ts';
 import {
   iterateConversationPrep,
   iterateSandboxAndAgentPrep,
@@ -30,10 +28,6 @@ import {
   sessionPrepSse,
 } from './prepare.ts';
 import { timeStage } from '../utils/timing.ts';
-
-function isMakersPreviewState(state: ProjectState) {
-  return state.previewKind === 'makers' || isMakersDeployUrl(state.previewUrl);
-}
 
 function toolNameImpliesProject(name: string) {
   return name.includes('write_project_file')
@@ -72,10 +66,6 @@ function projectStateImpliesPreview(state: ProjectState, activityHistory: Persis
     || Boolean(state.previewPublished)
     || activityHistoryImpliesPreview(activityHistory);
 }
-
-const WORKSPACE_RESUME_BUDGET_MS = 600_000;
-const SANDBOX_PROBE_MS = 15_000;
-const PREVIEW_RESTART_BUDGET_MS = 540_000;
 
 function jsonResponse(obj: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(obj), {
@@ -134,85 +124,6 @@ async function loadProjectResumeHistory(context: AgentContext, conversationId: s
   };
 }
 
-async function republishPreviewOnResume(context: AgentContext, state: ProjectState) {
-  if (isMakersPreviewState(state) && state.previewUrl) {
-    return {
-      url: state.previewUrl,
-      kind: 'makers' as const,
-      restarted: false,
-    };
-  }
-  try {
-    await assertPreviewServerReady(context);
-    const accessToken = typeof context.sandbox?.envdAccessToken === 'string'
-      ? context.sandbox.envdAccessToken
-      : '';
-
-    if (state.previewUrl && accessToken) {
-      const rewritten = rewritePreviewAccessToken(state.previewUrl, accessToken);
-      if (rewritten) {
-        const warmLinks = await resolvePublicLinks(context);
-        publishPreview(state, {
-          url: rewritten,
-          sandboxDebugUrl: warmLinks.sandboxDebugUrl || state.sandboxDebugUrl,
-          kind: 'sandbox',
-        });
-        return {
-          url: rewritten,
-          sandboxDebugUrl: state.sandboxDebugUrl,
-          restarted: false,
-        };
-      }
-    }
-
-    const warmLinks = await resolvePublicLinks(context);
-    if (warmLinks.previewUrl) {
-      publishPreview(state, {
-        url: warmLinks.previewUrl,
-        sandboxDebugUrl: warmLinks.sandboxDebugUrl,
-        kind: 'sandbox',
-      });
-      return {
-        url: warmLinks.previewUrl,
-        sandboxDebugUrl: warmLinks.sandboxDebugUrl,
-        restarted: false,
-      };
-    }
-  } catch {
-    // Server is not ready — fall through to a full restart.
-  }
-
-  const depsReady = await timeStage(
-    'resume:preview',
-    { phase: 'dependencies' },
-    () => ensureProjectDependencies(context, state),
-  );
-  if (!depsReady) {
-    throw new Error('Project dependencies are not available for preview resume.');
-  }
-
-  const server = await timeStage(
-    'resume:preview',
-    { phase: 'server' },
-    () => startPreviewServer(context, state),
-  );
-  await assertPreviewServerReady(context, server.readyPath);
-  const links = await resolvePublicLinks(context);
-  if (!links.previewUrl) {
-    throw new Error('Preview server started but no public preview URL was available.');
-  }
-  publishPreview(state, {
-    url: links.previewUrl,
-    sandboxDebugUrl: links.sandboxDebugUrl,
-    kind: 'sandbox',
-  });
-  return {
-    url: links.previewUrl,
-    sandboxDebugUrl: links.sandboxDebugUrl,
-    restarted: true,
-  };
-}
-
 type WorkspaceRestore = {
   state: ProjectState;
   hasFiles: boolean;
@@ -250,18 +161,17 @@ async function restoreWorkspaceFiles(
   conversationId: string,
 ): Promise<WorkspaceRestore> {
   const chatTask = await getChatTask(context, conversationId);
-  const restored = await restoreProjectWorkspace(context, conversationId, { mode: 'resume' });
+  // The install is deferred: the file listing must not wait behind it, and
+  // ensurePreview asks for dependencies by name before it needs them.
+  const restored = await ensureWorkspace(context, conversationId, {
+    installDependencies: false,
+  });
   const state = restored.state;
   const generationActive = isChatTaskActive(chatTask) && hasLiveChatTask(conversationId, chatTask.id);
 
-  let items: FileTreeItem[] = [];
-  if (restored.hasFiles) {
-    try {
-      items = await withTimeout(getFileTree(context, state), SANDBOX_PROBE_MS, 'file tree');
-    } catch {
-      items = [];
-    }
-  }
+  const items: FileTreeItem[] = restored.hasFiles
+    ? await ensureFileTree(context, state)
+    : [];
 
   return {
     state,
@@ -313,11 +223,7 @@ async function restoreWorkspacePreview(
   let preview: WorkspacePreviewLink = {};
   if (willRestorePreview(restore)) {
     try {
-      preview = await withTimeout(
-        republishPreviewOnResume(context, restore.state),
-        PREVIEW_RESTART_BUDGET_MS,
-        'preview resume',
-      );
+      preview = await ensurePreview(context, conversationId, restore.state);
     } catch (error) {
       clearPreview(restore.state);
       console.warn(
@@ -337,51 +243,34 @@ async function restoreWorkspacePreview(
   return preview;
 }
 
-async function runWorkspaceRestoreBody(context: AgentContext, conversationId: string) {
-  const restore = await restoreWorkspaceFiles(context, conversationId);
-  return {
-    ...workspaceFilesPayload(conversationId, restore),
-    preview: await restoreWorkspacePreview(context, conversationId, restore),
-  };
-}
-
+/**
+ * There is no escalation branch here any more. This used to remint a token,
+ * and fall back to a full workspace restore when that failed because the files
+ * were gone — which is the level ensurePreview now stands on rather than
+ * assumes.
+ */
 async function runPreviewRefreshBody(context: AgentContext, conversationId: string) {
-  const storedState = await getProjectState(context, conversationId);
-  const state = separateLegacyMakersDeployment(storedState);
-  if (!state.created && !state.previewUrl && !state.previewPublished) {
+  const stored = separateLegacyMakersDeployment(await getProjectState(context, conversationId));
+  if (!stored.created && !stored.previewUrl && !stored.previewPublished) {
     return {
       ok: true as const,
       stage: 'preview' as const,
       conversation_id: conversationId,
       preview: {},
-      deployment: state.deployment,
+      deployment: stored.deployment,
     };
   }
 
-  try {
-    const preview = await republishPreviewOnResume(context, state);
-    try {
-      await persistWorkspace(context, conversationId, state);
-    } catch {
-      // Non-fatal — the fresh URL below is still usable for this session.
-    }
-
-    return {
-      ok: true as const,
-      stage: 'preview' as const,
-      conversation_id: conversationId,
-      preview,
-      deployment: state.deployment,
-    };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.warn('[resume:preview] remint failed, escalating to workspace restore:', message);
-    const workspace = await runWorkspaceRestoreBody(context, conversationId);
-    return {
-      ...workspace,
-      stage: 'preview' as const,
-    };
-  }
+  const { state } = await ensureWorkspace(context, conversationId, {
+    installDependencies: false,
+  });
+  return {
+    ok: true as const,
+    stage: 'preview' as const,
+    conversation_id: conversationId,
+    preview: await ensurePreview(context, conversationId, state),
+    deployment: state.deployment,
+  };
 }
 
 export async function runProjectResumePreviewPipeline(context: AgentContext): Promise<Response> {
@@ -393,7 +282,7 @@ export async function runProjectResumePreviewPipeline(context: AgentContext): Pr
   try {
     const payload = await withTimeout(
       runPreviewRefreshBody(context, conversationId),
-      WORKSPACE_RESUME_BUDGET_MS,
+      READINESS_BUDGET_MS.workspace,
       'preview refresh',
     );
     return jsonResponse(payload);
@@ -419,7 +308,7 @@ async function* iterateWorkspaceResumeEvents(
   try {
     const restore = await timeStage('session:prep', { mode, stage: 'workspace' }, () => withTimeout(
       restoreWorkspaceFiles(context, conversationId),
-      WORKSPACE_RESUME_BUDGET_MS,
+      READINESS_BUDGET_MS.workspace,
       'workspace resume',
     ));
     if (signal?.aborted) return;

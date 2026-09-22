@@ -439,16 +439,24 @@ test('an unmounted route is restarted, while a bad reply is reported as-is', asy
 });
 
 test('a preview publish never probes the generated agent twice in a row', async () => {
-  const [preview, wrap] = await Promise.all([
+  const [preview, readiness] = await Promise.all([
     readFile('agents/_lib/project/preview.ts', 'utf8'),
-    readCommandsWrapSource(),
+    readFile('agents/_lib/project/readiness.ts', 'utf8'),
   ]);
 
-  // Each probe is a real model call against the generated agent, so the publish
-  // that follows a restart trusts the check the restart already ran.
-  assert.match(preview, /if \(!options\.routesAlreadyVerified\) \{/);
-  assert.match(wrap, /if \(!previewFailureWarrantsRestart\(error\)\) throw error;/);
-  assert.match(wrap, /routesAlreadyVerified: true/);
+  // Each probe is a real model call against the generated agent. The publish
+  // used to opt out of a second one through a routesAlreadyVerified flag its
+  // callers had to remember to pass; now there is only one place that can gate
+  // at all, so a double probe has nowhere to come from.
+  const gateCalls = preview.match(/await assertGeneratedRoutesReady\(context, state\)/g) || [];
+  assert.equal(gateCalls.length, 2, 'the gate belongs to startPreviewServer alone: warm and post-launch');
+  assert.doesNotMatch(readiness, /assertGeneratedRoutesReady/);
+  assert.doesNotMatch(preview, /routesAlreadyVerified/);
+
+  // The token-only path never reaches the server at all, so it cannot probe.
+  const tokenPath = readiness.match(/if \(!options\.forceRestart && !options\.verifyRoutes[\s\S]*?\n  \}/)?.[0] || '';
+  assert.ok(tokenPath, 'the token-only refresh path must stay');
+  assert.doesNotMatch(tokenPath, /startPreviewServer/);
 });
 
 test('healthy makers-dev previews are reused on follow-up turns', async () => {
@@ -457,7 +465,9 @@ test('healthy makers-dev previews are reused on follow-up turns', async () => {
 
   assert.ok(warmBranch, 'the warm-probe branch must stay');
   assert.match(warmBranch, /await assertGeneratedRoutesReady\(context, state\)/);
-  assert.match(warmBranch, /return previewServerInfo\(launchCommand\)/);
+  // `false`: a reused process is still serving the page the client already has,
+  // so the iframe must not be remounted for it.
+  assert.match(warmBranch, /return previewServerInfo\(launchCommand, false\)/);
   // A warm port that never answers is a stale server, so the next turn restarts
   // it instead of publishing a preview nobody can load. One that answers in the
   // wrong shape is a generated-code bug, and that reply is itself proof the
@@ -548,6 +558,11 @@ test('the host starts dest with the workspace and keeps it watching files', asyn
 
   assert.match(chat, /const startHostPreview = async/);
   assert.match(chat, /if \(state\.created\) \{\s*\n\s*void startHostPreview\('\[preview\] workspace ready:'\)/);
+  // One call per place the turn notices the preview is missing, and no guard of
+  // its own: deduplicating the four is the readiness layer's job.
+  assert.match(chat, /ensurePreview\(context, conversationId, state, \{\s*\n\s*verifyRoutes: true,\s*\n\s*\}\)/);
+  assert.doesNotMatch(chat, /hostPreviewInFlight/);
+  assert.doesNotMatch(chat, /startPreviewServer|publishRunningPreview/);
   // A failed dest used to warn only. The empty panel then had nothing to show
   // but the placeholder, over a model sentence that claimed the preview worked.
   assert.match(chat, /preview:\s*\{\s*error:\s*message\s*\}/);

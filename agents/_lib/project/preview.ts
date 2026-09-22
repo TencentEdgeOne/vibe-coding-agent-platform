@@ -136,7 +136,7 @@ export async function startPreviewServer(
         if (verifyRoutes) {
           await assertGeneratedRoutesReady(context, state);
         }
-        return previewServerInfo(launchCommand);
+        return previewServerInfo(launchCommand, false);
       } catch (error) {
         // A warm port that fails to answer is a stale server, not a preview. One
         // that answers wrongly is a code bug the restart would only delay.
@@ -187,10 +187,15 @@ export async function startPreviewServer(
     await assertGeneratedRoutesReady(context, state);
   }
 
-  return previewServerInfo(launchCommand);
+  return previewServerInfo(launchCommand, true);
 }
 
-function previewServerInfo(launchCommand: string) {
+/**
+ * `restarted` is for the iframe: a reused process is still serving the page the
+ * client already has, and a fresh one is not, so only the second case has to
+ * cost the user a remount.
+ */
+function previewServerInfo(launchCommand: string, restarted: boolean) {
   return {
     port: PREVIEW_SERVER_PORT,
     publicPort: PREVIEW_PUBLIC_PORT,
@@ -200,6 +205,7 @@ function previewServerInfo(launchCommand: string) {
     command: launchCommand,
     readyPath: PREVIEW_PATH_PREFIX,
     ready: true,
+    restarted,
   };
 }
 
@@ -427,33 +433,6 @@ async function readMakersDevLog(context: AgentContext) {
     // Diagnostics only. The route verdict above already stands on its own.
     return '';
   }
-}
-
-export async function publishRunningPreview(
-  context: AgentContext,
-  state: ProjectState,
-  options: { routesAlreadyVerified?: boolean } = {},
-) {
-  await assertPreviewServerReady(context);
-  // The chat probe is a real model call against the generated agent, so skip the
-  // whole gate when startPreviewServer just ran it.
-  if (!options.routesAlreadyVerified) {
-    await assertGeneratedRoutesReady(context, state);
-  }
-  const links = await resolvePublicLinks(context);
-  if (!links.previewUrl) {
-    throw new Error(`Makers dev is ready, but the sandbox did not return a public URL for port ${PREVIEW_PUBLIC_PORT}.`);
-  }
-  publishPreview(state, {
-    url: links.previewUrl,
-    sandboxDebugUrl: links.sandboxDebugUrl,
-    kind: 'sandbox',
-  });
-  return {
-    url: links.previewUrl,
-    sandboxDebugUrl: links.sandboxDebugUrl,
-    kind: 'sandbox' as const,
-  };
 }
 
 export async function isPreviewServerReady(

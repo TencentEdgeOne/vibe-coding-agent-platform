@@ -1,12 +1,7 @@
 import type { AgentContext } from '../runtime/context.ts';
 import { applyUserGatewayDecision } from '../project/gateway.ts';
-import {
-  isPreviewServerReady,
-  publishRunningPreview,
-  startPreviewServer,
-} from '../project/preview.ts';
-import { persistWorkspace } from '../project/workspace-store.ts';
-import { prepareProjectWorkspace } from '../project/workspace.ts';
+import { isPreviewServerReady } from '../project/preview.ts';
+import { ensurePreview, ensureWorkspace } from '../project/readiness.ts';
 import { getConversationId } from './task.ts';
 import { getLiveWorkspace } from './live-workspace.ts';
 import type { ProjectState, StreamSend } from '../types.ts';
@@ -18,6 +13,11 @@ function jsonResponse(body: Record<string, unknown>, status = 200) {
   });
 }
 
+/**
+ * A new key only reaches the dev server through its environment, so a server
+ * that was already running has to be replaced rather than reused. The gates are
+ * left off: the project did not change, only its credentials.
+ */
 async function restartOrStartPreview(
   context: AgentContext,
   conversationId: string,
@@ -25,24 +25,17 @@ async function restartOrStartPreview(
   send: StreamSend | undefined,
   options: { forceRestart: boolean },
 ) {
-  await startPreviewServer(context, state, {
-    verifyRoutes: false,
+  const preview = await ensurePreview(context, conversationId, state, {
     forceRestart: options.forceRestart,
   });
-  const preview = await publishRunningPreview(context, state, { routesAlreadyVerified: true });
-  await persistWorkspace(context, conversationId, state);
-  const payload = {
-    ...preview,
-    restarted: options.forceRestart,
-  };
   send?.({
     type: 'preview_ready',
     data: {
-      preview: payload,
+      preview,
       download: { url: '/download', filename: 'source.zip' },
     },
   });
-  return payload;
+  return preview;
 }
 
 /**
@@ -72,7 +65,7 @@ export async function applyGatewayDecisionAndRespond(
   try {
     const live = getLiveWorkspace(conversationId);
     const send = live?.send;
-    const state = live?.state ?? await prepareProjectWorkspace(context, conversationId, send);
+    const state = live?.state ?? (await ensureWorkspace(context, conversationId, { send })).state;
     const values = await applyUserGatewayDecision(
       context,
       state,

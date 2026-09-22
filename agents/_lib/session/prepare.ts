@@ -2,8 +2,7 @@ import type { AgentContext } from '../runtime/context.ts';
 import { mergeSseGenerators } from '../runtime/merge.ts';
 import { getRequestQueryParam } from '../runtime/request.ts';
 import { sseEvent } from '../runtime/sse.ts';
-import { extendExistingSandboxTimeout } from '../turn/checkpoint.ts';
-import { ensureWorkspaceDirectories, markFreshWorkspace } from '../project/workspace.ts';
+import { ensureSandbox } from '../project/readiness.ts';
 import { getProjectState, patchConversationRecord } from './store.ts';
 import { warmLiveQuery } from './live.ts';
 import { timeStage } from '../utils/timing.ts';
@@ -40,20 +39,14 @@ export async function persistConversationPreferences(
   });
 }
 
-export async function prepareSandboxWorkspace(
+export function prepareSandboxWorkspace(
   context: AgentContext,
   conversationId: string,
   options: { mode?: SessionPrepMode } = {},
 ) {
-  await extendExistingSandboxTimeout(context);
-  const state = await getProjectState(context, conversationId);
-  await ensureWorkspaceDirectories(context, state);
-  // Only a create visit knows the workspace is empty; a restore may still have
-  // a snapshot to pull down, so its first prompt must keep probing.
-  if (options.mode === 'create' && !state.created) {
-    markFreshWorkspace(conversationId, state.appDir);
-  }
-  return state;
+  return ensureSandbox(context, conversationId, {
+    markFresh: options.mode === 'create',
+  });
 }
 
 export async function* iterateConversationPrep(

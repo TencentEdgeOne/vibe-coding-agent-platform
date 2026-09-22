@@ -10,7 +10,7 @@ import type { CommandOutputStream } from './command-stream.ts';
 export type MakersCommandLifecycle = {
   context: AgentContext;
   state: ProjectState;
-  conversationId?: string;
+  conversationId: string;
   send?: StreamSend;
   signal?: AbortSignal;
   /**

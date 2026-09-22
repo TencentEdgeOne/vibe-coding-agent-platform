@@ -13,7 +13,7 @@ import {
   prepareSandboxWorkspace,
   sessionPrepSse,
 } from '../agents/_lib/session/prepare.ts';
-import { restoreProjectWorkspace } from '../agents/_lib/project/workspace.ts';
+import { ensureWorkspace } from '../agents/_lib/project/readiness.ts';
 import { timeStage } from '../agents/_lib/utils/timing.ts';
 import { sseEvent } from '../agents/_lib/runtime/sse.ts';
 import type { AgentContext, BlobStoreLike } from '../agents/_lib/runtime/context.ts';
@@ -243,14 +243,14 @@ test('create prep lets the first workspace restore skip sandbox probes', async (
     commands: fixture.commandCount.value,
   };
 
-  const first = await restoreProjectWorkspace(fixture.context, conversationId);
+  const first = await ensureWorkspace(fixture.context, conversationId);
   assert.equal(first.hasFiles, false);
   assert.equal(fixture.made.length, afterPrep.made, 'memo path must not mkdir again');
   assert.equal(fixture.exists.length, afterPrep.exists, 'memo path must not probe layout or files');
   assert.equal(fixture.restoreCount.value, afterPrep.restore, 'memo path must not call sandbox.restore');
   assert.equal(fixture.commandCount.value, afterPrep.commands, 'memo path must not run find');
 
-  const second = await restoreProjectWorkspace(fixture.context, conversationId);
+  const second = await ensureWorkspace(fixture.context, conversationId);
   assert.equal(second.hasFiles, false);
   assert.ok(fixture.exists.length > afterPrep.exists, 'a second restore must probe the sandbox');
   assert.ok(fixture.restoreCount.value > afterPrep.restore, 'a second restore must try the snapshot');
@@ -262,7 +262,7 @@ test('restore prep does not consume the create-only workspace memo', async () =>
   await prepareSandboxWorkspace(fixture.context, conversationId, { mode: 'restore' });
   const existsAfterPrep = fixture.exists.length;
 
-  await restoreProjectWorkspace(fixture.context, conversationId);
+  await ensureWorkspace(fixture.context, conversationId);
   assert.ok(fixture.exists.length > existsAfterPrep);
 });
 
@@ -337,12 +337,12 @@ test('GET /session merges restore history with warmup and emits ready before wor
   assert.match(prepare, /mergeSseGenerators\(\[\s*iterateSandboxPrepEvents/);
   assert.match(prepare, /iterateAgentWarmupEvents/);
   assert.match(prepare, /if \(!model && !language\)/);
-  assert.match(prepare, /markFreshWorkspace\(conversationId, state\.appDir\)/);
+  assert.match(prepare, /markFresh: options\.mode === 'create'/);
 
-  const workspace = await readFile('agents/_lib/project/workspace.ts', 'utf8');
-  assert.match(workspace, /export function markFreshWorkspace/);
-  assert.match(workspace, /FRESH_WORKSPACE_TTL_MS = 5 \* 60 \* 1000/);
-  assert.match(workspace, /Promise\.all\(\[\s*files\.makeDir\(state\.sessionDir\),\s*files\.makeDir\(state\.appDir\),/);
+  const readiness = await readFile('agents/_lib/project/readiness.ts', 'utf8');
+  assert.match(readiness, /export function markFreshWorkspace/);
+  assert.match(readiness, /FRESH_WORKSPACE_TTL_MS = 5 \* 60 \* 1000/);
+  assert.match(readiness, /Promise\.all\(\[\s*files\.makeDir\(state\.sessionDir\),\s*files\.makeDir\(state\.appDir\),/);
 
   const transcript = await readFile('agents/_lib/session/transcript.ts', 'utf8');
   assert.match(transcript, /getConversationRecord\(context, conversationId, \{ refresh: true \}\)/);

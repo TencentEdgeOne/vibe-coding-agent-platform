@@ -216,7 +216,11 @@ test('the prompt keeps its tool contracts and workspace boundary', () => {
   assert.ok(prompt.includes(state.appDir), 'prompt must name the writable project directory');
   assert.match(prompt, /load_makers_skill as the first tool/);
   assert.match(prompt, /write_project_file accepts exactly one file per call/);
-  assert.match(prompt, /The host starts the sandbox preview/);
+  // The preview is a tool the agent calls, not a side effect it is told to keep
+  // its hands off. The shell route stays banned; start_preview is the primitive
+  // that replaced the ban.
+  assert.match(prompt, /start_preview is how you ask for the preview/);
+  assert.match(prompt, /do not start a preview server through commands/);
   assert.match(prompt, /Run edgeone makers deploy only when the user explicitly asks/);
   assert.doesNotMatch(prompt, /publish_preview|deploy_to_makers|get_preview_link/);
   assert.match(prompt, /I can only help create or modify web projects/);
@@ -366,9 +370,10 @@ test('the prompt closes the three ways a run can talk itself into a false finish
   assert.match(prompt, /An installed dependency is not a reference/);
   assert.match(prompt, /bundled dist files, \.d\.ts declarations, or version metadata/);
 
-  // There is no restart primitive to reach for: the host restarts the server
-  // when its own route probe finds an endpoint unmounted.
-  assert.match(prompt, /The host restarts the preview when generated endpoints are missing/);
+  // There is a restart primitive now, and naming it is what keeps the run from
+  // improvising one: a prohibition with nothing behind it is what sent that run
+  // after the process table in the first place.
+  assert.match(prompt, /pass restart:true only after changing something the server reads at startup/);
   assert.match(prompt, /Do not kill processes, free ports, or launch a preview server yourself/);
 
   // The static site answers a POST to an unmounted route with 200 and a page,
@@ -550,7 +555,7 @@ test('an install or a build is described as taking the preview down', () => {
   const prompt = renderPrompt();
 
   assert.match(prompt, /A build or an install cannot run beside the preview/);
-  assert.match(prompt, /down until the host starts it again/);
+  assert.match(prompt, /down until it is started again: call start_preview/);
   // The restart rule has to stay consistent with it: the host frees the port,
   // which is what makes relaunching work rather than repeat.
   assert.match(prompt, /terminates the previous server before every launch/);
