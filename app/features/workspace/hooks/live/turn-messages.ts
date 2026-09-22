@@ -1,6 +1,7 @@
 import {
   applyStreamEvent,
   dropTrailingSummaryEcho,
+  firstVisibleActivityStartedAt,
   sealOpenThinking,
 } from '../../../../../shared/timeline.ts';
 import type { PersistedActivityTurn } from '../../../../../shared/protocol.ts';
@@ -27,6 +28,11 @@ export function foldActivityEvent(
 ): ChatMessage[] {
   return messages.map((item) => {
     if (item.id !== assistantMessageId) return item;
+    const visibleEvent = (event.type === 'text_segment' && Boolean(event.data?.text))
+      || (event.type === 'thinking_segment' && Boolean(event.data?.text))
+      || (event.type === 'tool_use' && Boolean(event.data?.id));
+    const previousStartedAt = item.startedAt
+      || firstVisibleActivityStartedAt(item.activities ?? []);
     const folded = applyStreamEvent({
       id: item.id,
       user: '',
@@ -35,7 +41,16 @@ export function foldActivityEvent(
       createdAt: 0,
       activities: item.activities ?? [],
     } satisfies PersistedActivityTurn, event);
-    return { ...item, activities: folded.activities };
+    const startedAt = previousStartedAt
+      || firstVisibleActivityStartedAt(folded.activities)
+      || (visibleEvent ? Date.now() : undefined);
+    return {
+      ...item,
+      activities: folded.activities,
+      // The visible clock starts with the first thinking, tool, or text event,
+      // not when the request was submitted.
+      ...(startedAt ? { startedAt } : {}),
+    };
   });
 }
 

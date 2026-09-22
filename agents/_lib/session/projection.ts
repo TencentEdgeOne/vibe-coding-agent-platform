@@ -127,6 +127,18 @@ export function projectTranscript(jsonl: string, projectDir = ''): PersistedActi
     if (entry.type === 'assistant' && active.turn) {
       const turn = active.turn;
       const text = textFromContent(content);
+      const hasVisibleOutput = Boolean(text)
+        || (Array.isArray(content) && content.some((block) => {
+          const record = asRecord(block);
+          return record.type === 'thinking'
+            || record.type === 'redacted_thinking'
+            || record.type === 'text'
+            || record.type === 'tool_use'
+            || record.type === 'mcp_tool_use';
+        }));
+      if (hasVisibleOutput && !turn.startedAt) {
+        turn.startedAt = createdAt;
+      }
       if (text) turn.assistant = text;
       if (Array.isArray(content)) {
         for (const block of content) {
@@ -136,6 +148,7 @@ export function projectTranscript(jsonl: string, projectDir = ''): PersistedActi
               ? record.thinking
               : typeof record.text === 'string' ? record.text : '';
             if (thinking) {
+              if (!turn.startedAt) turn.startedAt = createdAt;
               turn.activities = appendThinkingChunk(
                 turn.activities,
                 sanitizeThinkingContent(thinking),
@@ -145,6 +158,7 @@ export function projectTranscript(jsonl: string, projectDir = ''): PersistedActi
             continue;
           }
           if (record.type === 'redacted_thinking') {
+            if (!turn.startedAt) turn.startedAt = createdAt;
             turn.activities = appendThinkingChunk(turn.activities, '(redacted)', createdAt);
             continue;
           }

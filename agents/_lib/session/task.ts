@@ -3,9 +3,9 @@ import { runChatPipeline } from '../turn/chat.ts';
 import { runDeployPipeline } from '../turn/deploy.ts';
 import {
   getChatTask,
+  getConversationRecord,
   saveChatTask,
-  saveLanguagePreference,
-  saveModelPreference,
+  saveConversationRecord,
 } from './store.ts';
 import { interruptLiveQuery } from './live.ts';
 import type { ChatTask, ChatTaskKind, ChatTaskStatus, StreamSend } from '../types.ts';
@@ -209,16 +209,20 @@ async function createChatTask(
     message,
     ...(options.kind === 'deploy' ? { kind: 'deploy' as const } : { kind: 'prompt' as const }),
     ...(requestedModel ? { model: requestedModel } : {}),
+    preparePhase: 'accepted',
     status: 'queued',
     createdAt: Date.now(),
   };
-  await saveChatTask(context, conversationId, task);
-  if (requestedModel) {
-    await saveModelPreference(context, conversationId, requestedModel);
-  }
-  if (language === 'zh' || language === 'en') {
-    await saveLanguagePreference(context, conversationId, language);
-  }
+  // One strong-consistency read-modify-write for all three fields the request
+  // carries. Saving the task, model, and language separately cost three extra
+  // Blob round trips before the stream could start.
+  const record = await getConversationRecord(context, conversationId, { refresh: true });
+  await saveConversationRecord(context, conversationId, {
+    ...record,
+    chatTask: task,
+    ...(requestedModel ? { modelPreference: requestedModel } : {}),
+    ...(language === 'zh' || language === 'en' ? { languagePreference: language } : {}),
+  });
   return { ok: true as const, conversationId, task };
 }
 
@@ -350,6 +354,7 @@ export async function* iterateLiveChatTaskEvents(
       runId: task.id,
       conversation_id: conversationId,
       status: task.status,
+      preparePhase: task.preparePhase || 'accepted',
     },
   });
   const queue = new AsyncEventQueue<SequencedEvent>();

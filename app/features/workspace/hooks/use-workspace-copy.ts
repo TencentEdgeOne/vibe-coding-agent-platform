@@ -27,6 +27,10 @@ export function useWorkspaceCopy(t: UiCopy, options: {
   }), [t]);
   const conversationCopy = useMemo(() => ({
     preparingAgent: t.workspace.activityPreparingAgent,
+    prepareAccepted: t.workspace.activityPrepareAccepted,
+    prepareWorkspace: t.workspace.activityPrepareWorkspace,
+    prepareAgent: t.workspace.activityPrepareAgent,
+    analyzing: t.workspace.activityAnalyzing,
     running: t.workspace.activityRunning,
     completed: t.workspace.activityCompleted,
     failed: t.workspace.activityFailed,

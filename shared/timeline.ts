@@ -416,6 +416,23 @@ export function sealOpenThinking(
   return list;
 }
 
+/**
+ * The clock starts when the user first sees the agent doing something:
+ * thinking, a tool call, or narration. Historical text blocks did not carry a
+ * timestamp, so callers that need a duration leave those without one rather
+ * than substituting the user's send time.
+ */
+export function firstVisibleActivityStartedAt(
+  activities: readonly AssistantActivity[],
+) {
+  for (const activity of activities) {
+    if (activity.kind === 'thinking' || activity.kind === 'tool') {
+      if (activity.startedAt) return activity.startedAt;
+    }
+  }
+  return undefined;
+}
+
 function withoutUrls(text: string) {
   return text.replace(/https?:\/\/\S+/g, '').replace(/\s+/g, '');
 }

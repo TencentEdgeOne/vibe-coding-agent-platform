@@ -9,6 +9,10 @@ export type ConversationMessage = ChatMessage;
 
 export type ConversationCopy = {
   preparingAgent: string;
+  prepareAccepted: string;
+  prepareWorkspace: string;
+  prepareAgent: string;
+  analyzing: string;
   running: string;
   completed: string;
   failed: string;

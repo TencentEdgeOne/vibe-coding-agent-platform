@@ -16,7 +16,9 @@ import {
   resolveDisclosure,
 } from '../app/features/workspace/components/conversation/activity-disclosure.ts';
 import {
+  isAgentAnalyzing,
   isAgentPreparing,
+  preparePhaseLabel,
   resolveAgentElapsed,
   resolveAgentStatusBarPhase,
 } from '../app/features/workspace/components/conversation/agent-status-bar-phase.ts';
@@ -338,6 +340,9 @@ test('every assistant turn keeps its own status rail through completion', async 
   assert.match(assistant, /preparing=\{preparing\}/);
   assert.match(assistant, /sticky=\{followOutput\}/);
   assert.match(status, /state === 'preparing'/);
+  assert.match(status, /state === 'analyzing'/);
+  assert.match(status, /copy\.analyzing/);
+  assert.match(status, /preparePhaseLabel\(message\.preparePhase, copy\)/);
   assert.match(status, /copy\.completed/);
   assert.match(status, /copy\.failed/);
   assert.match(status, /copy\.stopped/);
@@ -347,7 +352,8 @@ test('every assistant turn keeps its own status rail through completion', async 
   assert.match(status, /\{active && \(/);
   assert.match(status, /className="agent-status-bar-indicator"/);
   assert.match(status, /<i \/>\s*<i \/>\s*<i \/>/);
-  assert.match(status, /const ticking = status === 'running' \|\| state === 'stopping'/);
+  assert.match(status, /const ticking = \(status === 'running' && hasVisibleAgentOutput\(message\)\)/);
+  assert.match(status, /\|\| state === 'stopping'/);
   assert.match(status, /if \(!ticking\) return;[\s\S]*setNow\(Date\.now\(\)\)/);
   assert.doesNotMatch(status, /if \(!active\) return;/);
   assert.match(status, /resolveAgentElapsed\(message, now\)/);
@@ -362,19 +368,54 @@ test('every assistant turn keeps its own status rail through completion', async 
   assert.match(styles, /\.model-picker-menu \{[\s\S]*?z-index: 20;/);
   assert.doesNotMatch(styles, /agent-running-spin/);
   assert.match(zh, /activityPreparingAgent: '正在准备 Agent'/);
+  assert.match(zh, /activityAnalyzing: '正在分析'/);
+  assert.match(zh, /activityPrepareAccepted: '正在接收需求…'/);
+  assert.match(zh, /activityPrepareWorkspace: '正在准备工作区…'/);
+  assert.match(zh, /activityPrepareAgent: '正在启动 AI…'/);
   assert.match(en, /activityPreparingAgent: 'Preparing the agent'/);
+  assert.match(en, /activityAnalyzing: 'Analyzing'/);
+  assert.match(en, /activityPrepareAccepted: 'Receiving request…'/);
+  assert.match(en, /activityPrepareWorkspace: 'Preparing the workspace…'/);
+  assert.match(en, /activityPrepareAgent: 'Starting AI…'/);
+  assert.doesNotMatch(status, /percent|percentage|progress%/i);
 });
 
-test('turn elapsed time ticks while running and freezes when done', () => {
+test('the prepare label uses the real phase and never invents a percentage', () => {
+  const copy = {
+    prepareAccepted: 'Receiving request…',
+    prepareWorkspace: 'Preparing the workspace…',
+    prepareAgent: 'Starting AI…',
+    preparingAgent: 'Preparing the agent',
+  };
+  assert.equal(preparePhaseLabel('accepted', copy), copy.prepareAccepted);
+  assert.equal(preparePhaseLabel('workspace', copy), copy.prepareWorkspace);
+  assert.equal(preparePhaseLabel('agent', copy), copy.prepareAgent);
+  assert.equal(preparePhaseLabel(undefined, copy), copy.preparingAgent);
+});
+
+test('turn elapsed time starts only after the first visible activity', () => {
+  assert.equal(resolveAgentElapsed({
+    status: 'running',
+    startedAt: undefined,
+    endedAt: undefined,
+    activities: [],
+  }, 9_000), '');
   assert.equal(resolveAgentElapsed({ status: 'running', startedAt: 1_000, endedAt: undefined }, 1_999), '0s');
   assert.equal(resolveAgentElapsed({ status: 'running', startedAt: 1_000, endedAt: undefined }, 2_999), '1s');
+  assert.equal(resolveAgentElapsed({
+    status: 'running',
+    startedAt: undefined,
+    endedAt: undefined,
+    activities: [{ kind: 'thinking', content: 'Planning.', startedAt: 2_000 }],
+  }, 2_999), '0s');
   assert.equal(resolveAgentElapsed({ status: 'done', startedAt: 1_000, endedAt: 62_999 }, 99_000), '1m 1s');
   assert.equal(resolveAgentElapsed({ status: 'done', startedAt: undefined, endedAt: 2_500 }, 9_000), '');
 });
 
-test('thinking alone is preparing, while a tool or visible text means running', () => {
+test('thinking means analysis, while a tool or visible text means running', () => {
   assert.equal(resolveAgentStatusBarPhase('running', true), 'preparing');
   assert.equal(resolveAgentStatusBarPhase('running', false), 'running');
+  assert.equal(resolveAgentStatusBarPhase('running', false, false, true), 'analyzing');
   assert.equal(resolveAgentStatusBarPhase('stopped', false, true), 'stopping');
   assert.equal(resolveAgentStatusBarPhase('done', false), 'completed');
   assert.equal(resolveAgentStatusBarPhase('error', false), 'failed');
@@ -386,6 +427,10 @@ test('thinking alone is preparing, while a tool or visible text means running', 
   assert.equal(isAgentPreparing({
     content: '',
     activities: [{ kind: 'thinking', content: 'Working out the layout.' }],
+  }), false);
+  assert.equal(isAgentAnalyzing({
+    content: '',
+    activities: [{ kind: 'thinking', content: 'Working out the layout.' }],
   }), true);
   assert.equal(isAgentPreparing({
     content: '',
@@ -395,6 +440,10 @@ test('thinking alone is preparing, while a tool or visible text means running', 
       name: 'write_project_file',
       status: 'running',
     }],
+  }), false);
+  assert.equal(isAgentAnalyzing({
+    content: '',
+    activities: [{ kind: 'text', content: 'Starting now.' }],
   }), false);
   assert.equal(isAgentPreparing({
     content: '',

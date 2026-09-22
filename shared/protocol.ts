@@ -10,6 +10,9 @@ export type ActivityStatus = 'running' | 'completed' | 'failed' | 'stopped';
 
 export type ProgressPhase = 'scaffold' | 'modify' | 'code' | 'install' | 'preview' | 'link';
 
+/** Real startup milestones before the model produces its first visible output. */
+export type PreparePhase = 'accepted' | 'workspace' | 'agent';
+
 export type SystemInfoType = 'compact' | 'usage' | 'status' | 'system' | 'sdk';
 
 export type AssistantActivity =
@@ -49,6 +52,8 @@ export type PersistedActivityTurn = {
   assistant: string;
   status: 'completed' | 'failed' | 'stopped';
   createdAt: number;
+  /** When the first user-visible agent output arrived; absent if it never did. */
+  startedAt?: number;
   activities: AssistantActivity[];
 };
 
@@ -106,6 +111,7 @@ type ActiveChatTask = {
   status: 'queued' | 'running';
   createdAt?: number;
   startedAt?: number;
+  preparePhase?: PreparePhase;
 };
 
 export type ResumeData = {
@@ -171,8 +177,10 @@ export type ChatStreamEvent =
         runId?: string;
         conversation_id?: string;
         status?: 'queued' | 'running' | 'completed' | 'failed' | 'stopped';
+        preparePhase?: PreparePhase;
       };
     }
+  | { type: 'prepare_phase'; data?: { phase?: PreparePhase } }
   | { type: 'result'; data?: ChatResponse }
   | { type: 'agent'; data?: Pick<ChatResponse, 'ok' | 'reply' | 'error'> }
   | { type: 'workspace'; data?: WorkspaceSnapshot }

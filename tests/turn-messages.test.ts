@@ -100,6 +100,23 @@ test('foldActivityEvent appends a text segment onto the active turn', () => {
   });
   assert.equal(next[0].activities?.[0].kind, 'text');
   assert.equal(next[0].activities?.[0].kind === 'text' && next[0].activities[0].content, 'Hello');
+  assert.ok(typeof next[0].startedAt === 'number');
+});
+
+test('foldActivityEvent starts the turn clock on thinking, not on submission', () => {
+  const beforeOutput = foldActivityEvent(
+    [{ ...assistantWithTools([]), startedAt: undefined }],
+    'a1',
+    { type: 'system_info', data: { infoType: 'status', title: 'Status', content: 'connecting' } },
+  );
+  assert.equal(beforeOutput[0].startedAt, undefined);
+
+  const withThinking = foldActivityEvent(beforeOutput, 'a1', {
+    type: 'thinking_segment',
+    data: { text: 'Working out the layout.' },
+  });
+  assert.ok(typeof withThinking[0].startedAt === 'number');
+  assert.ok(withThinking[0].activities?.some((activity) => activity.kind === 'thinking'));
 });
 
 test('settleRunningAssistant only fills an unfinished assistant turn', () => {

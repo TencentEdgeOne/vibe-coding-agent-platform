@@ -77,6 +77,10 @@ export const zh = {
     // model's own name, which is the more useful thing to read sighted.
     modelLabel: '选择模型',
     activityPreparingAgent: '正在准备 Agent',
+    activityPrepareAccepted: '正在接收需求…',
+    activityPrepareWorkspace: '正在准备工作区…',
+    activityPrepareAgent: '正在启动 AI…',
+    activityAnalyzing: '正在分析',
     activityRunning: '正在执行',
     activityCompleted: '已完成',
     activityFailed: '失败',

@@ -5,6 +5,7 @@ import type {
   ChatStreamEvent,
   DeploymentInfo,
   PreviewKind,
+  PreparePhase,
 } from '../../shared/protocol.ts';
 
 export type {
@@ -16,6 +17,7 @@ export type {
   FileTreeItem,
   PersistedActivityTurn,
   PreviewKind,
+  PreparePhase,
 } from '../../shared/protocol.ts';
 
 export type ProjectState = {
@@ -60,6 +62,8 @@ export type ChatTask = {
   siteDomain?: string;
   /** Model this turn runs on. Absent means the deployment's configured default. */
   model?: string;
+  /** Startup milestone shown before the first user-visible agent output. */
+  preparePhase?: PreparePhase;
   status: ChatTaskStatus;
   createdAt: number;
   startedAt?: number;

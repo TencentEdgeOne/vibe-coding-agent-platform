@@ -168,7 +168,7 @@ export function useLiveTurn(options: {
         content: '',
         activities: [],
         status: 'running',
-        startedAt: Date.now(),
+        preparePhase: 'accepted',
       },
     ];
     setMessages((current) => [...current, ...turnMessages]);

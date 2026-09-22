@@ -111,6 +111,15 @@ export function createLiveChatSession(sessionOptions: LiveChatSessionOptions): L
         cacheConversationId(event.data.conversation_id);
         setConversationId(event.data.conversation_id);
       }
+      if (event.data?.preparePhase) {
+        patchAssistant({ preparePhase: event.data.preparePhase });
+      }
+      return;
+    }
+    if (event.type === 'prepare_phase') {
+      if (event.data?.phase) {
+        patchAssistant({ preparePhase: event.data.phase });
+      }
       return;
     }
     if (event.type === 'ping') return;

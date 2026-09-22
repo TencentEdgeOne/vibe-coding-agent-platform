@@ -1,4 +1,5 @@
 import type { AssistantActivity } from '../../shared/protocol';
+import type { PreparePhase } from '../../shared/protocol';
 
 export type {
   AssistantActivity,
@@ -26,4 +27,6 @@ export type ChatMessage = {
   startedAt?: number;
   /** When this turn reached a terminal status; absent while still running. */
   endedAt?: number;
+  /** Real startup milestone before the first visible agent output. */
+  preparePhase?: PreparePhase;
 };

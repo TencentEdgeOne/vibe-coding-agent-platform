@@ -194,6 +194,7 @@ export async function runDeployPipeline(
     return;
   }
 
+  send({ type: 'prepare_phase', data: { phase: 'workspace' } });
   const { state, dependenciesReady } = await activateSandbox(context, conversationId, { send });
   if (bindSiteDomain(state, resolveRequestSiteDomain(context))) {
     await persistWorkspace(context, conversationId, state);

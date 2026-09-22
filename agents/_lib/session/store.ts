@@ -184,21 +184,3 @@ export async function saveChatTask(
 ) {
   await patchConversationRecord(context, conversationId, { chatTask: task });
 }
-
-export async function saveModelPreference(
-  context: { blobStore?: BlobStoreLike },
-  conversationId: string,
-  model: string,
-) {
-  await patchConversationRecord(context, conversationId, { modelPreference: model.trim() });
-}
-
-export async function saveLanguagePreference(
-  context: { blobStore?: BlobStoreLike },
-  conversationId: string,
-  language: string,
-) {
-  const next = language.trim();
-  if (next !== 'zh' && next !== 'en') return;
-  await patchConversationRecord(context, conversationId, { languagePreference: next });
-}

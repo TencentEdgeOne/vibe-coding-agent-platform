@@ -28,6 +28,16 @@ export function createTurnLifecycle(options: TurnLifecycleOptions) {
   };
 
   const recordProgress = (event: AgentProgressEvent) => {
+    if (
+      !turn.startedAt
+      && (
+        (event.type === 'text_segment' && Boolean(event.data?.text))
+        || (event.type === 'thinking_segment' && Boolean(event.data?.text))
+        || event.type === 'tool_use'
+      )
+    ) {
+      turn = { ...turn, startedAt: Date.now() };
+    }
     turn = applyStreamEvent(turn, event);
   };
 

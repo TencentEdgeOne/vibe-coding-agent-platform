@@ -85,6 +85,7 @@ async function loadProjectResumeHistory(context: AgentContext, conversationId: s
         status: storedTask.status,
         createdAt: storedTask.createdAt,
         startedAt: storedTask.startedAt,
+        preparePhase: storedTask.preparePhase,
       }
     : null;
   if (isChatTaskActive(storedTask) && !activeTask) {

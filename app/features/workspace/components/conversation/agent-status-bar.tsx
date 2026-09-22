@@ -2,23 +2,30 @@
 
 import { useEffect, useState } from 'react';
 import {
+  hasVisibleAgentOutput,
+  preparePhaseLabel,
   resolveAgentElapsed,
   resolveAgentStatusBarPhase,
 } from './agent-status-bar-phase';
 import type { AgentTurnStatus, ConversationCopy, ConversationMessage } from './types';
 
-export function AgentStatusBar({ status, preparing, stopping, sticky, copy, message }: {
+export function AgentStatusBar({ status, preparing, analyzing, stopping, sticky, copy, message }: {
   status: AgentTurnStatus;
   preparing: boolean;
+  analyzing: boolean;
   stopping: boolean;
   sticky: boolean;
   copy: ConversationCopy;
-  message: Pick<ConversationMessage, 'status' | 'startedAt' | 'endedAt' | 'activities'>;
+  message: Pick<
+    ConversationMessage,
+    'status' | 'content' | 'startedAt' | 'endedAt' | 'activities' | 'preparePhase'
+  >;
 }) {
   const [now, setNow] = useState(() => Date.now());
-  const state = resolveAgentStatusBarPhase(status, preparing, stopping);
-  const active = state === 'running' || state === 'stopping';
-  const ticking = status === 'running' || state === 'stopping';
+  const state = resolveAgentStatusBarPhase(status, preparing, stopping, analyzing);
+  const active = state === 'running' || state === 'analyzing' || state === 'stopping';
+  const ticking = (status === 'running' && hasVisibleAgentOutput(message))
+    || state === 'stopping';
   useEffect(() => {
     if (!ticking) return;
     setNow(Date.now());
@@ -27,7 +34,9 @@ export function AgentStatusBar({ status, preparing, stopping, sticky, copy, mess
   }, [ticking]);
 
   const label = state === 'preparing'
-    ? copy.preparingAgent
+    ? preparePhaseLabel(message.preparePhase, copy)
+    : state === 'analyzing'
+      ? copy.analyzing
     : state === 'running'
       ? copy.running
       : state === 'stopping'

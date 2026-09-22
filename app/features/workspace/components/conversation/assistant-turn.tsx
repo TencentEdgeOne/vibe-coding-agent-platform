@@ -10,7 +10,7 @@ import {
 import { withoutPlatformName } from '../../../../../shared/platform-name';
 import type { ActivityStyle } from '../../hooks/use-activity-style';
 import { ActivityStream } from './activity-stream';
-import { isAgentPreparing } from './agent-status-bar-phase';
+import { isAgentAnalyzing, isAgentPreparing } from './agent-status-bar-phase';
 import { AgentStatusBar } from './agent-status-bar';
 import { Markdown } from './markdown';
 import type { ConversationCopy, ConversationMessage } from './types';
@@ -29,6 +29,7 @@ export const AssistantTurn = memo(function AssistantTurn({ message, style, stopp
   const running = message.status === 'running';
   const status = message.status ?? 'done';
   const preparing = status === 'running' && isAgentPreparing(message);
+  const analyzing = status === 'running' && isAgentAnalyzing(message);
   // Only the block still being written into counts as live; the ones above it
   // are finished thoughts even though the turn as a whole is not.
   const liveIndex = running ? blocks[blocks.length - 1]?.index : undefined;
@@ -51,6 +52,7 @@ export const AssistantTurn = memo(function AssistantTurn({ message, style, stopp
       <AgentStatusBar
         status={status}
         preparing={preparing}
+        analyzing={analyzing}
         stopping={stopping}
         sticky={followOutput}
         copy={copy}

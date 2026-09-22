@@ -333,6 +333,12 @@ test('sandbox, session, and preview routes declare the lazy boundary', async () 
   assert.match(timing, /instance: instanceId\(\)/);
   assert.match(task, /orphaned task has no live runner on this instance/);
   assert.match(
+    task,
+    /getConversationRecord\(context, conversationId, \{ refresh: true \}\)[\s\S]*?saveConversationRecord\(/,
+  );
+  assert.match(chat, /type: 'prepare_phase', data: \{ phase: 'workspace' \}/);
+  assert.match(chat, /type: 'prepare_phase', data: \{ phase: 'agent' \}/);
+  assert.match(
     refresh.slice(refresh.indexOf('const onVisibility'), refresh.indexOf('window.setInterval')),
     /previewPanelOpenRef\.current/,
   );
