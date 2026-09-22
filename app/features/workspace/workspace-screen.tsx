@@ -40,12 +40,15 @@ export function WorkspaceScreen() {
   const workspace = useWorkspaceState();
   previewPanelOpenRef.current = workspace.resultPanelOpen && workspace.sandboxTab === 'preview';
   const split = useWorkspaceSplit();
-  const snapshotRefreshRef = useRef<(conversationId: string) => Promise<unknown>>(async () => null);
+  const snapshotRefreshRef = useRef<(
+    conversationId: string,
+    options?: { includePreview?: boolean },
+  ) => Promise<unknown>>(async () => null);
   const preview = usePreviewSurface({
     conversationIdRef,
     loadingRef,
     previewPanelOpenRef,
-    refreshWorkspace: (id) => snapshotRefreshRef.current(id),
+    refreshWorkspace: (id, options) => snapshotRefreshRef.current(id, options),
   });
   const snapshot = useWorkspaceSnapshot({
     workspace,

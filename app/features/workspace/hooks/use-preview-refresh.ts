@@ -9,7 +9,10 @@ export function usePreviewRefresh(options: {
   conversationIdRef: MutableRefObject<string | null>;
   loadingRef: MutableRefObject<boolean>;
   previewPanelOpenRef: MutableRefObject<boolean>;
-  refreshWorkspace?: (conversationId: string) => Promise<unknown>;
+  refreshWorkspace?: (
+    conversationId: string,
+    options?: { includePreview?: boolean },
+  ) => Promise<unknown>;
   credentialRefreshMs: number;
   refreshPollMs: number;
   setPreview: Dispatch<SetStateAction<LinkInfo | null>>;
@@ -20,6 +23,7 @@ export function usePreviewRefresh(options: {
   setActivePreviewLoaded: Dispatch<SetStateAction<boolean>>;
   setPendingPreviewUrl: Dispatch<SetStateAction<string>>;
   setPendingPreviewRevision: Dispatch<SetStateAction<number>>;
+  setPendingPreviewLoaded: Dispatch<SetStateAction<boolean>>;
   activePreviewUrlRef: MutableRefObject<string>;
   activePreviewRevisionRef: MutableRefObject<number>;
   previewRevisionRef: MutableRefObject<number>;
@@ -61,6 +65,13 @@ export function usePreviewRefresh(options: {
 
       const revision = options.previewRevisionRef.current + 1;
       options.previewRevisionRef.current = revision;
+      if (options.activePreviewUrlRef.current) {
+        options.setPendingPreviewUrl(url);
+        options.setPendingPreviewRevision(revision);
+        options.setPendingPreviewLoaded(false);
+        return true;
+      }
+
       options.activePreviewUrlRef.current = url;
       options.activePreviewRevisionRef.current = revision;
       options.setActivePreviewUrl(url);
@@ -68,6 +79,7 @@ export function usePreviewRefresh(options: {
       options.setActivePreviewLoaded(false);
       options.setPendingPreviewUrl('');
       options.setPendingPreviewRevision(0);
+      options.setPendingPreviewLoaded(false);
       return true;
     };
 
@@ -94,12 +106,8 @@ export function usePreviewRefresh(options: {
       if (refreshOptions?.showLoading) {
         options.setPreviewRefreshing(true);
         options.setPreviewRefreshFailed(false);
-        options.setActivePreviewLoaded(false);
-        if (willRemount && previousActiveUrl) {
-          options.activePreviewUrlRef.current = '';
-          options.setActivePreviewUrl('');
-          options.setPendingPreviewUrl('');
-          options.setPendingPreviewRevision(0);
+        if (!previousActiveUrl) {
+          options.setActivePreviewLoaded(false);
         }
       }
 
@@ -109,11 +117,16 @@ export function usePreviewRefresh(options: {
           applyFreshPreviewUrl(data.preview.url, data.preview.sandboxDebugUrl, {
             remountIframe: willRemount || data.preview.restarted === true,
           });
-          void options.refreshWorkspace?.(id);
+          void options.refreshWorkspace?.(id, { includePreview: false });
           return true;
         }
         if (refreshOptions?.showLoading) {
           options.setPreviewRefreshFailed(true);
+          options.activePreviewUrlRef.current = '';
+          options.setActivePreviewUrl('');
+          options.setPendingPreviewUrl('');
+          options.setPendingPreviewRevision(0);
+          options.setPendingPreviewLoaded(false);
         }
         return false;
       } finally {

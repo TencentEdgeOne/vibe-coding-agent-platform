@@ -19,10 +19,14 @@ export function usePreviewSurface(options: {
   conversationIdRef: MutableRefObject<string | null>;
   loadingRef: MutableRefObject<boolean>;
   previewPanelOpenRef: MutableRefObject<boolean>;
-  refreshWorkspace?: (conversationId: string) => Promise<unknown>;
+  refreshWorkspace?: (
+    conversationId: string,
+    options?: { includePreview?: boolean },
+  ) => Promise<unknown>;
 }) {
   const [preview, setPreview] = useState<LinkInfo | null>(null);
   const [previewViewport, setPreviewViewport] = useState<'desktop' | 'mobile'>('desktop');
+  const [activePreviewSlot, setActivePreviewSlot] = useState<'a' | 'b'>('a');
   const [activePreviewUrl, setActivePreviewUrl] = useState('');
   const [activePreviewRevision, setActivePreviewRevision] = useState(0);
   const [activePreviewLoaded, setActivePreviewLoaded] = useState(false);
@@ -34,6 +38,7 @@ export function usePreviewSurface(options: {
   const [pendingPreviewUrl, setPendingPreviewUrl] = useState('');
   const pendingPreviewUrlRef = useRef('');
   const [pendingPreviewRevision, setPendingPreviewRevision] = useState(0);
+  const [pendingPreviewLoaded, setPendingPreviewLoaded] = useState(false);
   const activePreviewUrlRef = useRef('');
   const activePreviewRevisionRef = useRef(0);
   const previewRevisionRef = useRef(0);
@@ -73,6 +78,7 @@ export function usePreviewSurface(options: {
     setActivePreviewLoaded,
     setPendingPreviewUrl,
     setPendingPreviewRevision,
+    setPendingPreviewLoaded,
     activePreviewUrlRef,
     activePreviewRevisionRef,
     previewRevisionRef,
@@ -84,16 +90,22 @@ export function usePreviewSurface(options: {
     refreshPreviewLinkRef,
   });
 
-  const promotePendingPreview = () => {
+  const promotePendingPreview = useCallback(() => {
     if (!pendingPreviewUrl) return;
     activePreviewUrlRef.current = pendingPreviewUrl;
     activePreviewRevisionRef.current = pendingPreviewRevision;
     setActivePreviewUrl(pendingPreviewUrl);
     setActivePreviewRevision(pendingPreviewRevision);
     setActivePreviewLoaded(true);
+    setActivePreviewSlot((current) => (current === 'a' ? 'b' : 'a'));
+    setPendingPreviewLoaded(false);
     setPendingPreviewUrl('');
     setPendingPreviewRevision(0);
-  };
+  }, [pendingPreviewRevision, pendingPreviewUrl]);
+
+  const handlePendingPreviewLoad = useCallback(() => {
+    setPendingPreviewLoaded(true);
+  }, []);
 
   useEffect(() => {
     if (!activePreviewUrl || activePreviewLoaded || previewRefreshing) return;
@@ -103,17 +115,9 @@ export function usePreviewSurface(options: {
 
   useEffect(() => {
     if (!pendingPreviewUrl) return;
-    const timer = window.setTimeout(() => {
-      activePreviewUrlRef.current = pendingPreviewUrl;
-      activePreviewRevisionRef.current = pendingPreviewRevision;
-      setActivePreviewUrl(pendingPreviewUrl);
-      setActivePreviewRevision(pendingPreviewRevision);
-      setActivePreviewLoaded(true);
-      setPendingPreviewUrl('');
-      setPendingPreviewRevision(0);
-    }, 3000);
+    const timer = window.setTimeout(promotePendingPreview, pendingPreviewLoaded ? 0 : 3000);
     return () => window.clearTimeout(timer);
-  }, [pendingPreviewUrl, pendingPreviewRevision]);
+  }, [pendingPreviewLoaded, pendingPreviewUrl, promotePendingPreview]);
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
@@ -200,6 +204,7 @@ export function usePreviewSurface(options: {
       setActivePreviewLoaded(false);
       setPendingPreviewUrl('');
       setPendingPreviewRevision(0);
+      setPendingPreviewLoaded(false);
       return;
     }
 
@@ -212,6 +217,7 @@ export function usePreviewSurface(options: {
 
     setPendingPreviewUrl(nextPreview.url);
     setPendingPreviewRevision(revision);
+    setPendingPreviewLoaded(false);
   }
 
   function applyResumedPreview(nextPreview: LinkInfo | undefined) {
@@ -219,8 +225,20 @@ export function usePreviewSurface(options: {
       setPreview(nextPreview);
       setPreviewRefreshFailed(false);
       previewRefreshedAtRef.current = Date.now();
+      if (
+        activePreviewUrlRef.current
+        && isSamePreviewTarget(activePreviewUrlRef.current, nextPreview.url)
+      ) {
+        return;
+      }
       const revision = previewRevisionRef.current + 1;
       previewRevisionRef.current = revision;
+      if (activePreviewUrlRef.current) {
+        setPendingPreviewUrl(nextPreview.url);
+        setPendingPreviewRevision(revision);
+        setPendingPreviewLoaded(false);
+        return;
+      }
       activePreviewUrlRef.current = nextPreview.url;
       activePreviewRevisionRef.current = revision;
       setActivePreviewUrl(nextPreview.url);
@@ -235,6 +253,7 @@ export function usePreviewSurface(options: {
     setActivePreviewUrl('');
     setActivePreviewRevision(0);
     setActivePreviewLoaded(false);
+    setPendingPreviewLoaded(false);
     previewPathRef.current = '';
     setPreviewPath('');
   }
@@ -242,6 +261,7 @@ export function usePreviewSurface(options: {
   const resetPreview = useCallback(() => {
     setPreview(null);
     setPreviewViewport('desktop');
+    setActivePreviewSlot('a');
     activePreviewUrlRef.current = '';
     activePreviewRevisionRef.current = 0;
     previewRevisionRef.current = 0;
@@ -251,6 +271,7 @@ export function usePreviewSurface(options: {
     setPreviewRefreshFailed(false);
     setPendingPreviewUrl('');
     setPendingPreviewRevision(0);
+    setPendingPreviewLoaded(false);
     setPreviewCopied(false);
     previewPathRef.current = '';
     setPreviewPath('');
@@ -261,6 +282,7 @@ export function usePreviewSurface(options: {
     setPreview,
     previewViewport,
     setPreviewViewport,
+    activePreviewSlot,
     activePreviewUrl,
     activePreviewRevision,
     activePreviewLoaded,
@@ -277,6 +299,7 @@ export function usePreviewSurface(options: {
     previewPathRef,
     previewRefreshedAtRef,
     promotePendingPreview,
+    handlePendingPreviewLoad,
     handleActivePreviewLoad,
     handleRefreshPreview,
     handleOpenPreview,

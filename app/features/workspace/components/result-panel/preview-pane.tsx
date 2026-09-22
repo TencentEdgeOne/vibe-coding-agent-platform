@@ -27,17 +27,17 @@ export function PreviewPane({
     <div className={`workspace-panel-pane ${workspace.sandboxTab === 'preview' ? '' : 'is-hidden'}`}>
       {preview.preview?.url ? (
         <PreviewFrame
+          activeSlot={preview.activePreviewSlot}
           activeUrl={preview.activePreviewUrl}
           activeRevision={preview.activePreviewRevision}
           pendingUrl={preview.pendingPreviewUrl}
           pendingRevision={preview.pendingPreviewRevision}
           viewport={preview.previewViewport}
           loaded={preview.activePreviewLoaded}
-          refreshing={preview.previewRefreshing}
           refreshFailed={preview.previewRefreshFailed}
           copy={previewFrameCopy}
           onActiveLoad={preview.handleActivePreviewLoad}
-          onPendingLoad={preview.promotePendingPreview}
+          onPendingLoad={preview.handlePendingPreviewLoad}
           onRetry={preview.handleRefreshPreview}
         />
       ) : (

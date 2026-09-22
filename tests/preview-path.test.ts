@@ -550,6 +550,23 @@ test('expired preview credentials never fall back to the stale iframe URL', asyn
   );
 });
 
+test('preview refresh swaps in a preloaded frame without blanking the active page', async () => {
+  const [preview, frame] = await Promise.all([
+    surface(PREVIEW_SURFACE),
+    readFile('app/features/workspace/components/preview-frame.tsx', 'utf8'),
+  ]);
+
+  assert.match(
+    preview,
+    /if \(options\.activePreviewUrlRef\.current\) \{\s*options\.setPendingPreviewUrl\(url\)/,
+    'a refresh must preload its replacement instead of clearing the active frame',
+  );
+  assert.match(preview, /refreshWorkspace\?\.\(id, \{ includePreview: false \}\)/);
+  assert.match(preview, /isSamePreviewTarget\(activePreviewUrlRef\.current, nextPreview\.url\)/);
+  assert.match(preview, /handlePendingPreviewLoad/);
+  assert.match(frame, /preview-slot-\$\{slot\}:\$\{url\}:\$\{revision\}/);
+});
+
 // One listing now feeds both gates. The classifier has to keep them apart, or a
 // cloud function gets probed as an agent route and the chat gate spends a model
 // call on something that answers no SSE by design.

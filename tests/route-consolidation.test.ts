@@ -184,7 +184,10 @@ test('workspace snapshot and preview status are pullable without the chat stream
   assert.match(preview, /onRequestGet/);
   assert.match(client, /fetch\('\/workspace'/);
   assert.match(client, /fetch\(`\/file\?paths=/);
-  assert.match(previewSurface, /void options\.refreshWorkspace\?\.\(id\)/);
+  assert.match(
+    previewSurface,
+    /void options\.refreshWorkspace\?\.\(id, \{ includePreview: false \}\)/,
+  );
 });
 
 test('a finished turn streams a state-only workspace snapshot instead of GET /workspace', async () => {
