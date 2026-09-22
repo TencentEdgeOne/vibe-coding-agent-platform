@@ -15,10 +15,38 @@ import {
   withFrameworkAdapter,
   type ProjectFileRead,
 } from '../agents/_lib/makers/declarations.ts';
-import { buildWriteProjectFileTool } from '../agents/_lib/tools/project-tools.ts';
+import {
+  finishProjectWrite,
+  guardProjectWrite,
+  type ProjectWriteHost,
+} from '../agents/_lib/tools/project-write-hooks.ts';
 import { projectState } from './helpers/fixtures.ts';
 
 const execFileAsync = promisify(execFile);
+
+async function writeThroughSandbox(
+  host: ProjectWriteHost,
+  file: { path: string; content: string },
+) {
+  const guarded = await guardProjectWrite(host, {
+    toolName: 'mcp__edgeone-sandbox__files_write',
+    toolInput: file,
+  });
+  const specific = guarded.hookSpecificOutput;
+  if (!specific || specific.hookEventName !== 'PreToolUse' || specific.permissionDecision === 'deny') {
+    throw new Error(`write was refused: ${JSON.stringify(guarded)}`);
+  }
+  const sandboxPath = specific.updatedInput?.path;
+  const content = specific.updatedInput?.content;
+  if (typeof sandboxPath !== 'string' || typeof content !== 'string') {
+    throw new Error('rewritten write is missing path or content');
+  }
+  await host.context.sandbox?.files?.write?.(sandboxPath, content);
+  return finishProjectWrite(host, {
+    toolName: 'mcp__edgeone-sandbox__files_write',
+    toolInput: specific.updatedInput,
+  });
+}
 
 const present = (content: string): ProjectFileRead => ({ status: 'present', content });
 const absent: ProjectFileRead = { status: 'absent' };
@@ -297,21 +325,22 @@ test('writing an agent file brings the declarations with it', async () => {
   });
   const streamed: string[] = [];
   try {
-    const tool = buildWriteProjectFileTool(
-      fixture.context,
-      fixture.state,
-      ({ written }) => { streamed.push(written); },
-    );
+    const host: ProjectWriteHost = {
+      context: fixture.context as ProjectWriteHost['context'],
+      state: fixture.state,
+      onWritten: ({ path }) => { streamed.push(path); },
+    };
+    const content = [
+      "import { Agent, run } from '@openai/agents';",
+      'export async function onRequest() { return new Response("ok"); }',
+    ].join('\n');
 
-    const result = await tool.handler({
-      path: 'agents/chat.ts',
-      content: [
-        "import { Agent, run } from '@openai/agents';",
-        'export async function onRequest() { return new Response("ok"); }',
-      ].join('\n'),
-    }, {});
+    const result = await writeThroughSandbox(host, { path: 'agents/chat.ts', content });
 
-    assert.equal(result.isError, undefined);
+    const note = result.hookSpecificOutput?.hookEventName === 'PostToolUse'
+      ? result.hookSpecificOutput.additionalContext
+      : '';
+    assert.match(note || '', /edgeone\.json/);
     assert.deepEqual(streamed, ['agents/chat.ts', 'edgeone.json', '.env.example']);
     assert.deepEqual(
       JSON.parse(await fixture.read('edgeone.json')),
@@ -325,10 +354,11 @@ test('writing an agent file brings the declarations with it', async () => {
     // A second agent file has nothing left to declare, so it stays a plain
     // write and the Files panel is not told about the same two files again.
     streamed.length = 0;
-    await tool.handler({
+    const again = await writeThroughSandbox(host, {
       path: 'agents/summarize.ts',
       content: 'export async function onRequest() { return new Response("ok"); }\n',
-    }, {});
+    });
+    assert.equal(again.hookSpecificOutput, undefined);
     assert.deepEqual(streamed, ['agents/summarize.ts']);
   } finally {
     await fixture.cleanup();
@@ -340,8 +370,10 @@ test('a file outside agents/ is written without touching the declarations', asyn
     'package.json': JSON.stringify({ dependencies: { deepagents: 'latest' } }),
   });
   try {
-    const tool = buildWriteProjectFileTool(fixture.context, fixture.state);
-    await tool.handler({ path: 'src/App.tsx', content: 'export default () => null;\n' }, {});
+    await writeThroughSandbox({
+      context: fixture.context as ProjectWriteHost['context'],
+      state: fixture.state,
+    }, { path: 'src/App.tsx', content: 'export default () => null;\n' });
     await assert.rejects(() => fixture.read('edgeone.json'));
   } finally {
     await fixture.cleanup();

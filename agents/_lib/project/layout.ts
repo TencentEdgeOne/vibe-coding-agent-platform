@@ -3,7 +3,7 @@ import { requireSandbox, type SandboxCapable } from '../runtime/context.ts';
 import { runSandboxCommand } from './commands.ts';
 import { shellQuote } from '../utils/shell.ts';
 
-// Models used to pass `${appDir}/file` into write_project_file, which joined
+// Models used to pass `${appDir}/file` into the project write tool, which joined
 // appDir again and created appDir/appDir/... . Lift that nested tree back to
 // the real project root when we detect the classic nesting marker.
 export async function repairNestedAppDirLayout(

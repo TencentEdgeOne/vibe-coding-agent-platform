@@ -104,7 +104,7 @@ export async function persistProjectSnapshot(
 }
 
 // Debounce window for mid-turn checkpoints. Long enough to coalesce rapid
-// write_project_file calls; short enough that stop/refresh mid-generation still
+// files_write calls; short enough that stop/refresh mid-generation still
 // has a recent snapshot in the store before the sandbox can recycle.
 const CHECKPOINT_DEBOUNCE_MS = 2_000;
 

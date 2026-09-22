@@ -14,17 +14,20 @@ test('tool summaries redact secrets and project paths', () => {
 });
 
 test('file writes expose paths and sizes without source contents', () => {
-  const summary = summarizeToolInput('write_project_file', {
-    path: 'src/app.tsx',
-    content: 'const privateValue = 42;',
-  });
+  for (const name of ['files_write', 'mcp__edgeone-sandbox__files_write', 'write_project_file']) {
+    const summary = summarizeToolInput(name, {
+      path: 'src/app.tsx',
+      content: 'const privateValue = 42;',
+    });
 
-  assert.match(summary, /src\/app\.tsx/);
-  assert.match(summary, /24 chars/);
-  assert.doesNotMatch(summary, /privateValue/);
+    assert.match(summary, /src\/app\.tsx/);
+    assert.match(summary, /24 chars/);
+    assert.doesNotMatch(summary, /privateValue/);
+  }
 });
 
 test('a streamed single-file call stays blank until its path arrives', () => {
+  assert.equal(summarizeToolInput('files_write', {}), '');
   assert.equal(summarizeToolInput('write_project_file', {}), '');
 });
 

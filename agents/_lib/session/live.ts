@@ -33,6 +33,7 @@ import { detectFatalToolError, truncateForStream } from '../utils/text.ts';
 import { sanitizeAssistantText, summarizeToolOutput, toolPaintsOwnProgress } from '../../../shared/timeline.ts';
 import { parseEchoedExitCode } from '../makers/tool-phase.ts';
 import { buildPrompt } from '../prompt.ts';
+import { projectWriteHooks } from '../tools/project-write-hooks.ts';
 import { getConversationRecord, patchConversationRecord } from './store.ts';
 import { downloadTranscript, resolveClaudeTranscriptPath, uploadTranscript } from './transcript.ts';
 import { PromptQueue } from './prompt-queue.ts';
@@ -572,6 +573,25 @@ async function startLiveQuery(options: StartLiveQueryOptions): Promise<LiveQuery
           return {};
         }],
       }],
+      ...projectWriteHooks({
+        get context() {
+          return session.context;
+        },
+        get state() {
+          return session.getState();
+        },
+        get conversationId() {
+          return session.conversationId;
+        },
+        get send() {
+          return session.getCallbacks().send;
+        },
+        onWritten: async (file) => {
+          session.flags.projectTouched = true;
+          session.flags.filesWritten = true;
+          await session.getCallbacks().onProjectFilesChanged?.(file);
+        },
+      }),
     },
     ...(session.sessionId ? { resume: session.sessionId } : {}),
   };

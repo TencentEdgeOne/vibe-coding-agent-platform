@@ -78,13 +78,15 @@ test('package.json without scripts.build is not a thrown verification failure', 
 test('direct sandbox CLI replaces custom tools while retaining relevant compatibility checks', async () => {
   const [agent, projectTools, commandTools, compatibility] = await Promise.all([
     readFile('agents/_lib/session/live.ts', 'utf8'),
-    readFile('agents/_lib/tools/project-tools.ts', 'utf8'),
+    readFile('agents/_lib/tools/project-write-hooks.ts', 'utf8'),
     readCommandsWrapSource(),
     readFile('agents/_lib/makers/compat/lint-script.ts', 'utf8'),
   ]);
   const paths = await readFile('agents/_lib/utils/paths.ts', 'utf8');
   assert.doesNotMatch(agent, /buildPublishPreviewTool|buildDeployToMakersTool/);
   assert.doesNotMatch(projectTools, /publish_preview|deploy_to_makers|get_preview_link/);
+  assert.match(projectTools, /guardProjectWrite/);
+  assert.match(agent, /projectWriteHooks/);
   assert.match(commandTools, /buildMakersDevBackgroundCommand/);
   assert.match(commandTools, /buildMakersDeployCommand/);
   // The CLI's own dev launch publishes through the readiness layer, which is

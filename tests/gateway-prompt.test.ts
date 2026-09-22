@@ -25,9 +25,37 @@ import {
   writeSuggestsAiGatewayProject,
 } from '../agents/_lib/project/gateway.ts';
 import { buildLoadMakersSkillTool } from '../agents/_lib/tools/makers-skills.ts';
-import { buildWriteProjectFileTool } from '../agents/_lib/tools/project-tools.ts';
+import {
+  finishProjectWrite,
+  guardProjectWrite,
+  type ProjectWriteHost,
+} from '../agents/_lib/tools/project-write-hooks.ts';
 import { projectState } from './helpers/fixtures.ts';
 import { CONVERSATION, LIVE_TURN, WORKSPACE, surface } from './helpers/source.ts';
+
+async function writeThroughSandbox(
+  host: ProjectWriteHost,
+  file: { path: string; content: string },
+) {
+  const guarded = await guardProjectWrite(host, {
+    toolName: 'mcp__edgeone-sandbox__files_write',
+    toolInput: file,
+  });
+  const specific = guarded.hookSpecificOutput;
+  if (!specific || specific.hookEventName !== 'PreToolUse' || specific.permissionDecision === 'deny') {
+    throw new Error(`write was refused: ${JSON.stringify(guarded)}`);
+  }
+  const sandboxPath = specific.updatedInput?.path;
+  const content = specific.updatedInput?.content;
+  if (typeof sandboxPath !== 'string' || typeof content !== 'string') {
+    throw new Error('rewritten write is missing path or content');
+  }
+  await host.context.sandbox?.files?.write?.(sandboxPath, content);
+  return finishProjectWrite(host, {
+    toolName: 'mcp__edgeone-sandbox__files_write',
+    toolInput: specific.updatedInput,
+  });
+}
 
 function sandboxFiles(initial: Array<[string, string]>) {
   const files = new Map<string, string>(initial);
@@ -233,25 +261,21 @@ test('writing agents/ or a gateway .env.example offers the card immediately', as
   ]);
   const events: Array<Record<string, unknown>> = [];
   const state = projectState();
-  const tool = buildWriteProjectFileTool(
-    context,
+  const host: ProjectWriteHost = {
+    context: context as ProjectWriteHost['context'],
     state,
-    undefined,
-    {
-      conversationId: 'conv-write',
-      send: (event) => { events.push(event); },
-    },
-  );
+    conversationId: 'conv-write',
+    send: (event) => { events.push(event); },
+  };
 
   assert.equal(writeSuggestsAiGatewayProject('agents/chat.ts', 'export {}'), true);
   assert.equal(writeSuggestsAiGatewayProject('.env.example', 'AI_GATEWAY_API_KEY=\n'), true);
   assert.equal(writeSuggestsAiGatewayProject('src/App.tsx', 'export default () => null;\n'), false);
 
-  const result = await tool.handler({
+  await writeThroughSandbox(host, {
     path: 'agents/chat.ts',
     content: 'export async function onRequest() { return new Response("ok"); }\n',
-  }, {});
-  assert.equal(result.isError, undefined);
+  });
   assert.equal(events[0]?.type, 'gateway_credentials');
   assert.equal(state.gatewayPromptPending, true);
 
@@ -259,13 +283,11 @@ test('writing agents/ or a gateway .env.example offers the card immediately', as
     ['projects/demo/app/src/App.tsx', 'export default () => null;\n'],
   ]);
   const quietEvents: Array<Record<string, unknown>> = [];
-  const quiet = buildWriteProjectFileTool(
-    later.context,
-    projectState(),
-    undefined,
-    { send: (event) => { quietEvents.push(event); } },
-  );
-  await quiet.handler({ path: 'src/App.tsx', content: 'export default () => null;\n' }, {});
+  await writeThroughSandbox({
+    context: later.context as ProjectWriteHost['context'],
+    state: projectState(),
+    send: (event) => { quietEvents.push(event); },
+  }, { path: 'src/App.tsx', content: 'export default () => null;\n' });
   assert.equal(quietEvents.length, 0);
 });
 

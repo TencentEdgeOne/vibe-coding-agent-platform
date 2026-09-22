@@ -289,10 +289,12 @@ export function inferToolProgress(name: string, input: unknown): {
   fileCount?: number;
 } {
   const toolName = shortenToolName(name);
-  if (toolName === 'files_write' || toolName === 'write_files' || toolName === 'files_make_dir' || toolName === 'files_remove') {
+  if (toolName === 'files_write' || toolName === 'write_files' || toolName === 'write_project_file') {
+    return { phaseHint: 'code', fileCount: 1 };
+  }
+  if (toolName === 'files_make_dir' || toolName === 'files_remove') {
     return { phaseHint: 'code' };
   }
-  if (toolName === 'write_project_file') return { phaseHint: 'code', fileCount: 1 };
   if (toolName === 'commands') {
     const cmd = extractSandboxCommand(input);
     if (isInstallCommand(cmd)) return { phaseHint: 'install' };

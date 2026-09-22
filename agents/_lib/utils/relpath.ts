@@ -13,9 +13,10 @@ export function normalizeRelPath(rawPath: string): string | null {
   return segments.filter(Boolean).join('/');
 }
 
-// Models often pass `${appDir}/src/App.tsx` even though write_project_file already
-// joins appDir. Strip that prefix (repeatedly) so files land at appDir/src/App.tsx
-// instead of the nested appDir/appDir/src/App.tsx trap seen in production logs.
+// Models often pass `${appDir}/src/App.tsx` even though files_write is told to
+// pass a path relative to appDir, and the write hook joins appDir itself.
+// Strip that prefix (repeatedly) so files land at appDir/src/App.tsx instead of
+// the nested appDir/appDir/src/App.tsx trap seen in production logs.
 export function toAppRelPath(rawPath: string, appDir: string): string | null {
   const trimmed = rawPath.trim();
   if (!trimmed) return null;

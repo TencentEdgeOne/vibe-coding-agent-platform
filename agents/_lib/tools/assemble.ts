@@ -18,7 +18,6 @@ import {
   isWebSearchToolName,
 } from '../../../shared/web-search.ts';
 import { buildLoadMakersSkillTool } from './makers-skills.ts';
-import { buildWriteProjectFileTool } from './project-tools.ts';
 import { buildDeployProjectTool, DEPLOY_PROJECT_TOOL_NAME } from './deploy-tools.ts';
 import { buildStartPreviewTool } from './preview-tools.ts';
 
@@ -47,14 +46,6 @@ function isBrowserSandboxToolName(name: string) {
   return name.toLowerCase().includes('browser');
 }
 
-function isGenericProjectWriteToolName(name: string) {
-  const normalized = name.toLowerCase();
-  return normalized === 'files_write'
-    || normalized === 'write_files'
-    || normalized.endsWith('__files_write')
-    || normalized.endsWith('__write_files');
-}
-
 function pickEnvValue(context: AgentContext, key: string) {
   const value = context?.env?.[key];
   return typeof value === 'string' ? value.trim() : '';
@@ -73,15 +64,8 @@ export function assembleAgentTools(session: LiveSessionHandle) {
   );
   const offerSandboxTool = (name: string) =>
     !isBrowserSandboxToolName(name)
-    && !isGenericProjectWriteToolName(name)
     && (webSearchAvailable || !isWebSearchToolName(name));
 
-  const gatewayPrompt = {
-    conversationId: session.conversationId,
-    get send() {
-      return session.getCallbacks().send;
-    },
-  };
   // Installed once, against the context this session was assembled with. The
   // sandbox toolkit memoizes its tools per context object, so an install from a
   // later context would be sending into a sandbox nobody runs commands in.
@@ -90,16 +74,6 @@ export function assembleAgentTools(session: LiveSessionHandle) {
     getSend: () => session.getCallbacks().send,
     getProjectDir: () => session.getState().appDir,
   });
-  const writeProjectFileTool = buildWriteProjectFileTool(
-    context,
-    session.getState(),
-    async ({ written, content }) => {
-      session.flags.projectTouched = true;
-      session.flags.filesWritten = true;
-      await session.getCallbacks().onProjectFilesChanged?.({ path: written, content });
-    },
-    gatewayPrompt,
-  );
   const sandboxTools = wrapWebSearchTool(wrapSandboxTools(
     (edgeoneMcp.tools as ClaudeMcpTool[]).filter((tool) => offerSandboxTool(tool.name)),
     {
@@ -137,7 +111,6 @@ export function assembleAgentTools(session: LiveSessionHandle) {
         return session.getCallbacks().send;
       },
     }),
-    writeProjectFileTool,
     buildStartPreviewTool({
       context,
       conversationId: session.conversationId,
@@ -170,7 +143,6 @@ export function assembleAgentTools(session: LiveSessionHandle) {
   const mcpAllowedTools = [
     ...edgeoneMcp.allowedTools.filter(offerSandboxTool),
     `mcp__${mcpServerName}__load_makers_skill`,
-    `mcp__${mcpServerName}__write_project_file`,
     `mcp__${mcpServerName}__start_preview`,
     `mcp__${mcpServerName}__${DEPLOY_PROJECT_TOOL_NAME}`,
     'Skill',

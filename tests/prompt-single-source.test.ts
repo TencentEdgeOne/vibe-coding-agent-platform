@@ -214,7 +214,9 @@ test('the prompt keeps its tool contracts and workspace boundary', () => {
   const prompt = renderPrompt();
   assert.ok(prompt.includes(state.appDir), 'prompt must name the writable project directory');
   assert.match(prompt, /load_makers_skill as the first tool/);
-  assert.match(prompt, /write_project_file accepts exactly one file per call/);
+  assert.match(prompt, /Send every files_write the project needs in the same assistant message/);
+  assert.doesNotMatch(prompt, /exactly one file per call/);
+  assert.doesNotMatch(prompt, /up to four of these calls/);
   // The preview is a tool the agent calls, not a side effect it is told to keep
   // its hands off. The shell route stays banned; start_preview is the primitive
   // that replaced the ban.
@@ -438,7 +440,7 @@ test('the official scaffolder replaces the search for an official template', () 
   // for one, which is the search this whole step exists to end.
   assert.match(prompt, /has none worth running: write its files yourself/);
   // Which means it must be exempt from the rule that all files go through
-  // write_project_file, or the step contradicts itself.
+  // files_write, or the step contradicts itself.
   assert.match(prompt, /is the single exception/);
   assert.match(prompt, /This is the one case where a command may create project source files/);
   // A failed scaffolder must not become the next search.
