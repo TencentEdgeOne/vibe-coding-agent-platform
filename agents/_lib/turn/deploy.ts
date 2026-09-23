@@ -372,7 +372,7 @@ export async function runDeployPipeline(
   // directory with it. Restart before reporting either way, so the preview link
   // in the workspace is live again by the time the user reads the result.
   try {
-    await startPreviewServer(context, state, { verifyRoutes: false });
+    await startPreviewServer(context, state);
   } catch {
     // A preview that does not come back is not a failed publish, and saying so
     // here would contradict the live URL in the same reply. The next turn

@@ -189,9 +189,7 @@ export function wrapSandboxTools(
         result = redactToolResult(result, makers.gatewayKey);
         if (makers.kind === 'deploy') {
           try {
-            await startPreviewServer(lifecycle.context, lifecycle.state, {
-              verifyRoutes: false,
-            });
+            await startPreviewServer(lifecycle.context, lifecycle.state);
           } catch {
             // Not part of publishing. The next preview command starts it again.
           }

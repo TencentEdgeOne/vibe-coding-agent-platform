@@ -1091,9 +1091,12 @@ test('sandbox preview publishes the fixed gateway path through a local adapter',
   assert.match(session, /resolveConversationPublishArea\(state\)/);
   assert.doesNotMatch(preview, /syncSandboxEnvToMakersProject/);
   assert.match(preview, /getHost\?\.\(PREVIEW_PUBLIC_PORT\)/);
+  // The address the agent can request lives in the tool result now, not in the
+  // preview's own probe: preview starts the server and hands back where it is.
+  const previewTool = await readFile('agents/_lib/tools/preview-tools.ts', 'utf8');
   assert.match(
-    preview,
-    /127\.0\.0\.1:\$\{PREVIEW_SERVER_PORT\}\$\{PREVIEW_PATH_PREFIX\}chat/,
+    previewTool,
+    /127\.0\.0\.1:\$\{PREVIEW_SERVER_PORT\}\$\{PREVIEW_PATH_PREFIX\}/,
   );
   assert.match(preview, /proxyPath: PREVIEW_PATH_PREFIX/);
   assert.doesNotMatch(preview, /makers deploy/);

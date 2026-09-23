@@ -1,6 +1,7 @@
 import { tool as defineClaudeTool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import { summarizeToolOutput } from '../../../shared/timeline.ts';
+import { PREVIEW_PATH_PREFIX, PREVIEW_SERVER_PORT } from '../constants.ts';
 import { ensurePreview } from '../lazy/preview.ts';
 import type { AgentContext } from '../runtime/context.ts';
 import type { ClaudeMcpTool, PreviewKind, ProjectState, StreamSend } from '../types.ts';
@@ -39,7 +40,7 @@ export type PreviewToolLifecycle = {
 export function buildStartPreviewTool(lifecycle: PreviewToolLifecycle) {
   return defineClaudeTool(
     'start_preview',
-    'Bring up the live preview for the current project and return its public URL. Verifies that the pages and any generated API or agent routes actually answer, so use it to confirm the project runs before telling the user it is done. Safe to call more than once: a healthy dev server is reused rather than restarted.',
+    'Bring up the live preview for the current project and return its public URL. It starts the dev server and nothing more: whether the generated pages and endpoints answer is yours to check, from inside the sandbox, against the local URL this returns. Safe to call more than once: a healthy dev server is reused rather than restarted.',
     startPreviewInputSchema,
     async (input, extra) => {
       const toolUseId = commandCallId(extra);
@@ -60,7 +61,6 @@ export function buildStartPreviewTool(lifecycle: PreviewToolLifecycle) {
           lifecycle.conversationId,
           lifecycle.state,
           {
-            verifyRoutes: true,
             forceRestart: options.restart === true,
             onProgress: report,
           },
@@ -75,6 +75,10 @@ export function buildStartPreviewTool(lifecycle: PreviewToolLifecycle) {
                 url: preview.url,
                 kind: preview.kind,
               },
+              // The public URL needs the sandbox access token and resolves
+              // outside the sandbox; this is the address the model can actually
+              // request from its own commands when it wants to check a route.
+              local_url: `http://127.0.0.1:${PREVIEW_SERVER_PORT}${PREVIEW_PATH_PREFIX}`,
               restarted: preview.restarted,
               // The panel is already showing it, so repeating the link in the
               // reply only gives the user the same URL twice.

@@ -1,18 +1,14 @@
 import assert from 'node:assert/strict';
-import { execFile, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import http from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import {
-  SMOKE_EXIT,
-  buildGeneratedApiSmokeScript,
-  buildGeneratedChatSmokeScript,
   buildPreviewProxyScript,
-  parseSmokeResult,
 } from '../agents/_lib/makers/cli-dev.ts';
-import { agentRoutesFromListing, formatPreviewProgress, generatedRoutesFromListing } from '../agents/_lib/project/preview.ts';
+import { formatPreviewProgress } from '../agents/_lib/project/preview.ts';
 import { previewDisplayPathFromPath } from '../shared/preview-display-path.ts';
 import { readCommandsWrapSource } from './helpers/fixtures.ts';
 import { LIVE_TURN, PREVIEW_SURFACE, WORKSPACE, surface } from './helpers/source.ts';
@@ -200,409 +196,46 @@ test('sandbox preview strips the public prefix before forwarding to makers-dev',
   assert.doesNotMatch(preview, /python3 -m http\.server/);
 });
 
-test('agent chat previews are smoke-tested before being published', async () => {
-  const [preview, makersDev] = await Promise.all([
-    readFile('agents/_lib/project/preview.ts', 'utf8'),
-    readFile('agents/_lib/makers/cli-dev.ts', 'utf8'),
-  ]);
-  assert.match(preview, /assertGeneratedAgentChatReady/);
-  assert.match(preview, /buildGeneratedChatSmokeScript/);
-  assert.match(makersDev, /Generated \/chat endpoint returned an SSE error event/);
-  assert.match(makersDev, /DONE/);
-  // A fixed id would accumulate history in the generated app's own store, so
-  // every later probe would pay for a longer prompt and get a less predictable
-  // reply to assert on.
-  assert.match(preview, /preview-smoke-\$\{Date\.now\(\)/);
-  assert.doesNotMatch(preview, /makers-conversation-id: preview-smoke-test/);
-  // The probe is a real model call. After skip there is no key, so preview
-  // must still publish instead of treating the generated SSE error as a
-  // preview failure.
-  assert.match(preview, /if \(await sandboxGatewayKeyIsSet\(context, state\)\) \{\s*await assertGeneratedAgentChatReady/);
-});
-
-function startStubChatServer(handler: http.RequestListener) {
-  const server = http.createServer(handler);
-  return new Promise<{ server: http.Server; port: number }>((resolve) => {
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address();
-      resolve({ server, port: typeof address === 'object' && address ? address.port : 0 });
-    });
-  });
-}
-
-function runShell(script: string) {
-  return new Promise<{ exitCode: number; output: string }>((resolve) => {
-    execFile('sh', ['-c', script], { timeout: 120_000 }, (error, stdout, stderr) => {
-      const failed = error as (Error & { code?: number; stdout?: string; stderr?: string }) | null;
-      resolve({
-        exitCode: typeof failed?.code === 'number' ? failed.code : 0,
-        output: `${stdout || ''}${stderr || ''}`,
-      });
-    });
-  });
-}
-
-function endSse(res: http.ServerResponse, body: string) {
-  res.writeHead(200, { 'content-type': 'text/event-stream' });
-  res.end(body);
-}
-
-const HEALTHY_STREAM = 'data: {"type":"ai_response","content":"OK"}\n\ndata: [DONE]\n\n';
-
-// The smoke test decides whether a failing preview gets its dev server restarted,
-// so the exit code it picks is load-bearing rather than cosmetic.
-test('the chat smoke script separates a rebuilding server from a broken reply', async () => {
-  const cases: Array<{ name: string; expected: number; handler: http.RequestListener }> = [
-    {
-      name: 'healthy stream',
-      expected: 0,
-      handler: (_req, res) => endSse(res, HEALTHY_STREAM),
-    },
-    {
-      // makers dev answers 502 while it rebuilds the agent worker after a save.
-      // Retrying costs one sleep; failing here costs a restart and a second probe.
-      name: '502 once, then healthy',
-      expected: 0,
-      handler: (() => {
-        let seen = 0;
-        return (_req: http.IncomingMessage, res: http.ServerResponse) => {
-          seen += 1;
-          if (seen === 1) {
-            res.writeHead(502).end('Bad Gateway');
-            return;
-          }
-          endSse(res, HEALTHY_STREAM);
-        };
-      })(),
-    },
-    {
-      name: 'never a 200',
-      expected: SMOKE_EXIT.transport,
-      handler: (_req, res) => {
-        res.writeHead(502).end('Bad Gateway');
-      },
-    },
-    {
-      // A stream that arrives over 200 proves the server and proxy work, so the
-      // fault is the generated agent's and a restart would only delay the news.
-      name: '200 without the [DONE] terminator',
-      expected: SMOKE_EXIT.application,
-      handler: (_req, res) => endSse(res, 'data: {"type":"ai_response","content":"OK"}\n\n'),
-    },
-    {
-      name: '200 carrying an SSE error event',
-      expected: SMOKE_EXIT.application,
-      handler: (_req, res) => endSse(res, 'data: {"type":"error","error":"boom"}\n\ndata: [DONE]\n\n'),
-    },
-    {
-      // What a project that never mounted its route actually gets: makers dev
-      // falls through to the static site, so the POST is answered 200 with the
-      // home page. Reading that as a malformed reply sends the model after a
-      // bug in code that was never reached; the server needs restarting.
-      name: '200 answering with the static index page',
-      expected: SMOKE_EXIT.route,
-      handler: (_req, res) => {
-        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
-          .end('<!DOCTYPE html>\n<html lang="zh-CN">\n<head><title>chat</title></head>\n<body>home</body>\n</html>');
-      },
-    },
-  ];
-
-  // Each case owns its stub server and its own shell, and two of them have to sit
-  // through the retry sleeps, so run them at once rather than adding up the waits.
-  const results = await Promise.all(cases.map(async (testCase) => {
-    const { server, port } = await startStubChatServer(testCase.handler);
-    try {
-      const script = buildGeneratedChatSmokeScript({
-        endpoint: `http://127.0.0.1:${port}/preview/chat`,
-        payload: JSON.stringify({ message: 'Reply with OK.' }),
-        conversationId: 'preview-smoke-test-run',
-        retrySleepSeconds: 0,
-      });
-      const result = await runShell(script);
-      return {
-        name: testCase.name,
-        expected: testCase.expected,
-        actual: parseSmokeResult(result.output)?.kind,
-        exitCode: result.exitCode,
-      };
-    } finally {
-      await new Promise((resolve) => server.close(resolve));
-    }
-  }));
-
-  for (const result of results) {
-    const expectedKind = result.expected === SMOKE_EXIT.transport
-      ? 'transport'
-      : result.expected === SMOKE_EXIT.application
-        ? 'application'
-        : result.expected === SMOKE_EXIT.route
-          ? 'route'
-          : 'complete';
-    assert.equal(result.actual, expectedKind, result.name);
-    assert.equal(result.exitCode, 0, `${result.name} must keep stdout visible to the host`);
-  }
-});
-
-// Cloud functions have no other functional gate: assertPreviewServerReady only
-// proves the proxy and the home page answer. The probe therefore has to be narrow
-// enough that a route answering 401 or 405 to an anonymous GET is not a failure.
-test('the API route probe only fails on server errors and hangs', async () => {
-  const answer = (code: number): http.RequestListener => (_req, res) => {
-    res.writeHead(code, { 'content-type': 'application/json' }).end('{}');
-  };
-  const cases: Array<{
-    name: string;
-    expected: number;
-    routes: string[];
-    handler: http.RequestListener;
-  }> = [
-    { name: '200', expected: 0, routes: ['/api/messages'], handler: answer(200) },
-    { name: '301 redirect', expected: 0, routes: ['/api/messages'], handler: answer(301) },
-    { name: '401 auth required', expected: 0, routes: ['/api/messages'], handler: answer(401) },
-    { name: '404 not mounted for GET', expected: 0, routes: ['/api/messages'], handler: answer(404) },
-    { name: '405 POST-only endpoint', expected: 0, routes: ['/api/messages'], handler: answer(405) },
-    {
-      name: '500 on every attempt',
-      expected: SMOKE_EXIT.application,
-      routes: ['/api/messages'],
-      handler: answer(500),
-    },
-    {
-      name: '500 once, then 200',
-      expected: 0,
-      routes: ['/api/messages'],
-      handler: (() => {
-        let seen = 0;
-        return (_req: http.IncomingMessage, res: http.ServerResponse) => {
-          seen += 1;
-          res.writeHead(seen === 1 ? 500 : 200, { 'content-type': 'application/json' }).end('{}');
-        };
-      })(),
-    },
-    {
-      name: 'one healthy route and one broken one',
-      expected: SMOKE_EXIT.application,
-      routes: ['/api/ok', '/api/broken'],
-      handler: (req, res) => {
-        const code = (req.url || '').includes('/api/broken') ? 500 : 200;
-        res.writeHead(code, { 'content-type': 'application/json' }).end('{}');
-      },
-    },
-  ];
-
-  const results = await Promise.all(cases.map(async (testCase) => {
-    const { server, port } = await startStubChatServer(testCase.handler);
-    try {
-      const script = buildGeneratedApiSmokeScript({
-        baseUrl: `http://127.0.0.1:${port}/preview`,
-        routes: testCase.routes,
-        retrySleepSeconds: 0,
-      });
-      const result = await runShell(script);
-      return {
-        name: testCase.name,
-        expected: testCase.expected,
-        actual: result.exitCode,
-      };
-    } finally {
-      await new Promise((resolve) => server.close(resolve));
-    }
-  }));
-
-  for (const result of results) {
-    assert.equal(result.actual, result.expected, result.name);
-  }
-});
-
-// The behavioural tests above build their scripts with a zero pause, which is the
-// one thing about the retry they cannot then observe. Production waits.
-test('probes really pause between attempts outside the tests', () => {
-  const chat = buildGeneratedChatSmokeScript({
-    endpoint: 'http://127.0.0.1:3000/preview/chat',
-    payload: '{}',
-    conversationId: 'preview-smoke-default',
-  });
-  const api = buildGeneratedApiSmokeScript({
-    baseUrl: 'http://127.0.0.1:3000/preview',
-    routes: ['/api/messages'],
-  });
-
-  assert.match(chat, /sleep 2;/);
-  assert.match(api, /sleep 2;/);
-  assert.match(chat, /MAKERS_SMOKE_RESULT:/);
-  assert.match(chat, /set \+e/);
-});
-
-test('only static routes are probed, and they come from the shared route mapping', async () => {
-  const preview = await readFile('agents/_lib/project/preview.ts', 'utf8');
-
-  // Reuse the mapping the Files panel shows rather than a second copy of the
-  // cloud-functions path rules.
-  assert.match(preview, /makersFileSemantic\(\{ path, type: 'file' \}\)/);
-  // /api/:id has no id to invent, and a wildcard says nothing about what is
-  // mounted underneath it.
-  assert.match(preview, /!route\.includes\(':'\)/);
-  assert.match(preview, /!route\.includes\('\*'\)/);
-});
-
-// The gate used to look for agents/chat.ts and agents/chat.js by name. A project
-// whose entry was agents/chat/index.ts — the other form the compatibility lint
-// accepts — matched neither, so the only check that can catch an unmounted chat
-// endpoint was skipped and the broken preview published as healthy.
-test('the chat gate finds an agent entry in either accepted form', () => {
-  const nested = agentRoutesFromListing([
-    'agents/_model.ts',
-    'agents/_shared.ts',
-    'agents/chat/index.ts',
-    'agents/stop.ts',
-  ].join('\n'));
-  assert.ok(nested.has('/chat'), 'agents/chat/index.ts mounts /chat');
-  assert.ok(nested.has('/stop'));
-  // Underscore-prefixed files are shared helpers, not routes.
-  assert.equal(nested.size, 2);
-
-  assert.ok(agentRoutesFromListing('agents/chat.ts').has('/chat'));
-  assert.ok(agentRoutesFromListing('./agents/chat.py').has('/chat'));
-  // A project with no chat endpoint must not be charged for the probe.
-  assert.equal(agentRoutesFromListing('agents/converse.ts').has('/chat'), false);
-  assert.equal(agentRoutesFromListing('').size, 0);
-});
-
-test('an unmounted route is restarted, while a bad reply is reported as-is', async () => {
-  const preview = await readFile('agents/_lib/project/preview.ts', 'utf8');
-  // The restart is the whole fix for a handler missing from a running server,
-  // which is what a dependency change under makers dev leaves behind.
-  assert.match(preview, /error\.kind === 'route'/);
-  assert.match(preview, /SMOKE_EXIT\.route/);
-  // And the route guidance must not repeat the application branch's advice to
-  // go fix the response: there is no response to fix.
-  const guidance = preview.match(/if \(exitCode === SMOKE_EXIT\.route\)[\s\S]*?\n  \}/)?.[0] || '';
-  assert.ok(guidance, 'the route branch must stay');
-  assert.match(guidance, /edgeone\.json declares the framework the code actually uses/);
-});
-
-test('a preview publish never probes the generated agent twice in a row', async () => {
-  const [preview, readiness] = await Promise.all([
+// The preview's contract is: start the dev server and hand back a URL. Route
+// probing used to live here, and a slow boot or a broken route then surfaced to
+// the user as "no preview at all". Verification is the agent's job now, against
+// the local URL the tool returns.
+test('preview publishes without probing generated routes', async () => {
+  const [preview, readiness, previewTool, prompt] = await Promise.all([
     readFile('agents/_lib/project/preview.ts', 'utf8'),
     readFile('agents/_lib/lazy/preview.ts', 'utf8'),
+    readFile('agents/_lib/tools/preview-tools.ts', 'utf8'),
+    readFile('agents/_lib/prompt.ts', 'utf8'),
   ]);
 
-  // Each probe is a real model call against the generated agent. The publish
-  // used to opt out of a second one through a routesAlreadyVerified flag its
-  // callers had to remember to pass; now there is only one place that can gate
-  // at all, so a double probe has nowhere to come from.
-  const gateCalls = preview.match(/await assertGeneratedRoutesReady\(context, state\)/g) || [];
-  assert.equal(gateCalls.length, 2, 'the gate belongs to startPreviewServer alone: warm and post-launch');
-  assert.doesNotMatch(readiness, /assertGeneratedRoutesReady/);
-  assert.doesNotMatch(preview, /routesAlreadyVerified/);
+  // No probe script, no route listing, no restart driven by a probe verdict.
+  for (const source of [preview, readiness]) {
+    assert.doesNotMatch(source, /assertGeneratedRoutesReady/);
+    assert.doesNotMatch(source, /buildGenerated(Chat|Api)SmokeScript/);
+    assert.doesNotMatch(source, /verifyRoutes/);
+    assert.doesNotMatch(source, /previewFailureWarrantsRestart/);
+  }
+  assert.doesNotMatch(preview, /makersFileSemantic|CLOUD_FUNCTION_DIRECTORIES/);
+  assert.doesNotMatch(preview, /smoke/i);
 
-  // The token-only path never reaches the server at all, so it cannot probe.
-  const tokenPath = readiness.match(/if \(!options\.forceRestart && !options\.verifyRoutes[\s\S]*?\n  \}/)?.[0] || '';
-  assert.ok(tokenPath, 'the token-only refresh path must stay');
-  assert.doesNotMatch(tokenPath, /startPreviewServer/);
+  // The tool hands the model the address it can actually request.
+  assert.match(previewTool, /local_url/);
+  assert.match(previewTool, /PREVIEW_SERVER_PORT/);
+  assert.match(prompt, /verify the parts you changed yourself from inside the sandbox/);
 });
 
+// Healthy previews are still reused, and that reuse must stay a fast path: no
+// probe, no model call, just the same URL minted again.
 test('healthy makers-dev previews are reused on follow-up turns', async () => {
   const preview = await readFile('agents/_lib/project/preview.ts', 'utf8');
   const warmBranch = preview.match(/if \(warm\.exitCode === 0\) \{[\s\S]*?\n  \}/)?.[0] || '';
 
   assert.ok(warmBranch, 'the warm-probe branch must stay');
-  assert.match(warmBranch, /await assertGeneratedRoutesReady\(context, state\)/);
   // `false`: a reused process is still serving the page the client already has,
   // so the iframe must not be remounted for it.
   assert.match(warmBranch, /return previewServerInfo\(launchCommand, false\)/);
-  // A warm port that never answers is a stale server, so the next turn restarts
-  // it instead of publishing a preview nobody can load. One that answers in the
-  // wrong shape is a generated-code bug, and that reply is itself proof the
-  // server works, so the restart is skipped and the failure reported as-is.
-  assert.match(warmBranch, /if \(!previewFailureWarrantsRestart\(error\)\) throw error;/);
-  assert.match(warmBranch, /forceRestart = true/);
-});
-
-test('cold preview probes do not throw on curl connection refused', async () => {
-  const preview = await readFile('agents/_lib/project/preview.ts', 'utf8');
-  assert.match(preview, /probePreviewReadyCommand/);
-  assert.match(preview, /runCommandCapturingExit/);
-  assert.match(preview, /set \+e/);
-  assert.match(preview, /echo EXIT:\$\?/);
-});
-
-test('expired preview credentials never fall back to the stale iframe URL', async () => {
-  const [screen, preview] = await Promise.all([
-    surface(WORKSPACE),
-    surface(PREVIEW_SURFACE),
-  ]);
-
-  assert.match(preview, /PREVIEW_CREDENTIAL_REFRESH_MS/);
-  assert.match(preview, /isMakersPreviewRef/);
-  assert.match(preview, /setPreviewRefreshFailed\(true\)/);
-  assert.match(screen, /previewUnavailable/);
-  assert.doesNotMatch(
-    preview,
-    /setActivePreviewUrl\(previousActiveUrl\)/,
-    'a failed credential remint must not reveal the gateway auth response',
-  );
-  assert.doesNotMatch(
-    preview,
-    /reload the current iframe src \(same token\)/,
-    'manual refresh must not retry an expired access token',
-  );
-});
-
-test('preview refresh swaps in a preloaded frame without blanking the active page', async () => {
-  const [preview, frame] = await Promise.all([
-    surface(PREVIEW_SURFACE),
-    readFile('app/features/workspace/components/preview-frame.tsx', 'utf8'),
-  ]);
-
-  assert.match(
-    preview,
-    /if \(options\.activePreviewUrlRef\.current\) \{\s*options\.setPendingPreviewUrl\(url\)/,
-    'a refresh must preload its replacement instead of clearing the active frame',
-  );
-  assert.match(preview, /refreshWorkspace\?\.\(id, \{ includePreview: false \}\)/);
-  assert.match(preview, /isSamePreviewTarget\(activePreviewUrlRef\.current, nextPreview\.url\)/);
-  assert.match(preview, /handlePendingPreviewLoad/);
-  assert.match(frame, /preview-slot-\$\{slot\}:\$\{url\}:\$\{revision\}/);
-});
-
-// One listing now feeds both gates. The classifier has to keep them apart, or a
-// cloud function gets probed as an agent route and the chat gate spends a model
-// call on something that answers no SSE by design.
-test('one combined listing separates the two kinds of generated route', () => {
-  const { functionRoutes, agentRoutes } = generatedRoutesFromListing([
-    'cloud-functions/api/messages.js',
-    'edge-functions/api/counter.js',
-    'agents/chat.ts',
-    'agents/stop.ts',
-    'src/App.tsx',
-  ].join('\n'));
-
-  assert.deepEqual([...functionRoutes].sort(), ['/api/counter', '/api/messages']);
-  assert.ok(agentRoutes.has('/chat'));
-  assert.ok(agentRoutes.has('/stop'));
-  // Project source is neither, or every static site would be probed.
-  assert.equal(functionRoutes.length, 2);
-});
-
-test('a static project yields nothing to probe, which is what skips both gates', () => {
-  const { functionRoutes, agentRoutes } = generatedRoutesFromListing('');
-
-  assert.deepEqual(functionRoutes, []);
-  assert.equal(agentRoutes.size, 0);
-});
-
-// Unchanged from when this lived inside the API gate: there is no id to invent
-// for /api/:id, and a wildcard says nothing about what is mounted.
-test('dynamic and catch-all routes stay out of the probe list', () => {
-  const { functionRoutes } = generatedRoutesFromListing([
-    'cloud-functions/api/[id].js',
-    'cloud-functions/api/[[...slug]].js',
-    'cloud-functions/api/health.js',
-  ].join('\n'));
-
-  assert.deepEqual(functionRoutes, ['/api/health']);
+  assert.doesNotMatch(warmBranch, /assertGeneratedRoutesReady/);
+  assert.match(preview, /forceRestart/);
 });
 
 test('the host does no preview work after the coding agent returns', async () => {

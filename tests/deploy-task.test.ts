@@ -90,23 +90,24 @@ test('publishing stops the preview dev server before the build starts', async ()
 
 // Stopping the preview is a means, not an outcome. Both publishing paths bring
 // it back, and neither reports a publish as failed because it did not come back.
-test('publishing restarts the preview without paying for the smoke gates again', async () => {
+// The restart goes through the same launcher as every other preview, and that
+// launcher no longer probes generated routes at all.
+test('publishing restarts the preview without probing generated routes', async () => {
   const [preview, pipeline, wrapper] = await Promise.all([
     readFile('agents/_lib/project/preview.ts', 'utf8'),
     readFile('agents/_lib/turn/deploy.ts', 'utf8'),
     readCommandsWrapSource(),
   ]);
 
-  // The gates cost a real model call, and the project did not change.
-  assert.match(preview, /const verifyRoutes = options\.verifyRoutes !== false/);
-  assert.match(preview, /if \(verifyRoutes\) \{[\s\S]*?await assertGeneratedRoutesReady/);
+  assert.doesNotMatch(preview, /verifyRoutes|assertGeneratedRoutesReady/);
   for (const source of [pipeline, wrapper]) {
-    assert.match(source, /startPreviewServer\([\s\S]{0,80}?verifyRoutes: false/);
+    assert.match(source, /startPreviewServer\(/);
+    assert.doesNotMatch(source, /verifyRoutes/);
   }
 
   // Restarted before the result is reported, so a failed publish still leaves a
   // preview to inspect.
-  const restart = pipeline.indexOf('verifyRoutes: false');
+  const restart = pipeline.indexOf('await startPreviewServer(context, state)');
   assert.ok(restart >= 0 && restart < pipeline.indexOf('readMakersDeployOutcome(stdout'));
   assert.ok(restart < pipeline.indexOf('if (commandError)'));
 });

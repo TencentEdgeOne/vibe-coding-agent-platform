@@ -138,10 +138,11 @@ function buildSandboxPreview() {
     // nothing behind it is what produced that, so start_preview is the answer
     // rather than another sentence telling it not to.
     'start_preview is how you ask for the preview, and the only way you may. It reuses a healthy dev server instead of restarting it, so calling it more than once is safe; pass restart:true only after changing something the server reads at startup, such as an environment variable, since file edits are picked up on save. Do not kill processes, free ports, or launch a preview server yourself — start_preview terminates the previous server before every launch, which is what makes a restart work rather than repeat.',
-    // The gates inside start_preview are the only thing in the turn that proves
-    // a generated route answers. The build does not: it compiles the handler
-    // without ever calling it.
-    'start_preview reports whether the pages and any generated API or agent routes actually answer, so call it after the project is written and fix what it reports before concluding the turn. A build that passes says the code compiles, not that it serves.',
+    // start_preview now only launches the server and hands back the URL. Nothing
+    // else in the turn proves a generated route answers: the build compiles the
+    // handler without ever calling it, which is why the probing responsibility
+    // lands on the model rather than the preview.
+    'start_preview starts the dev server and returns its URL; it does not exercise the project. Call it after the project is written, then verify the parts you changed yourself from inside the sandbox: read the served route over http://127.0.0.1:3000/preview/... and read the response. A build that passes says the code compiles, not that it serves, so do not conclude the turn on the strength of a build alone.',
     // A run installed dependencies and built while the preview was up, and both
     // lost the race silently: the build reported a Pages Router page the project
     // does not have, and npm reported ENOTEMPTY on a package the server held.
@@ -149,7 +150,7 @@ function buildSandboxPreview() {
     'Declare AI_GATEWAY_API_KEY= and AI_GATEWAY_BASE_URL= in .env.example when the project calls a model. Never write a .env file yourself, and never write an actual API key or gateway URL value into source. Generated agents read them from context.env.',
     'The host collects a Models API key for generated AI projects and shows the input card after this turn, not during it. If you load makers-agents or write agents/ files, keep writing. Do not stop this turn, do not wait for the key, and do not say the preview is blocked. Continue writing files and let the host start preview. A missing key is not a preview or deploy failure — chat in the generated app may not answer until a key is added. Never write .env yourself and never quote an API key value, from a file or from the user.',
     'The user may type a key in the composer in natural language, for example "我的 apikey 是 …，配置好并重新预览". The host extracts it, writes .env, and the message you see is a masked API Key line. Never write .env yourself and never quote an API key value.',
-    'A user message that is only a masked API key, for example "API Key: sk-••••••••wxyz" or "API Key： sk-••••••••wxyz", means the host already wrote that key into .env. Call start_preview with restart:true. If it reports a project defect, fix the named generated files and call start_preview again; do not stop at the reported error. Do not read .env, do not write it, and do not quote the key.',
+    'A user message that is only a masked API key, for example "API Key: sk-••••••••wxyz" or "API Key： sk-••••••••wxyz", means the host already wrote that key into .env. Call start_preview with restart:true, then verify the routes that call the model, fix the generated files that do not answer, and call start_preview again; do not stop at the first failure. Do not read .env, do not write it, and do not quote the key.',
     'The host writes AI_GATEWAY_BASE_URL already shaped for OpenAI-compatible clients. Use that value through the generated env helper; never probe, enumerate, or retry alternate gateway paths, and never concatenate /v1/chat/completions onto the base.',
   ];
 }
@@ -234,7 +235,7 @@ function buildNewProjectWorkflow(appDir: string) {
     '3. After the required references are loaded, write the project with files_write, and send those writes together. When a scaffolder ran, keep what it produced and use these calls to adapt it — the platform declarations and the entry route — rather than rewriting files it already got right. If agents/chat.ts is already in the workspace, edit that file; do not also write agents/chat/index.ts — both mount POST /chat. Otherwise write configuration and dependencies first, then styles and small modules, then the entry HTML, then any platform function or agent directories. Dependencies come before agent code specifically: the platform declarations an agent project needs are derived from the packages it declares, so a dependency file that arrives later cannot inform them.',
     `4. The host starts npm install in the background the moment package.json is written. When you run npm install yourself, that command waits for the background install and reports its result — it does not install twice. Run npm install inside ${appDir} only when the project has a package.json with dependencies that are not yet on disk (cd ${appDir} && npm install by default; Python packages are declared in the project's requirements file and installed by the platform). Do not invent nested ${appDir}/${appDir} paths.`,
     'Take every dependency name and version range from the reference you loaded for that framework, and copy its dependency block as written. Versions recalled from memory are the usual cause of peer-dependency conflicts and engine mismatches, and each one costs a rewrite plus a reinstall. If a reference pins a version or caps a range, keep the pin instead of widening it to latest.',
-    '5. Call start_preview and fix anything it reports. Do not curl/fetch/code_interpreter the public URL, and do not start a preview server through commands.',
+    '5. Call start_preview, then verify what you changed against the local URL it returns and fix whatever does not answer. Check routes from inside the sandbox — the public preview URL is for the user and needs the sandbox token, so do not fetch it, and do not start a preview server through commands.',
   ];
 }
 

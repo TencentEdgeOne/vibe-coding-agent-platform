@@ -102,8 +102,8 @@ export async function runMakersCompatibilityCheck(
  *
  * The adapter check is the exception in shape — it is about what the project
  * must contain. It earns that because it is the only failure here that no other
- * gate sees: preview, smoke test, and build all pass without the adapter, and
- * the deployment is broken anyway.
+ * gate sees: preview and build both pass without the adapter, and the
+ * deployment is broken anyway.
  */
 export async function assertMakersProjectCompatible(
   context: AgentContext,
@@ -116,4 +116,3 @@ export async function assertMakersProjectCompatible(
     );
   }
 }
-

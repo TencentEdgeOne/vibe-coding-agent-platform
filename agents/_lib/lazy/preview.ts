@@ -34,12 +34,6 @@ export type PreviewReadiness = {
 };
 
 export type EnsurePreviewOptions = {
-  /**
-   * Re-run the generated-route gates even when the dev server is already up.
-   * A token refresh does not: the gates cost a real model call, and the code
-   * has not changed.
-   */
-  verifyRoutes?: boolean;
   /** Take down a healthy process first. For the callers that know it is stale. */
   forceRestart?: boolean;
   /** Live text for the row a person is watching. Absent callers stay quiet. */
@@ -80,7 +74,7 @@ async function resolvePreview(
   }
 
   // A live server just needs a URL minted from this request's own token.
-  if (!options.forceRestart && !options.verifyRoutes && await isPreviewServerReady(context)) {
+  if (!options.forceRestart && await isPreviewServerReady(context)) {
     const links = await mintPreviewLinks(context, state);
     if (links.url) {
       return publishReadyPreview(context, conversationId, state, links, false);

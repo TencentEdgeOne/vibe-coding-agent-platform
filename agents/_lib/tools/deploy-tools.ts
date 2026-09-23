@@ -142,7 +142,6 @@ export function buildDeployProjectTool(lifecycle: DeployToolLifecycle) {
       // directory with it. Bring it back before the agent writes the reply.
       try {
         await startPreviewServer(lifecycle.context, lifecycle.state, {
-          verifyRoutes: false,
           onProgress: (text) => {
             if (!toolUseId || !lifecycle.send) return;
             const summary = summarizeToolOutput(text);

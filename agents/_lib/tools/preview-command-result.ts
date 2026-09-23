@@ -63,16 +63,13 @@ export async function handleDevCommandResult(
     };
   }
   try {
-    // The CLI reported success, so this is the verification half: the route
-    // gates, and a restart for a server that answers nothing. Both live in the
-    // readiness layer now, so the agent's own launch cannot drift from the one
-    // the host and the client get. `lifecycle.state` is the turn's live copy —
-    // the preview has to land on that one to reach its SSE stream.
+    // The CLI reported success, so publish the URL through the same readiness
+    // layer the host and the client use. `lifecycle.state` is the turn's live
+    // copy — the preview has to land on that one to reach its SSE stream.
     const preview = await ensurePreview(
       lifecycle.context,
       lifecycle.conversationId,
       lifecycle.state,
-      { verifyRoutes: true },
     );
     lifecycle.onPreviewReady?.(preview);
     return appendText(result, JSON.stringify({

@@ -250,11 +250,10 @@ if (agentFiles.length > 0) {
     }
   }
 
-  // The preview only gets a model answer after a key is configured, so a
-  // generated /chat stream that never closes is invisible until the exact
-  // moment the user starts trying to chat. The smoke gate now reports it as a
-  // project problem, and this lint catches the same omission one step earlier,
-  // before makers dev starts.
+  // A generated /chat stream that never closes is invisible until the exact
+  // moment a user starts trying to chat: the request stays open and the UI
+  // waits forever. Nothing in the preview path exercises that now, so this lint
+  // is the only thing that catches the omission before makers dev starts.
   for (const file of agentEntries) {
     const source = readLintSource(file);
     const usesSseHelper = /\bcreateSSEResponse\s*\(/.test(source)

@@ -392,9 +392,10 @@ export function onRequest(context) {
   assert.match(output, /makers-edge-functions/);
 });
 
-// A generated /chat stream that omits the terminal frame only fails after a key
-// is configured, because that is when the preview smoke makes a real model call.
-// Catching it here keeps the first symptom out of the preview panel.
+// A generated /chat stream that omits the terminal frame leaves the client
+// waiting forever. Nothing in the preview path exercises the stream now, so
+// this lint is the only thing standing between the omission and the user
+// discovering it by chatting.
 test('Makers lint requires a generated SSE handler to send data: [DONE]', async () => {
   const result = await runLintFixture({
     'edgeone.json': '{"agents":{"framework":"langgraph"}}',
