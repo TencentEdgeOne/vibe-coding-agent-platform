@@ -142,7 +142,11 @@ function buildSandboxPreview() {
     // else in the turn proves a generated route answers: the build compiles the
     // handler without ever calling it, which is why the probing responsibility
     // lands on the model rather than the preview.
-    'start_preview starts the dev server and returns its URL; it does not exercise the project. Call it after the project is written, then verify the parts you changed yourself from inside the sandbox: read the served route over http://127.0.0.1:3000/preview/... and read the response. A build that passes says the code compiles, not that it serves, so do not conclude the turn on the strength of a build alone.',
+    // The address is the one the panel uses, prefix and all, and the prefix is
+    // not decoration: the proxy decides per request whether to strip it, and a
+    // route checked at the root can pass while the prefixed request the browser
+    // actually sends fails. Verifying anything else is verifying another app.
+    'start_preview starts the dev server and returns its URL; it does not exercise the project. Call it after the project is written, then verify the parts you changed yourself from inside the sandbox. Request routes through the preview prefix the panel uses, exactly as the returned local_url shows them — a path without the prefix is a different request that can pass while the browser\'s fails. A build that passes says the code compiles, not that it serves, so do not conclude the turn on the strength of a build alone.',
     // A run installed dependencies and built while the preview was up, and both
     // lost the race silently: the build reported a Pages Router page the project
     // does not have, and npm reported ENOTEMPTY on a package the server held.
@@ -235,7 +239,7 @@ function buildNewProjectWorkflow(appDir: string) {
     '3. After the required references are loaded, write the project with files_write, and send those writes together. When a scaffolder ran, keep what it produced and use these calls to adapt it — the platform declarations and the entry route — rather than rewriting files it already got right. If agents/chat.ts is already in the workspace, edit that file; do not also write agents/chat/index.ts — both mount POST /chat. Otherwise write configuration and dependencies first, then styles and small modules, then the entry HTML, then any platform function or agent directories. Dependencies come before agent code specifically: the platform declarations an agent project needs are derived from the packages it declares, so a dependency file that arrives later cannot inform them.',
     `4. The host starts npm install in the background the moment package.json is written. When you run npm install yourself, that command waits for the background install and reports its result — it does not install twice. Run npm install inside ${appDir} only when the project has a package.json with dependencies that are not yet on disk (cd ${appDir} && npm install by default; Python packages are declared in the project's requirements file and installed by the platform). Do not invent nested ${appDir}/${appDir} paths.`,
     'Take every dependency name and version range from the reference you loaded for that framework, and copy its dependency block as written. Versions recalled from memory are the usual cause of peer-dependency conflicts and engine mismatches, and each one costs a rewrite plus a reinstall. If a reference pins a version or caps a range, keep the pin instead of widening it to latest.',
-    '5. Call start_preview, then verify what you changed against the local URL it returns and fix whatever does not answer. Check routes from inside the sandbox — the public preview URL is for the user and needs the sandbox token, so do not fetch it, and do not start a preview server through commands.',
+    '5. Call start_preview, then verify what you changed through the local URL it returns and fix whatever does not answer. Use that address as the panel does, prefix included — the route behind it is not the same one as the bare path. Check from inside the sandbox: the public preview URL is for the user and needs the sandbox token, so do not fetch it, and do not start a preview server through commands.',
   ];
 }
 

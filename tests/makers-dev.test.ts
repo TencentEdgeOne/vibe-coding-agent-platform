@@ -1068,11 +1068,118 @@ test('the proxy settles the trailing slash instead of bouncing the browser', asy
   assert.deepEqual(seen, ['/articles/', '/articles']);
 });
 
+// The panel and the agent reach the same route by different paths, and only one
+// of them was working.
+//
+// A framework given `base = EDGEONE_PREVIEW_ASSET_PREFIX` owns the whole prefix:
+// the proxy keeps it, and its assets resolve. But makers dev mounts the
+// platform's own routes — agents and cloud functions — at the root whatever base
+// the framework was given. So the panel's POST /preview/chat was answered by the
+// framework (404, or its SPA fallback for a fetch) while the agent's
+// POST /chat worked, which is exactly what "the agent verified the route and the
+// panel still cannot chat" looked like from the outside.
+test('a prefixed platform route reaches makers-dev even after the framework claims the prefix', async () => {
+  const seen: string[] = [];
+  const upstream = createServer((req, res) => {
+    const url = (req.url || '').split('?')[0];
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+      seen.push(`${req.method} ${url}`);
+      // The framework claims the prefix and owns everything under it.
+      if (url === '/') {
+        res.writeHead(302, { location: `${PREFIX}/` }).end();
+        return;
+      }
+      if (url === `${PREFIX}/`) {
+        res.writeHead(200, { 'content-type': 'text/html' }).end('<html><head></head><body>app</body></html>');
+        return;
+      }
+      // The platform's route, mounted at the root, and only there.
+      if (req.method === 'POST' && url === '/chat') {
+        res.writeHead(200, { 'content-type': 'text/event-stream' }).end(`data: ${body}\n\ndata: [DONE]\n\n`);
+        return;
+      }
+      // What Vite actually does for a path it does not have: a 200 with the
+      // SPA shell. This is the shape that made the failure invisible — the
+      // panel's fetch got a success status and a page it could not read.
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+        .end('<!DOCTYPE html><html><head></head><body>app shell</body></html>');
+    });
+  });
+  await new Promise<void>((resolve) => upstream.listen(0, '127.0.0.1', resolve));
+  const upstreamPort = (upstream.address() as AddressInfo).port;
+  const listenPort = await reservePort();
+  const directory = await mkdtemp(path.join(tmpdir(), 'preview-prefix-route-'));
+  const scriptPath = path.join(directory, 'proxy.cjs');
+  await writeFile(scriptPath, buildPreviewProxyScript(listenPort, upstreamPort, PREFIX));
+  const proxy = spawn(process.execPath, [scriptPath], { stdio: 'ignore' });
+
+  try {
+    const base = `http://127.0.0.1:${listenPort}`;
+    await waitForProxy(`${base}${PREFIX}/`);
+    // The panel loads the document first. This is the request that flips the
+    // proxy to keeping the prefix, and it is why the ordering matters.
+    const document = await fetch(`${base}${PREFIX}/`, { headers: { accept: 'text/html' } });
+    assert.equal(document.status, 200);
+
+    // What the panel's own fetch('/chat') becomes once the proxy restores it.
+    const payload = JSON.stringify({ messages: [{ role: 'user', content: 'hi' }] });
+    const chat = await fetch(`${base}${PREFIX}/chat`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: payload,
+    });
+    assert.equal(chat.status, 200, 'the panel path must reach the platform route');
+    const stream = await chat.text();
+    assert.match(stream, /\[DONE\]/);
+    assert.ok(stream.includes(payload), 'the body has to arrive, not just the path');
+
+    // The panel's request reached the framework first, because the framework
+    // had claimed the prefix, and only then was re-sent without it. That second
+    // request is the one the platform route answers, and it carries the body.
+    const chatAttempts = seen.filter((entry) => entry.includes('/chat'));
+    assert.deepEqual(chatAttempts, [
+      `POST ${PREFIX}/chat`,
+      'POST /chat',
+    ]);
+    assert.ok(seen.indexOf(`POST ${PREFIX}/chat`) > seen.indexOf(`GET ${PREFIX}/`),
+      'the framework has to claim the prefix before the misrouted request is sent');
+  } finally {
+    proxy.kill();
+    await new Promise((resolve) => upstream.close(resolve));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('makers-dev captured exit markers preserve CLI failures', () => {
   assert.equal(parseMakersDevExitCode('log\nMAKERS_DEV_EXIT:127\n'), 127);
   assert.equal(parseMakersDevExitCode('MAKERS_DEV_EXIT:0\n'), 0);
   assert.equal(parseMakersDevExitCode('no marker'), undefined);
 });
+
+// The proxy binds its own port, so hand it one nothing else is holding.
+function reservePort() {
+  return new Promise<number>((resolve) => {
+    const probe = createServer();
+    probe.listen(0, '127.0.0.1', () => {
+      const address = probe.address() as AddressInfo;
+      probe.close(() => resolve(address.port));
+    });
+  });
+}
+
+async function waitForProxy(url: string) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    try {
+      await fetch(url, { headers: { accept: 'text/html' } });
+      return;
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+  throw new Error(`preview proxy never came up at ${url}`);
+}
 
 test('sandbox preview publishes the fixed gateway path through a local adapter', async () => {
   const [preview, session] = await Promise.all([

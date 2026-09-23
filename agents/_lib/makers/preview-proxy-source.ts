@@ -25,6 +25,12 @@ const HEALTH_PATH = '/__edgeone_preview_proxy_health';
 // previewUpstreamClaimsPrefix in shared/makers-dev.ts. Until then the prefix is
 // stripped, which is what makers dev and every framework with an asset-only
 // prefix knob expect.
+//
+// A framework that owns the prefix does not own everything under it. makers dev
+// mounts the platform's own routes — agents and cloud functions — at the root
+// whatever base the framework was given, so /preview/chat is a path the
+// framework answers and the platform does not, until the prefix comes off. The
+// answer is what tells the two apart: see misroutedPlatformPath below.
 let prefixAware = false;
 
 // The 404-shaped form of the same claim. Subpaths are tried once per proxy —
@@ -36,18 +42,69 @@ let prefixAware = false;
 // comes up.
 let prefixProbed = false;
 
+// How large a request body may be and still be replayed once.
+//
+// The strip-and-retry below needs the body twice, so a replayable request is
+// read into memory before it is sent. The bound keeps an upload from being held
+// there for a retry it would not get anyway.
+const REPLAY_LIMIT = 2 * 1024 * 1024;
+
 function rewritePath(url) {
   if (!url) return '/';
   if (prefixAware) return url;
-  if (
-    PREFIX
-    && (url === PREFIX || url.startsWith(PREFIX + '/') || url.startsWith(PREFIX + '?'))
-  ) {
-    const next = url.slice(PREFIX.length);
-    if (!next || next === '/') return '/';
-    return next.startsWith('/') ? next : '/' + next;
-  }
+  const stripped = stripPrefixPath(url);
+  if (stripped) return stripped;
   return url;
+}
+
+// The same strip, exposed so a request that already carries the prefix can be
+// re-sent without it. Returns null when there is nothing to strip.
+function stripPrefixPath(url) {
+  if (!PREFIX || !url) return null;
+  if (!(url === PREFIX || url.startsWith(PREFIX + '/') || url.startsWith(PREFIX + '?'))) {
+    return null;
+  }
+  const next = url.slice(PREFIX.length);
+  if (!next || next === '/') return '/';
+  return next.startsWith('/') ? next : '/' + next;
+}
+
+// Whether this request can be sent a second time from a copy of its body.
+//
+// GET and HEAD carry nothing, so they always can. Anything else needs a length
+// this proxy can trust: a chunked upload is streamed once and never replayed.
+function canReplay(req) {
+  if (req.method === 'GET' || req.method === 'HEAD') return true;
+  const length = Number(req.headers['content-length']);
+  return Number.isFinite(length) && length >= 0 && length <= REPLAY_LIMIT;
+}
+
+function readBody(req, done) {
+  const chunks = [];
+  req.on('data', (chunk) => chunks.push(chunk));
+  req.on('end', () => done(Buffer.concat(chunks)));
+  req.on('error', () => done(Buffer.alloc(0)));
+}
+
+// Whether this answer is the framework answering a path that belonged to the
+// platform.
+//
+// Two shapes, and they are the two ways a real route gets mistaken for a
+// missing page. A 404 is the plain one. The other is a page: a request that did
+// not ask for HTML — fetch(), curl, an XHR — being handed a document is the
+// framework's fallback rather than anything the caller can use.
+//
+// The page shape is only read this way for a method that is not a navigation.
+// A GET that accepts anything may be a client router asking for a route it will
+// render from that document, and that request belongs to the framework.
+function misroutedPlatformPath(req, upstream) {
+  const status = upstream.statusCode || 0;
+  if (status === 404) return true;
+  if (req.method === 'GET' || req.method === 'HEAD') return false;
+  const accept = req.headers.accept;
+  if (typeof accept === 'string' && accept.indexOf('text/html') !== -1) return false;
+  const type = upstream.headers['content-type'];
+  return typeof type === 'string' && type.toLowerCase().indexOf('text/html') !== -1;
 }
 
 // Mirrors previewCanonicalRedirect in shared/makers-dev.ts.
@@ -352,11 +409,24 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  forward(req, res, rewritePath(req.url), true, true, false);
+  // A request the browser addressed to the prefix may belong to the framework
+  // (which would keep the prefix) or to the platform (which mounts at the
+  // root). Only the answer can tell the two apart, so a replayable one is
+  // buffered up front and the verdict costs a single retry.
+  const startedPrefixed = Boolean(stripPrefixPath(req.url));
+  if (prefixAware && startedPrefixed && canReplay(req)) {
+    readBody(req, (body) => forward(req, res, rewritePath(req.url), true, true, false, body));
+    return;
+  }
+  forward(req, res, rewritePath(req.url), true, true, false, null);
 });
 
-function forward(req, res, path, mayRetry, mayFollow, probing) {
+function forward(req, res, path, mayRetry, mayFollow, probing, replayBody) {
   const headers = forwardHeaders(req);
+  if (replayBody) {
+    headers['content-length'] = String(replayBody.length);
+    delete headers['transfer-encoding'];
+  }
   const proxy = http.request({
     hostname: '127.0.0.1',
     port: TARGET_PORT,
@@ -364,6 +434,18 @@ function forward(req, res, path, mayRetry, mayFollow, probing) {
     method: req.method,
     headers,
   }, (upstream) => {
+    // The prefix was kept because the framework asked for it, but this answer
+    // says the request was the platform's: the route lives at the root, and the
+    // framework only saw it because the prefix was still on. Send it again
+    // without the prefix, from the body held for exactly this.
+    if (mayRetry && prefixAware && replayBody && misroutedPlatformPath(req, upstream)) {
+      upstream.resume();
+      const stripped = stripPrefixPath(req.url);
+      if (stripped) {
+        forward(req, res, stripped, false, true, false, replayBody);
+        return;
+      }
+    }
     // The probe's answer, which is the half of previewPrefixProbe that decides.
     // Anything but a second 404 means the prefixed path is a route the upstream
     // knows, so it keeps the prefix from here on. Read before the branches
@@ -438,9 +520,13 @@ function forward(req, res, path, mayRetry, mayFollow, probing) {
     if (!res.headersSent) res.writeHead(502);
     res.end('preview proxy error');
   });
-  // Neither a retry nor a follow has a body left to send: both are reached
-  // only for a GET or a HEAD, and the request stream is already consumed.
-  if (mayRetry) req.pipe(proxy);
+  // Three ways to send the body, and never two of them. A buffered request is
+  // written from the copy taken before the first attempt, because the stream it
+  // came from is drained. A plain request streams straight through. A retry
+  // that reaches here has no body left to send: those are only ever made for a
+  // GET or a HEAD.
+  if (replayBody) proxy.end(replayBody);
+  else if (mayRetry) req.pipe(proxy);
   else proxy.end();
 }
 
