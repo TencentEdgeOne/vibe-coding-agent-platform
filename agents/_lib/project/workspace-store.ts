@@ -1,4 +1,4 @@
-import type { DeploymentInfo, PreviewKind } from '../../../shared/protocol.ts';
+import type { DeploymentInfo, PreviewKind, PreviewRoute } from '../../../shared/protocol.ts';
 import { isMakersDeployUrl } from '../../../shared/makers-url.ts';
 import type { PersistCapable } from '../runtime/context.ts';
 import { saveProjectState } from '../session/store.ts';
@@ -8,6 +8,7 @@ export type PreviewPublication = {
   url: string;
   sandboxDebugUrl?: string;
   kind?: PreviewKind;
+  routes?: PreviewRoute[];
 };
 
 /**
@@ -18,6 +19,9 @@ export function publishPreview(state: ProjectState, preview: PreviewPublication)
   state.previewUrl = preview.url;
   state.sandboxDebugUrl = preview.sandboxDebugUrl;
   state.previewKind = preview.kind || (isMakersDeployUrl(preview.url) ? 'makers' : 'sandbox');
+  // Callers that only re-publish a URL keep the list the readiness layer
+  // scanned; an explicit list (including an empty one) replaces it.
+  if (preview.routes) state.previewRoutes = preview.routes;
   state.previewPublished = true;
   return state;
 }
@@ -27,6 +31,7 @@ export function clearPreview(state: ProjectState) {
   state.sandboxDebugUrl = undefined;
   state.previewPublished = undefined;
   state.previewKind = undefined;
+  state.previewRoutes = undefined;
   return state;
 }
 

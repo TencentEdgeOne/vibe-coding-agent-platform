@@ -3,12 +3,14 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { isMakersDeployUrl } from '../../../../shared/makers-url';
 import { previewDeepLink } from '../../../../shared/preview-link';
+import { previewTrackedPathFromDisplayPath } from '../../../../shared/preview-display-path';
 import type { LinkInfo } from '@/app/types/workspace';
 import {
   isPreviewMessageOrigin,
   isSamePreviewTarget,
 } from './preview-identity';
 import { usePreviewRefresh } from './use-preview-refresh';
+import { usePreviewNavigation } from './use-preview-navigation';
 
 export { isPreviewMessageOrigin, isSamePreviewTarget };
 
@@ -32,9 +34,7 @@ export function usePreviewSurface(options: {
   const [activePreviewLoaded, setActivePreviewLoaded] = useState(false);
   const [previewRefreshing, setPreviewRefreshing] = useState(false);
   const [previewRefreshFailed, setPreviewRefreshFailed] = useState(false);
-  const [previewCopied, setPreviewCopied] = useState(false);
-  const [previewPath, setPreviewPath] = useState('');
-  const previewPathRef = useRef('');
+  const [previewRoutes, setPreviewRoutes] = useState<LinkInfo['routes']>([]);
   const [pendingPreviewUrl, setPendingPreviewUrl] = useState('');
   const pendingPreviewUrlRef = useRef('');
   const [pendingPreviewRevision, setPendingPreviewRevision] = useState(0);
@@ -54,6 +54,34 @@ export function usePreviewSurface(options: {
 
   const shareablePreviewUrl = preview?.url || activePreviewUrl;
 
+  /**
+   * The only way the pane moves the frame. Back and Forward are modelled with
+   * the parent's own stacks, so every command here is a plain navigation to a
+   * route the pane already knows — the frame's own history is never consulted.
+   */
+  const navigatePreview = useCallback((path: string) => {
+    const target = window.document.querySelector<HTMLIFrameElement>(
+      'iframe[title="sandbox-preview"]',
+    );
+    if (!target?.contentWindow || !shareablePreviewUrl) return;
+    try {
+      target.contentWindow.postMessage(
+        { __edgeonePreviewNavigation: 'navigate', path },
+        new URL(shareablePreviewUrl).origin,
+      );
+    } catch {
+      // An unparsable preview URL is already handled by the link builders.
+    }
+  }, [shareablePreviewUrl]);
+
+  const navigation = usePreviewNavigation({
+    shareablePreviewUrl,
+    pendingPreviewUrl,
+    isPreviewMessageOrigin,
+    activePreviewUrlRef,
+    navigate: navigatePreview,
+  });
+
   useEffect(() => {
     pendingPreviewUrlRef.current = pendingPreviewUrl;
   }, [pendingPreviewUrl]);
@@ -61,7 +89,8 @@ export function usePreviewSurface(options: {
   useEffect(() => {
     hasLivePreviewRef.current = Boolean(preview?.url);
     isMakersPreviewRef.current = preview?.kind === 'makers' || isMakersDeployUrl(preview?.url);
-  }, [preview?.url, preview?.kind]);
+    setPreviewRoutes(preview?.routes || []);
+  }, [preview?.url, preview?.kind, preview?.routes]);
 
   usePreviewRefresh({
     conversationIdRef: options.conversationIdRef,
@@ -119,24 +148,6 @@ export function usePreviewSurface(options: {
     return () => window.clearTimeout(timer);
   }, [pendingPreviewLoaded, pendingPreviewUrl, promotePendingPreview]);
 
-  useEffect(() => {
-    const onMessage = (event: MessageEvent) => {
-      const payload = event.data;
-      if (!payload || typeof payload !== 'object') return;
-      const path = (payload as { __edgeonePreviewPath?: unknown }).__edgeonePreviewPath;
-      if (typeof path !== 'string' || !path) return;
-      if (!isPreviewMessageOrigin(event.origin, [
-        activePreviewUrlRef.current,
-        pendingPreviewUrlRef.current,
-      ])) return;
-      if (path === previewPathRef.current) return;
-      previewPathRef.current = path;
-      setPreviewPath(path);
-    };
-    window.addEventListener('message', onMessage);
-    return () => window.removeEventListener('message', onMessage);
-  }, []);
-
   const handleActivePreviewLoad = useCallback(() => {
     if (!previewRefreshInFlightRef.current) {
       setActivePreviewLoaded(true);
@@ -151,22 +162,13 @@ export function usePreviewSurface(options: {
   function handleOpenPreview() {
     if (shareablePreviewUrl) {
       window.open(
-        previewDeepLink(shareablePreviewUrl, previewPath),
+        previewDeepLink(
+          shareablePreviewUrl,
+          previewTrackedPathFromDisplayPath(navigation.displayPath),
+        ),
         '_blank',
         'noopener,noreferrer',
       );
-    }
-  }
-
-  async function handleCopyPreviewUrl() {
-    if (!shareablePreviewUrl || !navigator.clipboard) return;
-    const urlToCopy = previewDeepLink(shareablePreviewUrl, previewPath);
-    try {
-      await navigator.clipboard.writeText(urlToCopy);
-      setPreviewCopied(true);
-      window.setTimeout(() => setPreviewCopied(false), 1600);
-    } catch {
-      setPreviewCopied(false);
     }
   }
 
@@ -205,6 +207,7 @@ export function usePreviewSurface(options: {
       setPendingPreviewUrl('');
       setPendingPreviewRevision(0);
       setPendingPreviewLoaded(false);
+      navigation.reset();
       return;
     }
 
@@ -244,6 +247,7 @@ export function usePreviewSurface(options: {
       setActivePreviewUrl(nextPreview.url);
       setActivePreviewRevision(revision);
       setActivePreviewLoaded(false);
+      navigation.reset();
       return;
     }
     setPreview(null);
@@ -254,8 +258,7 @@ export function usePreviewSurface(options: {
     setActivePreviewRevision(0);
     setActivePreviewLoaded(false);
     setPendingPreviewLoaded(false);
-    previewPathRef.current = '';
-    setPreviewPath('');
+    navigation.reset();
   }
 
   const resetPreview = useCallback(() => {
@@ -272,14 +275,16 @@ export function usePreviewSurface(options: {
     setPendingPreviewUrl('');
     setPendingPreviewRevision(0);
     setPendingPreviewLoaded(false);
-    setPreviewCopied(false);
-    previewPathRef.current = '';
-    setPreviewPath('');
-  }, []);
+    navigation.reset();
+  }, [navigation.reset]);
 
   return {
     preview,
     setPreview,
+    previewRoutes,
+    previewCanGoBack: navigation.canGoBack,
+    previewCanGoForward: navigation.canGoForward,
+    previewNavigating: navigation.navigating,
     previewViewport,
     setPreviewViewport,
     activePreviewSlot,
@@ -288,22 +293,23 @@ export function usePreviewSurface(options: {
     activePreviewLoaded,
     previewRefreshing,
     previewRefreshFailed,
-    previewCopied,
-    previewPath,
+    previewPath: navigation.path,
+    previewDisplayPath: navigation.displayPath,
     pendingPreviewUrl,
     pendingPreviewRevision,
     shareablePreviewUrl,
     previewRevisionRef,
     activePreviewUrlRef,
     activePreviewRevisionRef,
-    previewPathRef,
     previewRefreshedAtRef,
     promotePendingPreview,
     handlePendingPreviewLoad,
     handleActivePreviewLoad,
     handleRefreshPreview,
     handleOpenPreview,
-    handleCopyPreviewUrl,
+    handlePreviewBack: navigation.goBack,
+    handlePreviewForward: navigation.goForward,
+    handlePreviewRouteSelect: navigation.selectRoute,
     activatePreview,
     applyResumedPreview,
     resetPreview,

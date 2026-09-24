@@ -135,7 +135,12 @@ export async function runChatPipeline(
     sendTurnResult(
       send,
       slimResult(conversationId, extra),
-      workspaceSnapshotFromState(conversationId, state),
+      workspaceSnapshotFromState(conversationId, state, undefined, {
+        // The turn knows whether it produced a project, which is what makes the
+        // download link (and the deploy button it gates) available. Asking for
+        // a file listing here would attach the sandbox after the model stopped.
+        hasDownload: state.created,
+      }),
     );
   };
   const handleProjectFilesChanged = async (file?: { path: string; content: string }) => {
@@ -167,6 +172,7 @@ export async function runChatPipeline(
           url: preview.url,
           sandboxDebugUrl: preview.sandboxDebugUrl,
           kind: state.previewKind,
+          routes: state.previewRoutes,
         },
         download: { url: '/download', filename: 'source.zip' },
       },

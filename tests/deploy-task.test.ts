@@ -122,7 +122,7 @@ test('a publish closes the routes out of the preview without covering it', async
   const [screen, frame, controls, i18n] = await Promise.all([
     surface(WORKSPACE),
     surface('app/features/workspace/components/preview-frame.tsx'),
-    surface('app/features/workspace/components/preview-controls.tsx'),
+    surface('app/features/workspace/components/preview-address-bar.tsx'),
     surface(I18N),
   ]);
 
@@ -136,15 +136,15 @@ test('a publish closes the routes out of the preview without covering it', async
 
   // Reconnecting during a publish fails and then blames an expired connection,
   // which is the one explanation that is not true here, so both routes out of
-  // the frame are closed for the duration.
+  // the frame are closed for the duration. They live in the address bar now.
   assert.equal(controls.match(/disabled=\{publishing\}/g)?.length, 2);
   // An icon button says nothing on its own, so the refusal is named too — and it
   // is the accessible name, not only the tooltip.
   assert.match(controls, /const linkHint = publishing \? copy\.pausedForDeploy : ''/);
   assert.equal(controls.match(/aria-label=\{linkHint \|\| copy\.\w+\}/g)?.length, 2);
 
-  // Only the controls are told, and the phrase is assembled for them alone.
-  assert.match(screen, /<PreviewControls[\s\S]*?publishing=\{publishing\}/);
+  // Only the address bar is told, and the phrase is assembled for it alone.
+  assert.match(screen, /<PreviewAddressBar[\s\S]*?publishing=\{publishing\}/);
   assert.equal(screen.match(/pausedForDeploy: t\.workspace\.previewPausedForDeploy/g)?.length, 1);
 
   for (const language of ['zh', 'en']) {
@@ -256,6 +256,29 @@ test('the deploy button is disabled until a project exists and nothing is runnin
     screen,
     /canDeployProject \? t\.deployLabel : t\.workspace\.deployNeedsIdle/,
   );
+});
+
+// The button reads `workspace.download`, so every path that learns a project
+// exists has to deliver that link. Two of them were silent: a finished turn
+// omitted it once the file-tree cache went away, and a resumed session never
+// consumed the field at all. Either one left Deploy disabled on a project that
+// was sitting right there.
+test('a project that exists reaches the deploy button on every path', async () => {
+  const [chat, snapshot, resume, screen] = await Promise.all([
+    readFile('agents/_lib/turn/chat.ts', 'utf8'),
+    readFile('agents/_lib/project/snapshot.ts', 'utf8'),
+    readFile('app/features/workspace/hooks/use-session-resume.ts', 'utf8'),
+    surface(WORKSPACE),
+  ]);
+
+  // A finished turn names what makes the link available, without a listing.
+  assert.match(chat, /hasDownload: state\.created/);
+  // The snapshot builder honors that flag as well as a real listing.
+  assert.match(snapshot, /options\.hasDownload \?\? hasFiles/);
+  // A resumed session restores what the server sent.
+  assert.match(resume, /workspace\.setDownload\(data\.download\?\.url \? data\.download : null\)/);
+  // And the button's one source of truth is unchanged.
+  assert.match(screen, /const hasDeployableProject = Boolean\(workspace\.download\?\.url\)/);
 });
 
 // Two deployments, one word between them. Publishing the user's project runs

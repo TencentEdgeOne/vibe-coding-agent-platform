@@ -216,6 +216,9 @@ export function createLiveChatSession(sessionOptions: LiveChatSessionOptions): L
         workspace.setGatewaySavedVisible(false);
       }
       if (event.data.preview) {
+        // Proof for the rest of this visit: the tab may be reopened, and the
+        // lazy boot must treat this conversation as one that has a preview.
+        workspace.setHasPublishedPreview(true);
         preview.activatePreview(event.data.preview, activatedPreviewRevisions);
         if (!workspace.resultPanelOpen) {
           workspace.setSandboxTab('preview');

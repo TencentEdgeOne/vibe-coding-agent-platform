@@ -64,6 +64,9 @@
   overflow: hidden;
   background: var(--n-25);
   animation: workspace-panel-slide-in 420ms var(--ease) both;
+  /* The topbar sizes its address column from the panel's own inline size, so
+     the panel is the query container rather than the viewport. */
+  container-type: inline-size;
 }
 
 .workspace-split-handle {
@@ -138,11 +141,66 @@
   position: relative;
   z-index: 20;
   min-height: 44px;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  /* `grid-template-columns` is set by the container query below, so the centre
+     column is sized from the panel rather than the viewport. */
   align-items: center;
   gap: 12px;
   background: var(--n-25);
   padding: 0 12px 0 18px;
+}
+
+/* The bar is a grid of tabs | address | actions, with equal side tracks so the
+   address bar lands on the panel's midline. The tab strip is much wider than the
+   action buttons, so any layout that hands each flank what it asks for leaves
+   the bar tens of pixels right of centre — off-centre is what the equal tracks
+   are for.
+
+   The centre is a definite track rather than `auto`: an automatic track is sized
+   by its contents, which left the bar at about 286px and the route field inside
+   it at roughly half that. Stating the cap as the track's maximum is what
+   actually hands the route that room. The cap is generous because the route is
+   the one thing in this bar a person reads rather than clicks. */
+.workspace-topbar {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 420px) minmax(0, 1fr);
+}
+
+/* Below this the equal tracks are narrower than their contents, and `minmax(0,
+   1fr)` would let the tab strip spill into the address bar — the overlap this
+   layout has to rule out. Instead of trading the centring away to keep one row,
+   the bar takes its own full-width row, which is centred by construction. Only
+   the layout that has a bar reflows: the flag is set by the component, so Code
+   and Session keep the single-row height.
+
+   The threshold is the sum the single row actually needs, not a round number:
+   two side tracks wide enough for the longest tab strip (2 x 188), the address
+   cap (420), the two column gaps (24) and the bar's padding (30), which is 850.
+   Under-triggering by even 30px here is what let the strip touch the bar. */
+@container (max-width: 849px) {
+  .workspace-topbar.has-preview-bar {
+    grid-template-areas:
+      'tabs actions'
+      'address address';
+    grid-template-columns: max-content minmax(0, 1fr);
+    padding-bottom: 6px;
+    row-gap: 6px;
+  }
+
+  .workspace-topbar.has-preview-bar .workspace-topbar-tabs {
+    grid-area: tabs;
+  }
+
+  .workspace-topbar.has-preview-bar .workspace-topbar-actions {
+    grid-area: actions;
+  }
+
+  .workspace-topbar.has-preview-bar .workspace-topbar-center {
+    grid-area: address;
+    justify-content: stretch;
+  }
+
+  .workspace-topbar.has-preview-bar .workspace-preview-address {
+    max-width: none;
+  }
 }
 
 .workspace-topbar-tabs,
@@ -167,7 +225,6 @@
 }
 
 .workspace-topbar-center {
-  max-width: min(420px, 46vw);
   justify-content: center;
 }
 
@@ -189,6 +246,11 @@
 }
 
 .workspace-tabs {
+  /* The container measures its tabs, so its width rides along with them as a
+     label opens and another closes. That movement is the animation: the strip
+     widens and narrows with the labels rather than holding a reserved track. */
+  display: flex;
+  width: max-content;
   height: 30px;
   gap: 2px;
   border-radius: var(--r-md);
@@ -198,7 +260,9 @@
 
 .workspace-tab {
   height: 26px;
-  gap: 5px;
+  flex: 0 0 auto;
+  justify-content: center;
+  gap: 0;
   border: 0;
   border-radius: var(--r-sm);
   background: transparent;
@@ -208,17 +272,58 @@
   box-shadow: none;
   transition:
     color var(--t-base) ease,
-    background var(--t-base) ease,
-    box-shadow var(--t-base) ease;
+    background var(--t-base) ease;
+}
+
+/* A one-cell grid whose track animates between 0 and 1fr. That is the one
+   formulation where closing and opening interpolate over the same span: a
+   max-width cap only ever animates the part of the text past the cap, so the
+   two directions ran at visibly different speeds on the same duration. */
+.workspace-tab-label {
+  display: grid;
+  grid-template-columns: 0fr;
+  margin-left: 0;
+  opacity: 0;
+  transition:
+    grid-template-columns var(--t-base) var(--ease),
+    margin-left var(--t-base) var(--ease),
+    opacity var(--t-base) ease;
+}
+
+/* The inner element is what hides the overflow; the track can only shrink past
+   the text if something below it clips. */
+.workspace-tab-label > span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* The tab in view is the one that says what it is; the others stay as icons so
+   the strip is a set of destinations rather than three competing labels. */
+.workspace-tab[data-state='active'] {
+  gap: 0;
+}
+
+.workspace-tab[data-state='active'] .workspace-tab-label {
+  grid-template-columns: 1fr;
+  margin-left: 5px;
+  opacity: 1;
 }
 
 .workspace-tab svg {
   width: 12px;
   height: 12px;
+  transition: color var(--t-base) ease;
+}
+
+/* Selection is the white pill — lifted, outlined, and branded. Hover goes the
+   other way: a flat, darker recess that could not be read as the open tab. */
+.workspace-tab:hover:not([data-state='active']) {
+  background: var(--n-200);
+  color: var(--n-900);
 }
 
 /* The selected tab must not flinch on hover, click or keyboard focus. */
-.workspace-tab:hover,
 .workspace-tab[data-state='active'],
 .workspace-tab[data-state='active']:hover,
 .workspace-tab[data-state='active']:focus,
@@ -233,62 +338,197 @@
   color: var(--brand);
 }
 
-.workspace-url-chip {
+.workspace-preview-address {
   display: flex;
-  width: min(280px, 38vw);
-  height: 26px;
-  min-width: 120px;
+  position: relative;
+  /* Fills the middle column, whatever the panel leaves it. Back, forward, size,
+     route, open and refresh make it wide; the route button is the only one that
+     flexes, so it ellipsizes when the column is narrow instead of pushing the
+     tabs sideways. */
+  width: 100%;
+  max-width: 420px;
+  min-width: 0;
   align-items: center;
-  gap: 7px;
-  overflow: hidden;
+  gap: 2px;
   border: 1px solid var(--n-150);
   border-radius: var(--r-full);
   background: var(--n-0);
-  padding: 0 10px;
-  color: var(--n-600);
-  font-size: var(--fs-xs);
+  padding: 0 4px;
 }
 
-.workspace-url-chip > span {
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: left;
-}
-
-.workspace-url-chip svg {
-  width: 11px;
-  height: 11px;
-  flex: 0 0 11px;
-}
-
-.workspace-viewport-switch {
+.workspace-preview-nav {
   display: flex;
   flex: 0 0 auto;
-  gap: 2px;
-  border-radius: var(--r-md);
-  background: var(--n-100);
-  padding: 2px;
+  align-items: center;
 }
 
-.workspace-viewport-switch button {
+/* A thin track pinned just under the bar. It reports a wait the parent cannot
+   otherwise observe: the route change happens in a cross-origin frame, so there
+   is no load event here and the bar would sit unchanged for about a second
+   after a selection.
+
+   It sits outside the bar's own rounded box rather than inside it: clipping it
+   to the radius would take the route menu with it, that being a child of the
+   same element. The sweep is decorative — the real signal is the
+   `role="progressbar"` element appearing and disappearing, because the duration
+   cannot be known in advance. */
+.workspace-address-progress {
+  position: absolute;
+  z-index: 1;
+  top: calc(100% + 1px);
+  right: 4px;
+  left: 4px;
+  height: 3px;
+  overflow: hidden;
+  border-radius: var(--r-full);
+  /* A visible trough, not a tint: at 8% opacity the 2px bar read as a smudge on
+     the panel rather than as progress. */
+  background: var(--n-200);
+}
+
+.workspace-address-progress::after {
+  position: absolute;
+  inset: 0;
+  width: 45%;
+  content: '';
+  border-radius: inherit;
+  background: var(--brand);
+  animation: workspace-address-progress 1.2s var(--ease) infinite;
+}
+
+@keyframes workspace-address-progress {
+  from {
+    transform: translateX(-45%);
+  }
+
+  to {
+    transform: translateX(255%);
+  }
+}
+
+/* The sweep is the one piece of motion in the bar, so it is also the one that
+   has to respect a reduced-motion preference: the track stays, the travelling
+   segment is replaced by a static one. */
+@media (prefers-reduced-motion: reduce) {
+  .workspace-address-progress::after {
+    width: 100%;
+    animation: none;
+  }
+}
+
+.workspace-address-button {
   display: grid;
-  width: 26px;
+  width: 24px;
   height: 24px;
+  flex: 0 0 24px;
   place-items: center;
   border-radius: var(--r-sm);
   color: var(--n-600);
 }
 
-.workspace-viewport-switch button[aria-pressed='true'] {
-  background: var(--n-0);
+.workspace-address-button:hover:not(:disabled),
+.workspace-address-button:focus-visible {
+  background: var(--n-100);
   color: var(--n-900);
-  box-shadow: var(--shadow-1);
 }
 
-.workspace-viewport-switch svg,
+.workspace-address-button:disabled {
+  color: var(--n-300);
+  cursor: default;
+}
+
+.workspace-address-button svg {
+  width: 12px;
+  height: 12px;
+}
+
+.workspace-address-route {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  border-radius: var(--r-full);
+  padding: 0 6px;
+  color: var(--n-700);
+  font-size: var(--fs-xs);
+  text-align: left;
+}
+
+.workspace-address-route:hover:not(:disabled),
+.workspace-address-route:focus-visible {
+  background: var(--n-100);
+  color: var(--n-900);
+}
+
+.workspace-address-route:disabled {
+  cursor: default;
+}
+
+.workspace-address-route > span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-address-route svg {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 12px;
+  color: var(--n-500);
+}
+
+.workspace-route-menu {
+  display: flex;
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 100%;
+  max-height: 260px;
+  flex-direction: column;
+  overflow-y: auto;
+  border: 1px solid var(--n-150);
+  border-radius: var(--r-md);
+  background: var(--n-0);
+  padding: 4px;
+  box-shadow: var(--shadow-2);
+}
+
+.workspace-route-menu button {
+  display: block;
+  width: 100%;
+  border-radius: var(--r-sm);
+  padding: 6px 8px;
+  color: var(--n-700);
+  font-size: var(--fs-xs);
+  text-align: left;
+}
+
+.workspace-route-menu button:hover,
+.workspace-route-menu button[aria-selected='true'] {
+  background: var(--n-100);
+  color: var(--n-900);
+}
+
+.workspace-route-menu button span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-route-empty {
+  margin: 0;
+  padding: 8px;
+  color: var(--n-500);
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+}
+
 .workspace-icon-button svg {
   width: 13px;
   height: 13px;
@@ -657,8 +897,19 @@
     padding: 0 8px;
   }
 
-  .workspace-url-chip {
-    display: none;
+  /* The address bar shrinks rather than disappears: it is how a deep route
+     stays readable, and the route button ellipsizes to make the room. */
+  .workspace-topbar-center {
+    max-width: none;
+  }
+
+  .workspace-preview-address {
+    width: 100%;
+    max-width: 240px;
+  }
+
+  .workspace-route-menu {
+    width: max(100%, 200px);
   }
 
   .workspace-icon-button[data-tooltip]::after {

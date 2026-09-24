@@ -67,6 +67,12 @@ export type BuildInfo = {
 
 export type PreviewKind = 'sandbox' | 'makers';
 
+/** One page route a generated project serves. */
+export type PreviewRoute = {
+  /** Route relative to the app root, with a leading slash. */
+  path: string;
+};
+
 export type DeploymentStatus = 'running' | 'success' | 'failed';
 
 export type DeploymentInfo = {
@@ -85,6 +91,11 @@ export type LinkInfo = {
   sandboxDebugUrl?: string;
   filename?: string;
   error?: string;
+  /**
+   * Frontend routes found in the generated project. The address bar offers
+   * these to switch routes without guessing at the file layout first.
+   */
+  routes?: PreviewRoute[];
   /** Preview resume restarted the server, invalidating an already loaded iframe. */
   restarted?: boolean;
   /** Makers deploy URLs skip sandbox envdAccessToken refresh. */

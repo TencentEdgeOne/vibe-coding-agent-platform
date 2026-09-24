@@ -9,8 +9,12 @@
 import type { AgentContext } from '../runtime/context.ts';
 import { PREVIEW_PUBLIC_PORT } from '../constants.ts';
 import { isMakersDeployUrl } from '../../../shared/makers-url.ts';
-import type { PreviewKind } from '../../../shared/protocol.ts';
+import {
+  previewRoutesFromFileTree,
+} from '../../../shared/preview-routes.ts';
+import type { PreviewKind, PreviewRoute } from '../../../shared/protocol.ts';
 import type { ProjectState } from '../types.ts';
+import { getFileTree } from '../project/fs.ts';
 import { persistWorkspace, publishPreview } from '../project/workspace-store.ts';
 import {
   assertPreviewServerReady,
@@ -29,6 +33,8 @@ export type PreviewReadiness = {
   url?: string;
   sandboxDebugUrl?: string;
   kind?: PreviewKind;
+  /** Frontend routes the address bar can offer. */
+  routes?: PreviewRoute[];
   /** The dev server was (re)started, so an open iframe is pointing at a dead process. */
   restarted: boolean;
 };
@@ -69,6 +75,7 @@ async function resolvePreview(
       url: state.previewUrl,
       sandboxDebugUrl: state.sandboxDebugUrl,
       kind: 'makers',
+      routes: state.previewRoutes,
       restarted: false,
     };
   }
@@ -118,6 +125,9 @@ async function publishReadyPreview(
     url: links.url,
     sandboxDebugUrl: links.sandboxDebugUrl,
     kind: 'sandbox',
+    // Always a fresh list, including an empty one: a project whose pages were
+    // deleted must lose the entries the old tree had.
+    routes: await listPreviewRoutes(context, state),
   });
   try {
     await persistWorkspace(context, conversationId, state);
@@ -128,8 +138,22 @@ async function publishReadyPreview(
     url: links.url,
     sandboxDebugUrl: links.sandboxDebugUrl,
     kind: 'sandbox',
+    routes: state.previewRoutes,
     restarted,
   };
+}
+
+/**
+ * The routes the project declares, read from the same file tree the Code pane
+ * shows. A failure here is not a preview failure — the address bar falls back
+ * to typing a path — so it resolves to an empty list.
+ */
+async function listPreviewRoutes(context: AgentContext, state: ProjectState) {
+  try {
+    return previewRoutesFromFileTree(await getFileTree(context, state));
+  } catch {
+    return [];
+  }
 }
 
 async function mintPreviewLinks(context: AgentContext, state: ProjectState) {

@@ -49,9 +49,14 @@ export function useLazyPanel(options: {
     }
 
     // A URL minted by this visit (preview_ready) is already live. A stored URL
-    // from an earlier visit is not, so the first time the tab opens we boot.
+    // from an earlier visit is not, so the first time the tab opens we boot —
+    // but only for a conversation that actually published one. Without that
+    // gate, merely opening the tab booted a sandbox and a dev server for a
+    // project whose agent had never asked for a preview, and the panel showed
+    // "restoring" for work nobody requested.
     if (
-      workspace.sandboxTab === 'preview'
+      workspace.hasPublishedPreview
+      && workspace.sandboxTab === 'preview'
       && previewAttempt.current === 'idle'
       && previewApi.current.previewRefreshedAtRef.current === 0
     ) {
@@ -77,6 +82,7 @@ export function useLazyPanel(options: {
     conversationId,
     refreshSnapshot,
     workspace.fileTree,
+    workspace.hasPublishedPreview,
     workspace.resultPanelOpen,
     workspace.sandboxTab,
     workspace.setFilesLoading,

@@ -105,6 +105,10 @@ async function loadProjectResumeHistory(context: AgentContext, conversationId: s
     hasProject,
     hasPreview,
     needsWorkspace: hasProject,
+    // Restoring a project the agent already built also restores the one fact
+    // the deploy button reads. The link itself is minted on demand by the
+    // download route, so a static path is all the panel needs.
+    ...(hasProject ? { download: { url: '/download', filename: 'source.zip' } } : {}),
     deployment: state.deployment,
     model,
     language: language || undefined,

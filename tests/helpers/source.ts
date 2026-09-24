@@ -65,5 +65,6 @@ export const I18N = [
 export const PREVIEW_SURFACE = [
   'app/features/workspace/hooks/use-preview-surface.ts',
   'app/features/workspace/hooks/use-preview-refresh.ts',
+  'app/features/workspace/hooks/use-preview-navigation.ts',
   'app/features/workspace/hooks/preview-identity.ts',
 ] as const;

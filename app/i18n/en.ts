@@ -145,14 +145,16 @@ export const en = {
     resizePanel: 'Resize the side panel',
     choosePanel: 'Choose Preview or Code',
     refreshPreview: 'Refresh preview',
-    copyPreviewPath: 'Copy current path',
-    previewPathCopied: 'Current path copied',
     openPreview: 'Open preview in a new window',
-    // The viewport buttons are icon-only, so these are the accessible name as
-    // well as the tooltip.
-    viewportGroup: 'Preview width',
-    viewportDesktop: 'Desktop width',
-    viewportMobile: 'Mobile width',
+    previewBack: 'Back',
+    previewForward: 'Forward',
+    previewRouteList: 'Project routes',
+    previewRouteEmpty: 'No routes were found in this project.',
+    previewNavigating: 'Loading route',
+    // The size toggle is icon-only, so these are the accessible name as well as
+    // the tooltip — and each names where a click leads, not the current state.
+    viewportDesktop: 'Switch to desktop width',
+    viewportMobile: 'Switch to mobile width',
     downloadSource: 'Download source',
     downloading: 'Packaging...',
     back: 'Back to home',

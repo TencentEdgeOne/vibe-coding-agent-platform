@@ -179,6 +179,14 @@ export function useSessionResume(options: {
         workspace.setGatewayNeeded(false);
       }
       workspace.setDeployment(data.deployment ?? null);
+      // The download link is how the panel knows a project exists at all — the
+      // deploy button reads it. Resuming a session that already has a project
+      // has to restore it, or every returning visit leaves Deploy disabled.
+      workspace.setDownload(data.download?.url ? data.download : null);
+      // Recorded with history, before the panel can consider a lazy boot: a
+      // conversation that never published a preview must not have one started
+      // for it just because the Preview tab was opened.
+      workspace.setHasPublishedPreview(data.hasPreview === true);
       const liveTaskId = activeTask?.id
         && nextMessages.some((item) => item.id === activeTask.id && item.status === 'running')
         ? activeTask.id

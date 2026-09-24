@@ -192,16 +192,31 @@ function rewriteSetCookie(value) {
 // either: makers dev serves the application, and a proxy is the only layer left
 // that sees every document. This posts the real path — prefix included, which is
 // what the parent strips for display and reuses when deep-linking a copied URL.
+// It also owns the other direction: a route the pane selects arrives as a
+// message. The pane keeps its own back/forward stacks, so every command here is
+// a navigation to a route it already recorded — the frame's own history is
+// never read back, which is the only thing that works cross-origin.
 const TRACKER = '<script data-edgeone-preview-tracker>'
   + '(function(){'
   + 'if(window.parent===window)return;'
   + 'var last="";'
+  + 'function serialize(){return location.pathname+location.search+location.hash;}'
   + 'function report(){'
-  + 'var path=location.pathname+location.search+location.hash;'
+  + 'var path=serialize();'
   + 'if(path===last)return;'
   + 'last=path;'
   + 'try{window.parent.postMessage({__edgeonePreviewPath:path},"*");}catch(e){}'
   + '}'
+  + 'addEventListener("message",function(event){'
+  + 'if(event.source!==window.parent)return;'
+  + 'var data=event.data;'
+  + 'if(!data||typeof data!=="object")return;'
+  + 'if(data.__edgeonePreviewNavigation==="navigate"){'
+  + 'if(typeof window.__edgeonePreviewNavigate==="function"){'
+  + 'window.__edgeonePreviewNavigate(data.path);'
+  + '}else{try{location.assign(data.path);}catch(e){}}'
+  + '}'
+  + '},false);'
   // Client-side routing changes the URL without any event of its own.
   + 'function wrap(name){'
   + 'var original=history[name];'
@@ -242,6 +257,13 @@ const TRACKER = '<script data-edgeone-preview-tracker>'
   + 'return target.toString();'
   + '}catch(e){return null;}'
   + '}'
+  // Selected routes need a real document request, not pushState: a client router
+  // does not re-render on a pushState it did not make, and a server route
+  // would never be fetched at all. The restore helper puts the preview prefix
+  // and token back, and the resulting load joins the iframe's own history.
+  + 'window.__edgeonePreviewNavigate=function(raw){'
+  + 'try{var fixed=restore(raw);location.assign(fixed||raw);}catch(e){}'
+  + '};'
   // Bubble, not capture, and only if nothing has claimed the event. A client
   // router calls preventDefault on its own links, and hijacking those would
   // turn every in-app navigation into a full document load — which for a SPA

@@ -659,6 +659,13 @@ function runInjectedShim(href: string, topLevel = false) {
     // Read back off the fake window, which is where the shim installed its
     // wrapper: calling it is the only way to exercise the real replacement.
     fetch: (input: string) => (window.fetch as (value: unknown) => unknown)(input),
+    /** A selected route arrives the way the parent sends it. */
+    navigate(path: string) {
+      listeners.get('message')?.handler({
+        source: window.parent,
+        data: { __edgeonePreviewNavigation: 'navigate', path },
+      });
+    },
     click(
       anchorHref: string,
       attributes: Record<string, string> = {},
@@ -730,6 +737,34 @@ test('a client route pushed to the address bar is kept inside the prefix', () =>
     'https://sandbox.example.com/preview/ssr?access_token=sit_abc',
     'https://sandbox.example.com/preview/ssr?access_token=sit_abc',
   ]);
+});
+
+// Back and Forward are modelled by the pane's own two stacks, so the frame is
+// never asked to run `history.back()` — cross-origin, that has no observable
+// result and was how the buttons did nothing. The only command left is a
+// navigation, and it has to be a real document request: the preview's own
+// router never sees a pushState it did not make, and a server route would never
+// be requested at all.
+test('a selected route navigates inside the prefix with the access token', () => {
+  const shim = runInjectedShim('https://sandbox.example.com/preview/?access_token=sit_abc');
+
+  shim.navigate('/settings');
+  shim.navigate('about');
+
+  assert.deepEqual(shim.assigned, [
+    'https://sandbox.example.com/preview/settings?access_token=sit_abc',
+    'https://sandbox.example.com/preview/about?access_token=sit_abc',
+  ]);
+});
+
+test('the injected shim has no back or forward command to run in the frame', () => {
+  const script = buildPreviewProxyScript(
+    PREVIEW_SERVER_PORT,
+    MAKERS_DEV_PORT,
+    PREVIEW_PATH_PREFIX,
+  );
+  assert.doesNotMatch(script, /__edgeonePreviewNavigation==="back"/);
+  assert.doesNotMatch(script, /__edgeonePreviewNavigation==="forward"/);
 });
 
 test('the injected shim prefixes a root-absolute fetch before it leaves', () => {

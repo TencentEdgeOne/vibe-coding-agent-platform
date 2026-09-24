@@ -218,6 +218,7 @@ export function WorkspaceScreen() {
         onModelChange={setModel}
         conversationId={conversationId}
         previewDisplayPath={previewDisplayPath}
+        previewAddressCopy={copy.previewAddressCopy}
         deployOffer={deployOffer}
         deployOfferTurnId={deployOfferTurnId}
         canSend={canSend}

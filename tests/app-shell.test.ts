@@ -59,9 +59,11 @@ test('the landing hero centers without clipping its own top', async () => {
   assert.match(stage, /className="home-inner my-auto"/);
 });
 
-// An action that vanishes when it is unavailable teaches nothing: the user is
-// left looking for a button that was there a moment ago. Everything the
-// workspace offers stays in the bar and explains itself when it cannot run.
+// An action that vanishes when it is *unavailable* teaches nothing: the user is
+// left looking for a button that was there a moment ago. So the buttons stay put
+// and explain themselves when disabled. Tabs are a different axis — Download
+// ships the source the Code tab is showing, so it belongs to that tab rather
+// than to the bar as a whole.
 test('workspace actions stay in place and go quiet instead of disappearing', async () => {
   const [screen, header, css] = await Promise.all([
     surface(WORKSPACE),
@@ -83,6 +85,8 @@ test('workspace actions stay in place and go quiet instead of disappearing', asy
     css.indexOf('.workspace-icon-spinner'),
   );
   assert.doesNotMatch(disabledIcon, /pointer-events/);
+  // Scoped to Code: on Preview there is no source view for it to belong to.
+  assert.match(screen, /\{workspace\.sandboxTab === 'files' && \(\s*<button[\s\S]*?Download/);
   // Leaving the project reads as going back, and lives next to the wordmark
   // rather than among the actions that operate on the project.
   const brandCluster = header.slice(
@@ -188,6 +192,79 @@ test('the result panel opens on the preview tab by default', async () => {
   assert.doesNotMatch(resume, /setSandboxTab\(/);
 });
 
+// The strip is a set of destinations, so the tabs that are not in view stay as
+// icons; the open one names itself. Opening and closing must run at the same
+// speed — a max-width cap only animates the text past the cap, so the two
+// directions took visibly different times on one duration. An animated grid
+// track interpolates 0fr to 1fr over the whole span in both directions.
+test('the selected tab shows its label while the others stay icons', async () => {
+  const [screen, css] = await Promise.all([
+    surface(WORKSPACE),
+    readFile('app/styles/workspace.css', 'utf8'),
+  ]);
+
+  // Every tab carries its text in the animatable box, with an inner element
+  // that does the clipping — a track can only shrink past text that overflows.
+  assert.equal(screen.match(/className="workspace-tab-label"/g)?.length, 3);
+  assert.equal(screen.match(/<span className="workspace-tab-label">\s*<span>/g)?.length, 3);
+
+  // Only the collapsed rule itself — the active rule further down legitimately
+  // declares the transition.
+  const label = css.slice(
+    css.indexOf('.workspace-tab-label {'),
+    css.indexOf(".workspace-tab[data-state='active']"),
+  );
+  // Collapsed to a zero-width track, so a hidden label takes up no room.
+  assert.match(label, /display:\s*grid/);
+  assert.match(label, /grid-template-columns:\s*0fr/);
+  assert.match(label, /margin-left:\s*0/);
+  assert.match(label, /opacity:\s*0/);
+  // The transition lives on the base rule, so it applies in both directions.
+  const baseTransition = /transition:([^;]*);/.exec(label)?.[1] ?? '';
+  assert.match(baseTransition, /grid-template-columns var\(--t-base\) var\(--ease\)/);
+  assert.match(baseTransition, /margin-left var\(--t-base\) var\(--ease\)/);
+  assert.match(baseTransition, /opacity var\(--t-base\) ease/);
+
+  const activeStart = css.indexOf(".workspace-tab[data-state='active'] .workspace-tab-label");
+  const active = css.slice(activeStart, css.indexOf('.workspace-tab svg', activeStart));
+  assert.match(active, /grid-template-columns:\s*1fr/);
+  assert.match(active, /margin-left:\s*5px/);
+  assert.match(active, /opacity:\s*1/);
+  // No override here: a second transition would let the directions diverge.
+  assert.doesNotMatch(active, /transition:/);
+
+  // The container measures its tabs rather than reserving a fixed track, which
+  // is what lets the width animate with them.
+  const strip = css.slice(css.indexOf('.workspace-tabs {'), css.indexOf('.workspace-tab {'));
+  assert.match(strip, /display:\s*flex/);
+  assert.match(strip, /width:\s*max-content/);
+  assert.doesNotMatch(strip, /width:\s*\d+px/);
+  assert.doesNotMatch(strip, /transition:[^;]*width/);
+});
+
+// Selection is the white pill with a shadow; hover must not read as the same
+// state on a tab that is only being pointed at.
+test('hovering a tab does not imitate the selected state', async () => {
+  const css = await readFile('app/styles/workspace.css', 'utf8');
+  const hover = css.slice(
+    css.indexOf(".workspace-tab:hover:not([data-state='active'])"),
+    css.indexOf(".workspace-tab[data-state='active'],"),
+  );
+
+  // The hover rule is limited to unselected tabs and is a darker, flat recess —
+  // the opposite direction from the lifted white pill the open tab keeps.
+  assert.match(hover, /background:\s*var\(--n-200\)/);
+  assert.match(hover, /color:\s*var\(--n-900\)/);
+  assert.doesNotMatch(hover, /box-shadow/);
+  assert.doesNotMatch(hover, /background:\s*var\(--n-0\)/);
+  assert.doesNotMatch(hover, /var\(--shadow-1\)/);
+
+  // And the selected state keeps the pill and its shadow.
+  const active = css.slice(css.indexOf(".workspace-tab[data-state='active'],"));
+  assert.match(active, /background:\s*var\(--n-0\)/);
+  assert.match(active, /box-shadow:\s*var\(--shadow-1\)/);
+});
+
 test('opening the workspace does not show a prep overlay, and files can load', async () => {
   const [screen, resume, live, state, files] = await Promise.all([
     surface(WORKSPACE),
@@ -204,6 +281,31 @@ test('opening the workspace does not show a prep overlay, and files can load', a
   assert.match(state, /filesLoading/);
   assert.match(files, /copy\.loadingTree/);
   assert.match(screen, /attention=\{workspace\.unseenPanel\}/);
+});
+
+// Opening the Preview tab used to boot a sandbox for any conversation, because
+// the only gate was "the tab is showing and this visit has no URL yet". A
+// conversation whose agent never asked for a preview then showed a spinner and
+// started a dev server nobody requested. The resume payload already knows
+// whether one was published; that fact is what has to gate the lazy boot.
+test('preview boots lazily only for a conversation that published one', async () => {
+  const [panel, resume, snapshot, state] = await Promise.all([
+    readFile('app/features/workspace/hooks/use-lazy-panel.ts', 'utf8'),
+    readFile('app/features/workspace/hooks/use-session-resume.ts', 'utf8'),
+    readFile('app/features/workspace/hooks/use-workspace-snapshot.ts', 'utf8'),
+    readFile('app/features/workspace/hooks/use-workspace-state.ts', 'utf8'),
+  ]);
+
+  // The fact travels from the resume payload into workspace state...
+  assert.match(resume, /setHasPublishedPreview\(data\.hasPreview === true\)/);
+  assert.match(state, /const \[hasPublishedPreview, setHasPublishedPreview\]/);
+  // ...and the lazy boot requires it before it will call /preview.
+  assert.match(
+    panel,
+    /workspace\.hasPublishedPreview[\s\S]*?fetchPreviewRefresh\(conversationId\)/,
+  );
+  // A snapshot that carries a stored URL is also proof, and restores it.
+  assert.match(snapshot, /setHasPublishedPreview\(true\)/);
 });
 
 test('the split workspace defaults to a 4:6 chat-to-panel ratio and can be dragged', async () => {

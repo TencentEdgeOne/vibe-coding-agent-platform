@@ -170,14 +170,16 @@ export const zh = {
     resizePanel: '拖动调节左右宽度',
     choosePanel: '选择预览或代码',
     refreshPreview: '刷新预览',
-    copyPreviewPath: '复制当前路径',
-    previewPathCopied: '已复制当前路径',
     openPreview: '在新窗口打开预览',
-    // The viewport buttons are icon-only, so these are the accessible name as
-    // well as the tooltip.
-    viewportGroup: '预览宽度',
-    viewportDesktop: '桌面宽度',
-    viewportMobile: '移动宽度',
+    previewBack: '后退',
+    previewForward: '前进',
+    previewRouteList: '项目路由',
+    previewRouteEmpty: '当前项目未发现可跳转的路由。',
+    previewNavigating: '正在加载路由',
+    // The size toggle is icon-only, so these are the accessible name as well as
+    // the tooltip — and each names where a click leads, not the current state.
+    viewportDesktop: '切换到桌面宽度',
+    viewportMobile: '切换到移动宽度',
     downloadSource: '下载源码',
     downloading: '打包中...',
     back: '返回首页',

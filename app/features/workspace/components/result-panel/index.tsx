@@ -2,8 +2,8 @@
 
 import type { FileCopy, SessionCopy, UiCopy } from '@/app/i18n';
 import type { FileContentCache } from '@/app/hooks/use-file-content-cache';
-import type { PreviewControlsCopy } from '../preview-controls';
 import type { PreviewFrameCopy } from '../preview-frame';
+import type { PreviewAddressCopy } from '../preview-address-bar';
 import { WorkspaceErrorBar } from '../workspace-error-bar';
 import { SessionPanel } from '../lazy-panels';
 import type { PreviewSurfaceApi } from '../../hooks/use-preview-surface';
@@ -20,12 +20,12 @@ export function ResultPanel({
   preview,
   t,
   previewDisplayPath,
+  previewAddressCopy,
   deployHint,
   downloadHint,
   canDeployProject,
   publishing,
   conversationId,
-  previewControlsCopy,
   previewFrameCopy,
   restoring,
   cache,
@@ -36,12 +36,12 @@ export function ResultPanel({
   preview: PreviewSurfaceApi;
   t: UiCopy;
   previewDisplayPath: string;
+  previewAddressCopy: PreviewAddressCopy;
   deployHint: string;
   downloadHint: string;
   canDeployProject: boolean;
   publishing: boolean;
   conversationId: string | null;
-  previewControlsCopy: PreviewControlsCopy;
   previewFrameCopy: PreviewFrameCopy;
   restoring: boolean;
   cache: FileContentCache;
@@ -63,16 +63,14 @@ export function ResultPanel({
           session: t.workspace.session,
           showPanel: t.workspace.showPanel,
           hidePanel: t.workspace.hidePanel,
-          previewPathCopied: t.workspace.previewPathCopied,
-          copyPreviewPath: t.workspace.copyPreviewPath,
         }}
         previewDisplayPath={previewDisplayPath}
+        previewAddressCopy={previewAddressCopy}
         deployHint={deployHint}
         downloadHint={downloadHint}
         canDeployProject={canDeployProject}
         publishing={publishing}
         conversationId={conversationId}
-        previewControlsCopy={previewControlsCopy}
         handleDeployProject={handleDeployProject}
       />
 

@@ -1,8 +1,8 @@
 'use client';
 
-import { Check, Code2, Copy, Download, Eye, Rocket, ScrollText } from 'lucide-react';
+import { Code2, Download, Eye, Rocket, ScrollText } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger } from '@/app/components/ui/tabs';
-import { PreviewControls, type PreviewControlsCopy } from '../preview-controls';
+import { PreviewAddressBar, type PreviewAddressCopy } from '../preview-address-bar';
 import type { UiCopy } from '@/app/i18n';
 import type { PreviewSurfaceApi } from '../../hooks/use-preview-surface';
 import type { SandboxTab, WorkspaceStateApi } from '../../hooks/use-workspace-state';
@@ -16,12 +16,12 @@ export function ResultPanelTopbar({
   t,
   copy,
   previewDisplayPath,
+  previewAddressCopy,
   deployHint,
   downloadHint,
   canDeployProject,
   publishing,
   conversationId,
-  previewControlsCopy,
   handleDeployProject,
 }: {
   workspace: WorkspaceStateApi;
@@ -33,20 +33,26 @@ export function ResultPanelTopbar({
     session: string;
     showPanel: string;
     hidePanel: string;
-    previewPathCopied: string;
-    copyPreviewPath: string;
   };
   previewDisplayPath: string;
+  previewAddressCopy: PreviewAddressCopy;
   deployHint: string;
   downloadHint: string;
   canDeployProject: boolean;
   publishing: boolean;
   conversationId: string | null;
-  previewControlsCopy: PreviewControlsCopy;
   handleDeployProject: () => void;
 }) {
+  const showPreviewBar = workspace.sandboxTab === 'preview'
+    && Boolean(preview.shareablePreviewUrl)
+    && !preview.previewRefreshing
+    && !preview.previewRefreshFailed;
+
+  // The narrow-panel layout moves the address bar to its own row, so the flag is
+  // only set when the bar is actually there — an empty second row would
+  // otherwise add height to the Code and Session tabs.
   return (
-    <div className="workspace-topbar">
+    <div className={`workspace-topbar${showPreviewBar ? ' has-preview-bar' : ''}`}>
       <div className="workspace-topbar-tabs">
         <ResultPanelToggle
           open
@@ -62,16 +68,27 @@ export function ResultPanelTopbar({
           <TabsList className="workspace-tabs">
             <TabsTrigger value="preview" className="workspace-tab">
               <Eye />
-              {copy.preview}
+              {/* The outer box owns the animation and the inner one clips. An
+                  animatable grid track is what lets an auto-width label open
+                  and close over one fixed duration in both directions. */}
+              <span className="workspace-tab-label">
+                <span>{copy.preview}</span>
+              </span>
             </TabsTrigger>
-            <TabsTrigger value="files" className="workspace-tab">
+            {/* An icon-only tab still has to name itself, and the collapsed
+                label stays in the accessibility tree — this is for the pointer. */}
+            <TabsTrigger value="files" className="workspace-tab" title={copy.code}>
               <Code2 />
-              {copy.code}
+              <span className="workspace-tab-label">
+                <span>{copy.code}</span>
+              </span>
             </TabsTrigger>
             {SHOW_SESSION_TAB && (
-              <TabsTrigger value="session" className="workspace-tab">
+              <TabsTrigger value="session" className="workspace-tab" title={copy.session}>
                 <ScrollText />
-                {copy.session}
+                <span className="workspace-tab-label">
+                  <span>{copy.session}</span>
+                </span>
               </TabsTrigger>
             )}
           </TabsList>
@@ -79,16 +96,25 @@ export function ResultPanelTopbar({
       </div>
 
       <div className="workspace-topbar-center">
-        {workspace.sandboxTab === 'preview' && preview.shareablePreviewUrl && !preview.previewRefreshing && !preview.previewRefreshFailed && (
-          <button
-            type="button"
-            onClick={() => void preview.handleCopyPreviewUrl()}
-            className="workspace-url-chip"
-            title={preview.previewCopied ? copy.previewPathCopied : copy.copyPreviewPath}
-          >
-            <span dir="ltr">{previewDisplayPath}</span>
-            {preview.previewCopied ? <Check /> : <Copy />}
-          </button>
+        {showPreviewBar && (
+          <PreviewAddressBar
+            displayPath={previewDisplayPath}
+            routes={preview.previewRoutes}
+            viewport={preview.previewViewport}
+            publishing={publishing}
+            navigating={preview.previewNavigating}
+            canGoBack={preview.previewCanGoBack}
+            canGoForward={preview.previewCanGoForward}
+            copy={previewAddressCopy}
+            onSelectRoute={preview.handlePreviewRouteSelect}
+            onBack={preview.handlePreviewBack}
+            onForward={preview.handlePreviewForward}
+            onToggleViewport={() => preview.setPreviewViewport(
+              preview.previewViewport === 'desktop' ? 'mobile' : 'desktop',
+            )}
+            onOpen={preview.handleOpenPreview}
+            onRefresh={preview.handleRefreshPreview}
+          />
         )}
       </div>
 
@@ -104,29 +130,23 @@ export function ResultPanelTopbar({
           >
             <Rocket className="size-3.5" />
           </button>
-          <button
-            type="button"
-            onClick={() => void workspace.handleDownload(conversationId, t.workspace.downloadFailed)}
-            disabled={workspace.downloadBusy || !workspace.download?.url}
-            className="workspace-icon-button"
-            aria-label={downloadHint}
-            data-tooltip={downloadHint}
-          >
-            {workspace.downloadBusy
-              ? <span className="workspace-icon-spinner" />
-              : <Download className="size-3.5" />}
-          </button>
+          {/* Download ships the source, and the source is what the Code tab is
+              showing — the button has nothing to belong to on Preview. */}
+          {workspace.sandboxTab === 'files' && (
+            <button
+              type="button"
+              onClick={() => void workspace.handleDownload(conversationId, t.workspace.downloadFailed)}
+              disabled={workspace.downloadBusy || !workspace.download?.url}
+              className="workspace-icon-button"
+              aria-label={downloadHint}
+              data-tooltip={downloadHint}
+            >
+              {workspace.downloadBusy
+                ? <span className="workspace-icon-spinner" />
+                : <Download className="size-3.5" />}
+            </button>
+          )}
         </div>
-        {workspace.sandboxTab === 'preview' && preview.shareablePreviewUrl && !preview.previewRefreshing && !preview.previewRefreshFailed && (
-          <PreviewControls
-            viewport={preview.previewViewport}
-            publishing={publishing}
-            copy={previewControlsCopy}
-            onViewportChange={preview.setPreviewViewport}
-            onRefresh={preview.handleRefreshPreview}
-            onOpen={preview.handleOpenPreview}
-          />
-        )}
       </div>
     </div>
   );

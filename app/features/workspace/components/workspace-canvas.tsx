@@ -10,6 +10,7 @@ import type { WorkspaceSplitApi } from '../hooks/use-workspace-split';
 import type { WorkspaceStateApi } from '../hooks/use-workspace-state';
 import type { useWorkspaceCopy } from '../hooks/use-workspace-copy';
 import { AgentConversation } from './lazy-panels';
+import type { PreviewAddressCopy } from './preview-address-bar';
 import { ResultPanel, ResultPanelToggle } from './result-panel';
 import { WorkspaceSplitHandle } from './workspace-split-handle';
 import { maskApiKey } from '../../../../shared/gateway-secret';
@@ -30,6 +31,7 @@ export function WorkspaceCanvas({
   onModelChange,
   conversationId,
   previewDisplayPath,
+  previewAddressCopy,
   deployOffer,
   deployOfferTurnId,
   canSend,
@@ -51,6 +53,7 @@ export function WorkspaceCanvas({
   onModelChange: (model: string) => void;
   conversationId: string | null;
   previewDisplayPath: string;
+  previewAddressCopy: PreviewAddressCopy;
   deployOffer: DeployOfferCopy | null;
   deployOfferTurnId: string;
   canSend: boolean;
@@ -153,12 +156,12 @@ export function WorkspaceCanvas({
           preview={preview}
           t={t}
           previewDisplayPath={previewDisplayPath}
+          previewAddressCopy={previewAddressCopy}
           deployHint={copy.deployHint}
           downloadHint={copy.downloadHint}
           canDeployProject={canDeployProject}
           publishing={publishing}
           conversationId={conversationId}
-          previewControlsCopy={copy.previewControlsCopy}
           previewFrameCopy={copy.previewFrameCopy}
           restoring={workspace.previewLoading}
           cache={cache}

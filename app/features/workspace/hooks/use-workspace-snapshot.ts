@@ -22,7 +22,12 @@ export function useWorkspaceSnapshot(options: {
     if (data.download?.url) workspace.setDownload(data.download);
     if (data.deployment) workspace.setDeployment(data.deployment);
     if ('build' in data && data.build) workspace.setBuild(data.build);
-    if (data.preview?.url) preview.applyResumedPreview(data.preview);
+    if (data.preview?.url) {
+      // A stored URL is proof this conversation published a preview, which is
+      // what later lets the Preview tab restore it instead of staying empty.
+      workspace.setHasPublishedPreview(true);
+      preview.applyResumedPreview(data.preview);
+    }
   }, [preview, workspace]);
 
   const refresh = useCallback(async (

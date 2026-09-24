@@ -49,9 +49,10 @@ export function usePreviewRefresh(options: {
     const applyFreshPreviewUrl = (
       url: string,
       sandboxDebugUrl?: string,
+      routes?: LinkInfo['routes'],
       applyOptions?: { remountIframe?: boolean },
     ): boolean => {
-      options.setPreview({ url, sandboxDebugUrl });
+      options.setPreview({ url, sandboxDebugUrl, routes });
       options.setPreviewRefreshFailed(false);
       options.previewRefreshedAtRef.current = Date.now();
 
@@ -114,9 +115,12 @@ export function usePreviewRefresh(options: {
       try {
         const data = await fetchPreviewRefresh(id);
         if (data?.ok && data.preview?.url) {
-          applyFreshPreviewUrl(data.preview.url, data.preview.sandboxDebugUrl, {
-            remountIframe: willRemount || data.preview.restarted === true,
-          });
+          applyFreshPreviewUrl(
+            data.preview.url,
+            data.preview.sandboxDebugUrl,
+            data.preview.routes,
+            { remountIframe: willRemount || data.preview.restarted === true },
+          );
           void options.refreshWorkspace?.(id, { includePreview: false });
           return true;
         }

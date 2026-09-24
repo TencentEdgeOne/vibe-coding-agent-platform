@@ -12,6 +12,7 @@ function previewLinkFromState(state: ProjectState) {
     url: state.previewUrl,
     sandboxDebugUrl: state.sandboxDebugUrl,
     kind: state.previewKind,
+    routes: state.previewRoutes,
   };
 }
 
@@ -25,14 +26,24 @@ function jsonResponse(obj: Record<string, unknown>, status = 200) {
   });
 }
 
-/** Project panel payload from in-memory state. Pass `items` only after a listing. */
+/**
+ * Project panel payload from in-memory state. Pass `items` only after a listing.
+ *
+ * `hasDownload` answers "does this conversation hold a project" without a file
+ * listing. Callers that just finished a turn know the answer and must say so:
+ * a turn that wrote files produces a deployable project, and gating the payload
+ * on a listing the caller may not have made left the deploy button disabled
+ * with the project sitting right there.
+ */
 export function workspaceSnapshotFromState(
   conversationId: string,
   state: ProjectState,
   items?: FileTreeItem[],
+  options: { hasDownload?: boolean } = {},
 ): WorkspaceSnapshot {
   const preview = previewLinkFromState(state);
   const hasFiles = items?.some((item) => item.type === 'file') === true;
+  const canDownload = options.hasDownload ?? hasFiles;
   return {
     ok: true,
     conversation_id: conversationId,
@@ -40,7 +51,7 @@ export function workspaceSnapshotFromState(
     ...(preview.url ? { preview } : {}),
     deployment: state.deployment,
     build: state.lastBuild,
-    ...(hasFiles ? { download: { url: '/download', filename: 'source.zip' } } : {}),
+    ...(canDownload ? { download: { url: '/download', filename: 'source.zip' } } : {}),
   };
 }
 

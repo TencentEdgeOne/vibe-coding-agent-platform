@@ -207,7 +207,13 @@ test('a finished turn streams a state-only workspace snapshot instead of GET /wo
   assert.match(protocol, /type: 'workspace'; data\?: WorkspaceSnapshot/);
   assert.match(result, /type: 'workspace'/);
   assert.match(snapshot, /export function workspaceSnapshotFromState/);
-  assert.match(chat, /workspaceSnapshotFromState\(conversationId, state\)/);
+  // The closing snapshot states whether the turn produced a project, because
+  // that is what makes the download link — and the deploy button reading it —
+  // available without a second sandbox round trip for a file listing.
+  assert.match(
+    chat,
+    /workspaceSnapshotFromState\(conversationId, state, undefined, \{[\s\S]*?hasDownload: state\.created/,
+  );
   assert.doesNotMatch(chat, /fileTreePush|flushedItems|rememberTree/);
   assert.match(deploy, /workspaceSnapshotFromState\(/);
   assert.match(live, /event\.type === 'workspace' && event\.data/);
@@ -251,4 +257,15 @@ test('workspaceSnapshotFromState reuses a listing and skips files when none was 
   assert.equal(metaOnly.files, undefined);
   assert.equal(metaOnly.download, undefined);
   assert.equal(metaOnly.build?.status, 'success');
+
+  // A caller that knows the project exists can say so without a listing. The
+  // download link is what the deploy button reads, so a turn that just wrote a
+  // project has to be able to offer it without a second sandbox round trip.
+  const withoutListing = workspaceSnapshotFromState('c1', {
+    created: true,
+    sessionDir: 'projects/c1',
+    appDir: 'projects/c1/app',
+  }, undefined, { hasDownload: true });
+  assert.equal(withoutListing.files, undefined);
+  assert.equal(withoutListing.download?.url, '/download');
 });

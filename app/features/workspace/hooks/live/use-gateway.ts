@@ -54,6 +54,7 @@ export function createApplyGateway(options: {
           url?: string;
           sandboxDebugUrl?: string;
           kind?: 'sandbox' | 'makers';
+          routes?: { path: string }[];
           restarted?: boolean;
         };
         download?: { url?: string; filename?: string };
@@ -67,6 +68,7 @@ export function createApplyGateway(options: {
       }
       workspace.setGatewayBusy(false);
       if (data.preview && !data.live) {
+        workspace.setHasPublishedPreview(true);
         preview.activatePreview(data.preview, new Map());
       }
       if (data.download) {

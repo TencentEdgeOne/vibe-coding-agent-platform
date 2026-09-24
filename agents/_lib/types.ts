@@ -5,6 +5,7 @@ import type {
   ChatStreamEvent,
   DeploymentInfo,
   PreviewKind,
+  PreviewRoute,
   PreparePhase,
 } from '../../shared/protocol.ts';
 
@@ -17,6 +18,7 @@ export type {
   FileTreeItem,
   PersistedActivityTurn,
   PreviewKind,
+  PreviewRoute,
   PreparePhase,
 } from '../../shared/protocol.ts';
 
@@ -35,6 +37,8 @@ export type ProjectState = {
   /** Latched once Makers dev succeeds so resume can restore the sandbox preview. */
   previewPublished?: boolean;
   previewKind?: PreviewKind;
+  /** Routes the address bar can offer; persisted so a resume keeps the list. */
+  previewRoutes?: PreviewRoute[];
   /** Latest live deployment, kept separate from the sandbox preview iframe. */
   deployment?: DeploymentInfo;
   /** Last verification result; streamed on `workspace` and also on GET /workspace. */

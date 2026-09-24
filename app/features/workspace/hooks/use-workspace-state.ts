@@ -20,6 +20,12 @@ export function useWorkspaceState() {
   const [download, setDownload] = useState<LinkInfo | null>(null);
   const [downloadBusy, setDownloadBusy] = useState(false);
   const [build, setBuild] = useState<BuildInfo | null>(null);
+  /**
+   * Whether this conversation ever published a preview. The panel restores a
+   * preview that already exists; it must not boot one the agent never started,
+   * which is why this arrives with the resume payload and gates the lazy boot.
+   */
+  const [hasPublishedPreview, setHasPublishedPreview] = useState(false);
   const [sandboxTab, setSandboxTab] = useState<SandboxTab | null>(null);
   const [fileTree, setFileTree] = useState<FileTree | null>(null);
   const [filesFocusPath, setFilesFocusPath] = useState<string | null>(null);
@@ -39,6 +45,7 @@ export function useWorkspaceState() {
     setDeployment(null);
     setDownload(null);
     setBuild(null);
+    setHasPublishedPreview(false);
     setFileTree(null);
     setFilesFocusPath(null);
     setFilesLoading(false);
@@ -96,6 +103,8 @@ export function useWorkspaceState() {
     downloadBusy,
     build,
     setBuild,
+    hasPublishedPreview,
+    setHasPublishedPreview,
     sandboxTab,
     setSandboxTab,
     fileTree,

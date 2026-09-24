@@ -17,13 +17,17 @@ export function useWorkspaceCopy(t: UiCopy, options: {
     loading: t.workspace.loadingPreview,
     retry: t.workspace.retryPreview,
   }), [t]);
-  const previewControlsCopy = useMemo(() => ({
-    viewportGroup: t.workspace.viewportGroup,
-    desktop: t.workspace.viewportDesktop,
-    mobile: t.workspace.viewportMobile,
-    refresh: t.workspace.refreshPreview,
+  const previewAddressCopy = useMemo(() => ({
+    back: t.workspace.previewBack,
+    forward: t.workspace.previewForward,
+    routeList: t.workspace.previewRouteList,
+    routeEmpty: t.workspace.previewRouteEmpty,
+    viewportToDesktop: t.workspace.viewportDesktop,
+    viewportToMobile: t.workspace.viewportMobile,
     open: t.workspace.openPreview,
+    refresh: t.workspace.refreshPreview,
     pausedForDeploy: t.workspace.previewPausedForDeploy,
+    loading: t.workspace.previewNavigating,
   }), [t]);
   const conversationCopy = useMemo(() => ({
     preparingAgent: t.workspace.activityPreparingAgent,
@@ -65,7 +69,7 @@ export function useWorkspaceCopy(t: UiCopy, options: {
     deployHint,
     downloadHint,
     previewFrameCopy,
-    previewControlsCopy,
+    previewAddressCopy,
     conversationCopy,
   };
 }
