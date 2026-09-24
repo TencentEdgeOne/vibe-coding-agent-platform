@@ -30,5 +30,7 @@ test('the shell class tracks open, collapsed, and drag states', () => {
   assert.match(workspaceShellClassName(true, true, false), /workspace-shell/);
   assert.match(workspaceShellClassName(true, false, false), /is-chat-only/);
   assert.match(workspaceShellClassName(true, true, true), /is-resizing/);
+  assert.match(workspaceShellClassName(true, false, false, true), /is-panel-exiting/);
+  assert.doesNotMatch(workspaceShellClassName(true, false, false, true), /is-chat-only/);
   assert.match(workspaceShellClassName(false, true, false), /\bhidden\b/);
 });

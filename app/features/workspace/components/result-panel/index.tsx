@@ -16,6 +16,8 @@ export { ResultPanelToggle } from './result-panel-toggle';
 export { SHOW_SESSION_TAB };
 
 export function ResultPanel({
+  presence,
+  onExited,
   workspace,
   preview,
   t,
@@ -32,6 +34,8 @@ export function ResultPanel({
   loading,
   handleDeployProject,
 }: {
+  presence: 'entering' | 'exiting';
+  onExited: () => void;
   workspace: WorkspaceStateApi;
   preview: PreviewSurfaceApi;
   t: UiCopy;
@@ -52,7 +56,16 @@ export function ResultPanel({
   const sessionCopy: SessionCopy = t.session;
 
   return (
-    <div id="workspace-result-panel" className="workspace-result-panel">
+    <div
+      id="workspace-result-panel"
+      className="workspace-result-panel"
+      data-presence={presence}
+      onAnimationEnd={(event) => {
+        if (event.target === event.currentTarget && presence === 'exiting') {
+          onExited();
+        }
+      }}
+    >
       <ResultPanelTopbar
         workspace={workspace}
         preview={preview}

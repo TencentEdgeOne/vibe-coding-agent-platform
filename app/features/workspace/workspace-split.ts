@@ -24,9 +24,10 @@ export function workspaceShellClassName(
   hasWorkspace: boolean,
   resultPanelOpen: boolean,
   resizing: boolean,
+  resultPanelExiting = false,
 ) {
   const layout = hasWorkspace
-    ? `workspace-shell${resultPanelOpen ? '' : ' is-chat-only'}${resizing ? ' is-resizing' : ''}`
+    ? `workspace-shell${resultPanelOpen || resultPanelExiting ? '' : ' is-chat-only'}${resultPanelExiting ? ' is-panel-exiting' : ''}${resizing ? ' is-resizing' : ''}`
     : 'hidden';
   return `min-h-0 min-w-0 w-full flex-1 ${layout}`;
 }

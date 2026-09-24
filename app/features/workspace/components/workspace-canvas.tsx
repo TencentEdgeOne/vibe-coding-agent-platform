@@ -15,6 +15,7 @@ import { ResultPanel, ResultPanelToggle } from './result-panel';
 import { WorkspaceSplitHandle } from './workspace-split-handle';
 import { maskApiKey } from '../../../../shared/gateway-secret';
 import type { DeployOfferCopy } from './conversation/types';
+import { usePresence } from '@/app/hooks/use-presence';
 
 type WorkspaceCopy = ReturnType<typeof useWorkspaceCopy>;
 
@@ -63,12 +64,20 @@ export function WorkspaceCanvas({
   makersModelsDocsUrl: string;
   handleDeployProject: () => void;
 }) {
+  const resultPanelPresence = usePresence(hasWorkspace && workspace.resultPanelOpen ? true : null);
+  const resultPanelVisible = workspace.resultPanelOpen || resultPanelPresence.mounted;
+
   return (
     <section
       ref={(node) => {
         split.shellRef.current = node;
       }}
-      className={workspaceShellClassName(hasWorkspace, workspace.resultPanelOpen, split.resizing)}
+      className={workspaceShellClassName(
+        hasWorkspace,
+        resultPanelVisible,
+        split.resizing,
+        resultPanelPresence.exiting,
+      )}
     >
       {hasWorkspace && (
         <AgentConversation
@@ -123,7 +132,7 @@ export function WorkspaceCanvas({
         />
       )}
 
-      {hasWorkspace && workspace.resultPanelOpen && (
+      {hasWorkspace && resultPanelVisible && (
         <WorkspaceSplitHandle
           label={t.workspace.resizePanel}
           value={Math.round(split.chatShare * 100)}
@@ -131,7 +140,7 @@ export function WorkspaceCanvas({
         />
       )}
 
-      {hasWorkspace && !workspace.resultPanelOpen && (
+      {hasWorkspace && !resultPanelVisible && (
         <div className="workspace-panel-toggle">
           <ResultPanelToggle
             open={false}
@@ -150,8 +159,10 @@ export function WorkspaceCanvas({
         </div>
       )}
 
-      {hasWorkspace && workspace.resultPanelOpen && (
+      {hasWorkspace && resultPanelVisible && (
         <ResultPanel
+          presence={resultPanelPresence.exiting ? 'exiting' : 'entering'}
+          onExited={resultPanelPresence.finishExit}
           workspace={workspace}
           preview={preview}
           t={t}

@@ -30,7 +30,9 @@
   overflow: hidden;
   border-right: 1px solid var(--n-150);
   background: var(--n-0);
-  transition: flex-basis var(--t-slow) var(--ease);
+  transition:
+    flex-basis var(--t-slow) var(--ease),
+    border-color var(--t-base) ease;
 }
 
 .workspace-shell.is-resizing {
@@ -63,10 +65,15 @@
   flex-direction: column;
   overflow: hidden;
   background: var(--n-25);
-  animation: workspace-panel-slide-in 420ms var(--ease) both;
+  animation: workspace-panel-enter var(--t-slow) var(--ease) both;
   /* The topbar sizes its address column from the panel's own inline size, so
      the panel is the query container rather than the viewport. */
   container-type: inline-size;
+}
+
+.workspace-result-panel[data-presence='exiting'] {
+  pointer-events: none;
+  animation-name: workspace-panel-exit;
 }
 
 .workspace-split-handle {
@@ -78,6 +85,7 @@
   touch-action: none;
   background: transparent;
   user-select: none;
+  animation: workspace-split-handle-in var(--t-base) var(--ease) both;
 }
 
 .workspace-split-handle::before {
@@ -98,14 +106,19 @@
   background: var(--brand);
 }
 
+.workspace-shell.is-panel-exiting .workspace-split-handle {
+  pointer-events: none;
+  animation: workspace-split-handle-out var(--t-base) var(--ease) both;
+}
+
 .workspace-split-handle:focus-visible {
   outline: none;
 }
 
-@keyframes workspace-panel-slide-in {
+@keyframes workspace-panel-enter {
   from {
     opacity: 0;
-    transform: translateX(16px);
+    transform: translateX(28px);
   }
   to {
     opacity: 1;
@@ -113,14 +126,54 @@
   }
 }
 
-@keyframes workspace-panel-rise-in {
+@keyframes workspace-panel-exit {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+}
+
+@keyframes workspace-split-handle-in {
   from {
     opacity: 0;
-    transform: translateY(18px) scale(0.985);
   }
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes workspace-split-handle-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes workspace-panel-enter-stacked {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes workspace-panel-exit-stacked {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(24px);
   }
 }
 
@@ -656,6 +709,18 @@
   top: 7px;
   right: 10px;
   z-index: 15;
+  animation: workspace-panel-toggle-in var(--t-base) var(--ease) both;
+}
+
+@keyframes workspace-panel-toggle-in {
+  from {
+    opacity: 0;
+    transform: translateX(6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
 }
 
 /* ---- Panel body -------------------------------------------------------- */
@@ -867,7 +932,11 @@
     min-width: 0;
     min-height: 0;
     flex: 1 1 55%;
-    animation-name: workspace-panel-rise-in;
+    animation-name: workspace-panel-enter-stacked;
+  }
+
+  .workspace-result-panel[data-presence='exiting'] {
+    animation-name: workspace-panel-exit-stacked;
   }
 
   .workspace-split-handle {
@@ -890,6 +959,14 @@
 
   .workspace-shell:not(.is-chat-only) > .workspace-result-panel {
     flex: 1 1 auto;
+  }
+
+  .workspace-result-panel {
+    animation-name: workspace-panel-enter-full;
+  }
+
+  .workspace-result-panel[data-presence='exiting'] {
+    animation-name: workspace-panel-exit-full;
   }
 
   .workspace-topbar {
@@ -934,8 +1011,32 @@
   }
 }
 
+@keyframes workspace-panel-enter-full {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes workspace-panel-exit-full {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .workspace-result-panel {
+  .workspace-result-panel,
+  .workspace-split-handle,
+  .workspace-panel-toggle {
     animation: none;
   }
 

@@ -72,6 +72,31 @@ test('phones switch between full-height chat and result surfaces', async () => {
   assert.match(content, /onBack=\{onBack\}/);
 });
 
+test('the result panel plays a real exit before it unmounts', async () => {
+  const [canvas, panel, css] = await Promise.all([
+    readFile('app/features/workspace/components/workspace-canvas.tsx', 'utf8'),
+    readFile('app/features/workspace/components/result-panel/index.tsx', 'utf8'),
+    readFile(path.join(STYLES_DIR, 'workspace.css'), 'utf8'),
+  ]);
+
+  assert.match(canvas, /usePresence\(hasWorkspace && workspace\.resultPanelOpen/);
+  assert.match(canvas, /resultPanelPresence\.exiting/);
+  assert.match(canvas, /presence=\{resultPanelPresence\.exiting \? 'exiting' : 'entering'\}/);
+  assert.match(canvas, /onExited=\{resultPanelPresence\.finishExit\}/);
+  assert.match(panel, /data-presence=\{presence\}/);
+  assert.match(panel, /event\.target === event\.currentTarget/);
+  assert.match(panel, /presence === 'exiting'/);
+
+  assert.match(css, /\.workspace-result-panel\[data-presence='exiting'\]/);
+  assert.match(css, /@keyframes workspace-panel-enter/);
+  assert.match(css, /@keyframes workspace-panel-exit/);
+  assert.match(css, /@keyframes workspace-panel-enter-stacked/);
+  assert.match(css, /@keyframes workspace-panel-exit-stacked/);
+  assert.match(css, /@keyframes workspace-panel-enter-full/);
+  assert.match(css, /@keyframes workspace-panel-exit-full/);
+  assert.match(css, /\.workspace-shell\.is-panel-exiting \.workspace-split-handle/);
+});
+
 test('the landing hero centers without clipping its own top', async () => {
   const stage = await surface('app/features/workspace/components/home-stage.tsx');
 
