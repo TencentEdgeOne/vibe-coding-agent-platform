@@ -12,6 +12,7 @@ export function FileTreeList({
   copy,
   onToggleDirectory,
   onOpenFile,
+  className = '',
 }: {
   tree: FileTree;
   collapsedDirs: Set<string>;
@@ -19,6 +20,7 @@ export function FileTreeList({
   copy: FileCopy;
   onToggleDirectory: (path: string) => void;
   onOpenFile: (path: string) => void;
+  className?: string;
 }) {
   const visibleItems = tree.items.filter((item) => {
     for (const collapsedPath of collapsedDirs) {
@@ -30,7 +32,7 @@ export function FileTreeList({
   });
 
   return (
-    <aside className="flex min-h-0 flex-col border-r border-[var(--border)] bg-[var(--code-rail)]">
+    <aside className={`flex min-h-0 flex-col border-r border-[var(--border)] bg-[var(--code-rail)] ${className}`}>
       <div className="min-h-0 flex-1 overflow-auto px-2 py-2.5">
         <div className="flex h-8 items-center px-2 text-[11px] font-semibold text-[var(--n-700)]">
           {copy.projectFiles}

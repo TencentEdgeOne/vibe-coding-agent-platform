@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, type ReactElement, type ReactNode } from 'react';
+import { ArrowLeft } from 'lucide-react';
 import type { HighlightProps } from 'prism-react-renderer';
 import type { FileCopy } from '@/app/i18n';
 import { Spinner } from '@/app/components/spinner';
@@ -83,7 +84,29 @@ function PlainCode({ content }: { content: string }) {
   );
 }
 
-export function FileContentView({ preview, copy }: { preview: FilePreviewState; copy: FileCopy }) {
+function MobileFileBack({ copy, onBack }: { copy: FileCopy; onBack: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onBack}
+      className="files-view-back h-7 shrink-0 items-center gap-1 rounded-md px-2 text-[11px] text-[var(--n-700)] hover:bg-[var(--secondary)]"
+      aria-label={copy.projectFiles}
+    >
+      <ArrowLeft className="size-3.5" aria-hidden="true" />
+      <span>{copy.projectFiles}</span>
+    </button>
+  );
+}
+
+export function FileContentView({
+  preview,
+  copy,
+  onBack,
+}: {
+  preview: FilePreviewState;
+  copy: FileCopy;
+  onBack?: () => void;
+}) {
   const Highlight = usePrismHighlight();
 
   if (preview.status === 'idle') {
@@ -96,7 +119,8 @@ export function FileContentView({ preview, copy }: { preview: FilePreviewState; 
   if (preview.status === 'loading') {
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <div className="flex h-10 items-center gap-2 border-b border-[var(--border)] bg-[var(--code-rail)] px-4 text-xs text-primary">
+        <div className="files-view-header flex min-h-10 items-center gap-2 border-b border-[var(--border)] bg-[var(--code-rail)] px-3 py-1 text-xs text-primary">
+          {onBack && <MobileFileBack copy={copy} onBack={onBack} />}
           <Spinner />
           <span className="truncate font-mono text-[11px] text-muted-foreground">
             {copy.loading(preview.path)}
@@ -111,7 +135,8 @@ export function FileContentView({ preview, copy }: { preview: FilePreviewState; 
   if (preview.status === 'error') {
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <div className="flex h-10 items-center border-b border-[var(--border)] bg-[var(--code-rail)] px-4">
+        <div className="files-view-header flex min-h-10 items-center gap-2 border-b border-[var(--border)] bg-[var(--code-rail)] px-3 py-1">
+          {onBack && <MobileFileBack copy={copy} onBack={onBack} />}
           <p className="truncate font-mono text-[11px] text-muted-foreground">{preview.path}</p>
         </div>
         <div className="flex flex-1 items-center justify-center px-6 text-center text-destructive">
@@ -124,7 +149,8 @@ export function FileContentView({ preview, copy }: { preview: FilePreviewState; 
   const lines = preview.content.split('\n');
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex min-h-10 flex-wrap items-center justify-between gap-2 border-b border-[var(--border)] bg-[var(--code-rail)] px-4 py-2">
+      <div className="files-view-header flex min-h-10 flex-wrap items-center justify-between gap-2 border-b border-[var(--border)] bg-[var(--code-rail)] px-3 py-2">
+        {onBack && <MobileFileBack copy={copy} onBack={onBack} />}
         <p className="min-w-0 truncate font-mono text-[11px] font-medium text-[var(--n-800)]">
           {preview.path}
         </p>

@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, MessageCircle } from 'lucide-react';
+import { ArrowLeft, MessageCircle, Rocket } from 'lucide-react';
 import { Button } from '@/app/components/ui/button';
 import {
   Dialog,
@@ -51,7 +51,7 @@ export function SiteHeader({
   const isZh = language === 'zh';
 
   return (
-    <header className="site-topbar">
+    <header className={`site-topbar${hasWorkspace ? ' is-workspace' : ''}`}>
       <div className="site-brand-cluster">
         {hasWorkspace && (
           <span className="site-hint is-start" data-hint={copy.workspace.back}>
@@ -99,13 +99,20 @@ export function SiteHeader({
             target="_blank"
             rel="noreferrer"
             className="site-primary-button"
+            aria-label={copy.templateDeployLabel}
           >
-            {copy.templateDeployLabel}
+            <Rocket />
+            <span className="site-action-label">{copy.templateDeployLabel}</span>
           </a>
           <Dialog>
             <DialogTrigger asChild>
-              <button type="button" className="site-accent-button">
-                {isZh ? '联系我们' : 'Contact'}
+              <button
+                type="button"
+                className="site-accent-button"
+                aria-label={isZh ? '联系我们' : 'Contact'}
+              >
+                <MessageCircle />
+                <span className="site-accent-label">{isZh ? '联系我们' : 'Contact'}</span>
               </button>
             </DialogTrigger>
             <DialogContent

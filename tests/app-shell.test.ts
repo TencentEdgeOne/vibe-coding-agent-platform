@@ -52,6 +52,26 @@ test('the stacked workspace fits one viewport instead of scrolling past its pane
   assert.match(stacked, /flex: 1 1 55%/);
 });
 
+test('phones switch between full-height chat and result surfaces', async () => {
+  const [workspace, code, files, content] = await Promise.all([
+    readFile(path.join(STYLES_DIR, 'workspace.css'), 'utf8'),
+    readFile(path.join(STYLES_DIR, 'code.css'), 'utf8'),
+    readFile('app/features/workspace/components/files/index.tsx', 'utf8'),
+    readFile('app/features/workspace/components/files/file-content-view.tsx', 'utf8'),
+  ]);
+
+  assert.match(
+    workspace,
+    /\.workspace-shell:not\(\.is-chat-only\) > \.agent-conversation \{[^}]*display: none;/,
+  );
+  assert.match(
+    code,
+    /\.files-panel\.is-file-open \.files-panel-tree,\s*\.files-panel:not\(\.is-file-open\) \.files-panel-content \{\s*display: none;/,
+  );
+  assert.match(files, /className=\{`files-panel\$\{fileOpen \? ' is-file-open' : ''\}`\}/);
+  assert.match(content, /onBack=\{onBack\}/);
+});
+
 test('the landing hero centers without clipping its own top', async () => {
   const stage = await surface('app/features/workspace/components/home-stage.tsx');
 

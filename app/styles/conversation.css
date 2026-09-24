@@ -1237,7 +1237,7 @@
     margin: 0;
   }
 
-  .gateway-prompt {
+  .gateway-prompt-state-inner {
     grid-template-columns: minmax(0, 1fr) auto auto;
   }
 
@@ -1252,6 +1252,19 @@
 
   .deploy-offer {
     flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 420px) {
+  /* On the narrowest phones the API field takes its own line, leaving the
+     two actions together underneath instead of squeezing the input to a
+     few characters. */
+  .gateway-prompt-state-inner {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .gateway-prompt-expanded-inner .gateway-prompt-field {
+    grid-column: 1 / -1;
   }
 }
 

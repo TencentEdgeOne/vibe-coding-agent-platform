@@ -29,6 +29,7 @@ export const FilesPanel = memo(function FilesPanel({
     preview,
     loadFile,
     toggleDirectory,
+    closeFile,
   } = useFilePreview({
     tree,
     conversationId,
@@ -54,8 +55,10 @@ export const FilesPanel = memo(function FilesPanel({
     );
   }
 
+  const fileOpen = selectedPath !== null;
+
   return (
-    <div className="grid min-h-0 flex-1 grid-cols-[220px_minmax(0,1fr)] overflow-hidden bg-[var(--code-paper)] text-[var(--code-ink)] max-sm:grid-cols-[164px_minmax(0,1fr)]">
+    <div className={`files-panel${fileOpen ? ' is-file-open' : ''}`}>
       <FileTreeList
         tree={tree}
         collapsedDirs={collapsedDirs}
@@ -63,9 +66,14 @@ export const FilesPanel = memo(function FilesPanel({
         copy={copy}
         onToggleDirectory={toggleDirectory}
         onOpenFile={loadFile}
+        className="files-panel-tree"
       />
-      <div className="flex min-h-0 flex-col">
-        <FileContentView preview={preview} copy={copy} />
+      <div className="files-panel-content">
+        <FileContentView
+          preview={preview}
+          copy={copy}
+          onBack={fileOpen ? closeFile : undefined}
+        />
       </div>
     </div>
   );

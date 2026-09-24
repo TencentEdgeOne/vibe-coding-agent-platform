@@ -876,6 +876,22 @@
 }
 
 @media (max-width: 640px) {
+  /* On a phone, the chat and result panel are two full-screen surfaces rather
+     than two short panes. The panel toggle in the topbar swaps between them;
+     the conversation keeps its own scroll position while hidden. */
+  .workspace-shell > .agent-conversation {
+    height: 100%;
+    flex: 1 1 auto;
+  }
+
+  .workspace-shell:not(.is-chat-only) > .agent-conversation {
+    display: none;
+  }
+
+  .workspace-shell:not(.is-chat-only) > .workspace-result-panel {
+    flex: 1 1 auto;
+  }
+
   .workspace-topbar {
     align-items: center;
     padding: 0 8px;

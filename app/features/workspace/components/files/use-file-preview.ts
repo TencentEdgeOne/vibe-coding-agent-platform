@@ -187,11 +187,21 @@ export function useFilePreview({
     });
   };
 
+  const closeFile = () => {
+    inFlightRef.current?.abort();
+    inFlightRef.current = null;
+    latestRequestRef.current = null;
+    focusedPathRef.current = null;
+    setSelectedPath(null);
+    setPreview({ status: 'idle' });
+  };
+
   return {
     collapsedDirs,
     selectedPath,
     preview,
     loadFile,
     toggleDirectory,
+    closeFile,
   };
 }

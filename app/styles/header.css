@@ -211,24 +211,36 @@
 }
 
 /* Taking a copy of the template is what this bar is for, so it is the only
-   filled button in it. Text alone: a rocket here read as publishing the
-   user's project, which is the panel icon's job. */
+   filled button in it. The rocket is paired with a label on wide screens and
+   becomes the whole control on phones. */
 .site-primary-button {
+  gap: 6px;
   border-color: transparent;
   background: var(--brand);
   padding: 0 12px;
   color: var(--n-0);
   font-weight: 600;
+  white-space: nowrap;
 }
 
 /* The contact call to action stays findable without competing with the
    composer for the eye: brand colour, but no fill. */
 .site-accent-button {
+  gap: 6px;
   border-color: color-mix(in srgb, var(--brand) 26%, transparent);
   background: transparent;
   padding: 0 12px;
   color: var(--brand);
   font-weight: 600;
+  white-space: nowrap;
+}
+
+.site-primary-button svg,
+.site-accent-button svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  stroke-width: 1.8;
 }
 
 .site-icon-button:hover:not(:disabled) {
@@ -263,15 +275,16 @@
 
 @media (max-width: 640px) {
   .site-topbar {
-    height: 40px;
-    flex-basis: 40px;
-    padding: 0 10px;
+    height: 44px;
+    flex-basis: 44px;
+    gap: 8px;
+    padding: 0 8px;
   }
 
   /* Every action survives the narrow bar; the wordmark is the one thing
      here that can be read from context, so it yields the space. */
   .site-topbar-actions {
-    gap: 10px;
+    gap: 8px;
   }
 
   .site-brand {
@@ -279,7 +292,53 @@
     text-overflow: ellipsis;
   }
 
+  .site-topbar.is-workspace .site-brand {
+    display: none;
+  }
+
+  .site-icon-button,
+  .site-primary-button,
+  .site-accent-button {
+    height: 32px;
+  }
+
+  .site-icon-button {
+    width: 32px;
+    flex-basis: 32px;
+  }
+
+  .site-primary-button,
+  .site-accent-button {
+    padding: 0 10px;
+    font-size: var(--fs-xs);
+  }
+
+  /* Both downstream actions keep their accessible names, but their labels
+     would otherwise push the narrow bar into two lines. */
+  .site-primary-button,
+  .site-accent-button {
+    width: 32px;
+    padding: 0;
+  }
+
+  .site-primary-button svg,
+  .site-accent-button svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .site-action-label,
+  .site-accent-label {
+    display: none;
+  }
+
   .site-language {
+    display: none;
+  }
+}
+
+@media (max-width: 360px) {
+  .site-topbar:not(.is-workspace) .site-brand {
     display: none;
   }
 }

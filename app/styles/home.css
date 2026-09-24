@@ -308,6 +308,14 @@
      read against the container's height instead. */
   .home-examples {
     flex: 0 0 auto;
+    display: grid;
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .home-example {
+    width: 100%;
   }
 
   .home-examples + * {

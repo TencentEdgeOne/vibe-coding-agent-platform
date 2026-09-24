@@ -55,6 +55,8 @@ input::placeholder {
   height: 100dvh;
   min-height: 0;
   overflow: hidden;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 /* Scrollbars stay invisible until the surface is pointed at or focused, so a
@@ -126,6 +128,16 @@ input::placeholder {
 .capability-badge[data-capability='middleware'] {
   background: var(--cap-middleware-soft);
   color: var(--cap-middleware);
+}
+
+/* Touch devices do not hover, and a hidden bubble still contributes to the
+   scroll width while it waits. Both tooltip surfaces are therefore removed
+   from layout where the pointer cannot reveal them. */
+@media (hover: none) {
+  .site-hint::after,
+  .workspace-icon-button[data-tooltip]::after {
+    display: none;
+  }
 }
 
 @keyframes spin {
