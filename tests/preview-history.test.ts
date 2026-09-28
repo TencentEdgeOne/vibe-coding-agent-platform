@@ -7,6 +7,14 @@ import {
   previewHistoryForward,
   previewHistoryReset,
   previewHistoryVisit,
+  previewNavigationBack,
+  previewNavigationForward,
+  previewNavigationInit,
+  previewNavigationIsBusy,
+  previewNavigationReport,
+  previewNavigationSelect,
+  previewNavigationTarget,
+  type PreviewNavigationState,
 } from '../shared/preview-history.ts';
 import { readFile } from 'node:fs/promises';
 
@@ -84,31 +92,116 @@ test('the back stack is capped so a long session cannot grow it forever', () => 
   assert.equal(history.back[0], '/preview/page-9');
 });
 
-// A route change is a document load in a cross-origin frame, so the parent has
-// no load event to watch: the wait is a second of nothing after a selection.
-// The bar reports it, and the tracker's report is what ends it — which is why
-// the two ends have to agree on what "answered" means.
-test('the navigating flag is raised on a route change and cleared by its report', async () => {
+// The state machine that decides when the progress track runs. It lives in the
+// shared module rather than the hook so these branches can be driven directly:
+// every case below was a way to leave the track spinning.
+function applyReport(
+  state: PreviewNavigationState,
+  path: string,
+): PreviewNavigationState {
+  return previewNavigationReport(state, path);
+}
+
+// The reported bug. The route list marks the current entry, and choosing it
+// again has no report that could answer it — the answer would name the route the
+// request "left", which is also the route it was going to, so it read as a stale
+// report and was dropped. The track then ran until the safety timeout.
+test('re-selecting the route already showing does not start a wait', () => {
+  const arrived = applyReport(previewNavigationInit(), '/abc');
+  assert.equal(arrived.history.current, '/abc');
+  assert.equal(previewNavigationIsBusy(arrived), false);
+
+  const reselected = previewNavigationSelect(arrived, '/abc');
+
+  assert.equal(reselected, arrived, 'it must be a no-op, not a pending request');
+  assert.equal(previewNavigationIsBusy(reselected), false);
+  assert.equal(previewNavigationTarget(reselected), null);
+});
+
+// The mirror: a selection that does move opens a wait, and the report for the
+// route left is stale while the report for the target answers it.
+test('a selection opens a wait that only its own report can close', () => {
+  const arrived = applyReport(previewNavigationInit(), '/abc');
+  const pending = previewNavigationSelect(arrived, '/settings');
+
+  assert.equal(previewNavigationIsBusy(pending), true);
+  assert.equal(previewNavigationTarget(pending), '/preview/settings');
+  assert.equal(pending.history.current, '/settings', 'the bar moves on the click');
+
+  // A report for the route we left was already in flight: dropped whole, so the
+  // wait stays open and the stacks are untouched — `/abc` is already in `back`
+  // from the selection itself, and a second copy of it would be the bug.
+  const stale = applyReport(pending, '/abc');
+  assert.equal(stale, pending);
+  assert.equal(previewNavigationIsBusy(stale), true);
+  assert.deepEqual(stale.history.back, ['/abc']);
+  assert.equal(stale.history.current, '/settings');
+
+  // The answer itself.
+  const answered = applyReport(stale, '/settings');
+  assert.equal(previewNavigationIsBusy(answered), false);
+});
+
+// A redirect lands somewhere other than the target; that report still answers,
+// and the new route is the one recorded.
+test('a report for a redirected route closes the wait', () => {
+  const pending = previewNavigationSelect(
+    applyReport(previewNavigationInit(), '/abc'),
+    '/settings',
+  );
+
+  const answered = applyReport(pending, '/login');
+
+  assert.equal(previewNavigationIsBusy(answered), false);
+  assert.equal(answered.history.current, '/login');
+});
+
+// Back and Forward are the same mechanism and have to close the same way.
+test('back and forward open waits their reports close', () => {
+  let state = applyReport(previewNavigationInit(), '/');
+  state = applyReport(state, '/abc');
+  state = applyReport(state, '/settings');
+
+  const back = previewNavigationBack(state);
+  assert.equal(previewNavigationIsBusy(back), true);
+  assert.equal(back.history.current, '/abc');
+  assert.equal(previewNavigationIsBusy(applyReport(back, '/abc')), false);
+
+  const forward = previewNavigationForward(applyReport(back, '/abc'));
+  assert.equal(previewNavigationIsBusy(forward), true);
+  assert.equal(forward.history.current, '/settings');
+  assert.equal(previewNavigationIsBusy(applyReport(forward, '/settings')), false);
+});
+
+// A report arriving with nothing in flight is an ordinary in-app navigation.
+test('an unsolicited report is recorded without a wait', () => {
+  const state = applyReport(previewNavigationInit(), '/abc');
+  const next = applyReport(state, '/about');
+  assert.equal(next.history.current, '/about');
+  assert.equal(previewNavigationIsBusy(next), false);
+});
+
+// The hook keeps its side of the same contract, and the bounds that stop the
+// track from running forever.
+test('the hook uses the shared state and bounds its wait', async () => {
   const [hook, bar, css] = await Promise.all([
     readFile('app/features/workspace/hooks/use-preview-navigation.ts', 'utf8'),
     readFile('app/features/workspace/components/preview-address-bar.tsx', 'utf8'),
     readFile('app/styles/workspace.css', 'utf8'),
   ]);
 
-  // Raised where the navigation is issued, from the route it is leaving.
-  assert.match(hook, /beginNavigation\(from, path\)/);
-  assert.match(hook, /pendingRef\.current = \{ from, target \}/);
-  // Cleared by the tracker's report, and only by a report that is not the route
-  // we started from — that one was already in flight and must not be mistaken
-  // for an answer.
-  assert.match(hook, /if \(display === pending\.from\) return;/);
-  assert.match(hook, /clearNavigation\(\);/);
+  // Every transition goes through the shared module, so the rules exercised
+  // above are the ones the hook runs rather than a second copy of them.
+  assert.match(hook, /previewNavigationSelect\(stateRef\.current, path\)/);
+  assert.match(hook, /previewNavigationReport\(stateRef\.current, display\)/);
+  assert.match(hook, /previewNavigationTarget\(next\)/);
+  assert.doesNotMatch(hook, /previewHistoryVisit|previewHistoryBack\(/);
   // A bounded wait: an injected tracker is absent whenever the loaded document
   // is not one the proxy rewrote, and the track must not run forever.
   assert.match(hook, /PREVIEW_NAVIGATION_MAX_MS = 15_000/);
   assert.match(hook, /setTimeout\(clearNavigation, PREVIEW_NAVIGATION_MAX_MS\)/);
   // A remount ends it too, rather than leaving the bar claiming a stale wait.
-  assert.match(hook, /const reset = useCallback\(\(path = ''\) => \{\s*clearNavigation\(\);/);
+  assert.match(hook, /commit\(previewNavigationInit\(path\)\)/);
 
   // The bar renders the track only while the wait is open, and names it.
   assert.match(bar, /navigating && \(/);

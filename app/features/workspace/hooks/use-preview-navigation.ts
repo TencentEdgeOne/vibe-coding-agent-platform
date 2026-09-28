@@ -6,11 +6,14 @@ import {
   previewTrackedPathFromDisplayPath,
 } from '../../../../shared/preview-display-path';
 import {
-  previewHistoryBack,
-  previewHistoryForward,
-  previewHistoryReset,
-  previewHistoryVisit,
-  type PreviewHistoryState,
+  previewNavigationBack,
+  previewNavigationForward,
+  previewNavigationInit,
+  previewNavigationIsBusy,
+  previewNavigationReport,
+  previewNavigationSelect,
+  previewNavigationTarget,
+  type PreviewNavigationState,
 } from '../../../../shared/preview-history';
 
 export type PreviewNavigate = (path: string) => void;
@@ -42,45 +45,47 @@ export function usePreviewNavigation(options: {
   activePreviewUrlRef: { current: string };
   navigate: PreviewNavigate;
 }) {
-  const [history, setHistory] = useState<PreviewHistoryState>(previewHistoryReset());
+  const [state, setState] = useState<PreviewNavigationState>(previewNavigationInit());
+  const stateRef = useRef(state);
   const [navigating, setNavigating] = useState(false);
-  const historyRef = useRef(history);
-  const pendingRef = useRef<{ from: string; target: string } | null>(null);
   const timerRef = useRef(0);
 
-  const commit = useCallback((next: PreviewHistoryState) => {
-    historyRef.current = next;
-    setHistory(next);
+  const commit = useCallback((next: PreviewNavigationState) => {
+    stateRef.current = next;
+    setState(next);
+    setNavigating(previewNavigationIsBusy(next));
   }, []);
 
   /**
-   * Ends the wait, whatever ended it. Called by the tracker's report, by the
-   * safety timer, and by a remount — in every case the pending target stops
-   * being something worth waiting for.
+   * Ends the wait, whatever ended it: a report, the safety timer, or a remount.
+   * The request stops being something worth waiting for in every case.
    */
   const clearNavigation = useCallback(() => {
     if (timerRef.current) window.clearTimeout(timerRef.current);
     timerRef.current = 0;
-    pendingRef.current = null;
-    setNavigating(false);
-  }, []);
+    commit({ ...stateRef.current, pending: null });
+  }, [commit]);
 
   const reset = useCallback((path = '') => {
-    clearNavigation();
-    commit(previewHistoryReset(path));
-  }, [clearNavigation, commit]);
+    if (timerRef.current) window.clearTimeout(timerRef.current);
+    timerRef.current = 0;
+    commit(previewNavigationInit(path));
+  }, [commit]);
 
   /**
-   * `from` is passed rather than read from the ref: the callers commit the new
-   * entry first — so the bar and the buttons move in the same tick as the click
-   * — which would leave the ref already holding the target.
+   * Applies a transition and, when it opened a wait, arms the bound on it. The
+   * state module decides whether the transition moves at all.
    */
-  const beginNavigation = useCallback((from: string, target: string) => {
-    pendingRef.current = { from, target };
-    setNavigating(true);
+  const transition = useCallback((
+    next: PreviewNavigationState,
+    navigateOptions?: { target: string | null },
+  ) => {
+    commit(next);
+    if (navigateOptions?.target) options.navigate(navigateOptions.target);
+    if (!previewNavigationIsBusy(next)) return;
     if (timerRef.current) window.clearTimeout(timerRef.current);
     timerRef.current = window.setTimeout(clearNavigation, PREVIEW_NAVIGATION_MAX_MS);
-  }, [clearNavigation]);
+  }, [clearNavigation, commit, options]);
 
   /**
    * Entries are stored in display form — the route as the address bar shows it,
@@ -90,19 +95,12 @@ export function usePreviewNavigation(options: {
    */
   const apply = useCallback((path: string) => {
     const display = previewDisplayPathFromPath(path);
-    const pending = pendingRef.current;
-    if (pending) {
-      // A report naming the route we just left was already in flight when the
-      // click happened. Applying it would push the old route back onto the
-      // stack, so it is dropped rather than treated as a visit.
-      if (display === pending.from) return;
-      // Any other report is this navigation answering: the target we asked for,
-      // or wherever a redirect actually landed.
-      clearNavigation();
-    }
-    const next = previewHistoryVisit(historyRef.current, display);
-    if (next !== historyRef.current) commit(next);
-  }, [clearNavigation, commit]);
+    const next = previewNavigationReport(stateRef.current, display);
+    if (next === stateRef.current) return;
+    if (timerRef.current) window.clearTimeout(timerRef.current);
+    timerRef.current = 0;
+    commit(next);
+  }, [commit]);
 
   useEffect(() => () => {
     if (timerRef.current) window.clearTimeout(timerRef.current);
@@ -130,47 +128,25 @@ export function usePreviewNavigation(options: {
     if (options.pendingPreviewUrl) reset();
   }, [options.pendingPreviewUrl, reset]);
 
-  const canGoBack = history.back.length > 0;
-  const canGoForward = history.forward.length > 0;
+  const canGoBack = state.history.back.length > 0;
+  const canGoForward = state.history.forward.length > 0;
 
-  function goBack() {
-    const step = previewHistoryBack(historyRef.current);
-    if (!step) return;
-    const from = historyRef.current.current;
-    commit(step.state);
-    beginNavigation(from, step.target);
-    options.navigate(previewTrackedPathFromDisplayPath(step.target));
-  }
-
-  function goForward() {
-    const step = previewHistoryForward(historyRef.current);
-    if (!step) return;
-    const from = historyRef.current.current;
-    commit(step.state);
-    beginNavigation(from, step.target);
-    options.navigate(previewTrackedPathFromDisplayPath(step.target));
-  }
-
-  function selectRoute(path: string) {
-    // Update the stacks before the frame reports back, so the address bar and
-    // the buttons move in the same tick as the click.
-    const from = historyRef.current.current;
-    commit(previewHistoryVisit(historyRef.current, path));
-    beginNavigation(from, path);
-    options.navigate(previewTrackedPathFromDisplayPath(path));
+  /** Runs a transition from the shared module, whatever it decided to do. */
+  function run(next: PreviewNavigationState) {
+    transition(next, { target: previewNavigationTarget(next) });
   }
 
   return {
-    path: history.current,
+    path: state.history.current,
     // Idempotent for an entry already in display form, and it turns the initial
     // empty string into '/' so the bar never renders blank.
-    displayPath: previewDisplayPathFromPath(history.current),
+    displayPath: previewDisplayPathFromPath(state.history.current),
     canGoBack,
     canGoForward,
     navigating,
     reset,
-    goBack,
-    goForward,
-    selectRoute,
+    goBack: () => run(previewNavigationBack(stateRef.current)),
+    goForward: () => run(previewNavigationForward(stateRef.current)),
+    selectRoute: (path: string) => run(previewNavigationSelect(stateRef.current, path)),
   };
 }

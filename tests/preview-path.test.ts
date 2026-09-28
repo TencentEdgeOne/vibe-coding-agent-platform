@@ -220,8 +220,10 @@ test('preview navigation keeps its own history and only ever navigates', async (
     readFile('shared/preview-history.ts', 'utf8'),
   ]);
 
-  assert.match(hook, /previewHistoryBack/);
-  assert.match(hook, /previewHistoryForward/);
+  // The stacks and the wait on top of them live in the shared module, so the
+  // hook runs those rules rather than keeping a second copy of them.
+  assert.match(hook, /previewNavigationBack/);
+  assert.match(hook, /previewNavigationForward/);
   assert.match(history, /back: string\[\]/);
   assert.match(history, /forward: string\[\]/);
   assert.match(hook, /options\.navigate/);

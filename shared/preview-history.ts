@@ -12,6 +12,8 @@
  * call it directly.
  */
 
+import { previewTrackedPathFromDisplayPath } from './preview-display-path.ts';
+
 export type PreviewHistoryState = {
   /** The route currently shown, in tracker form (`/preview/about?x=1`). */
   current: string;
@@ -79,5 +81,102 @@ export function previewHistoryForward(history: PreviewHistoryState) {
       back: history.current ? capBack([...history.back, history.current]) : history.back,
       forward: rest,
     } satisfies PreviewHistoryState,
+  };
+}
+
+/**
+ * The whole navigation state, not just the stacks.
+ *
+ * A route change is a document load in a frame this side cannot observe, so a
+ * request stays open until a report from the frame's tracker answers it. That
+ * wait is the third piece of state, and it belongs here rather than in the hook:
+ * which reports answer a request and which are stale is a rule about the
+ * navigation, and it is the rule a repeated selection used to get wrong.
+ */
+export type PreviewNavigationState = {
+  history: PreviewHistoryState;
+  /**
+   * The route a request left from and where it is headed, while one is in
+   * flight. `null` means nothing is being waited on.
+   */
+  pending: { from: string; target: string } | null;
+};
+
+export function previewNavigationInit(path = ''): PreviewNavigationState {
+  return { history: previewHistoryReset(path), pending: null };
+}
+
+export function previewNavigationIsBusy(state: PreviewNavigationState) {
+  return state.pending !== null;
+}
+
+/**
+ * Where the frame should be sent for this transition, or `null` when the
+ * transition moves nowhere.
+ */
+export function previewNavigationTarget(state: PreviewNavigationState) {
+  const pending = state.pending;
+  return pending ? previewTrackedPathFromDisplayPath(pending.target) : null;
+}
+
+function begin(
+  history: PreviewHistoryState,
+  from: string,
+  target: string,
+): PreviewNavigationState {
+  return { history, pending: { from, target } };
+}
+
+/**
+ * A route chosen from the list.
+ *
+ * Choosing the route already showing is not a move: it would open a wait whose
+ * answer — a report naming the route the request "left" — is indistinguishable
+ * from a stale one, so nothing could ever close it. The list already marks the
+ * current entry, and reloading the frame is what Refresh is for.
+ */
+export function previewNavigationSelect(
+  state: PreviewNavigationState,
+  path: string,
+): PreviewNavigationState {
+  // Returned untouched rather than clearing any pending request: re-choosing
+  // the entry that is already showing is a no-op, and a request that is
+  // genuinely in flight still needs its report.
+  if (!path || path === state.history.current) return state;
+  const from = state.history.current;
+  return begin(previewHistoryVisit(state.history, path), from, path);
+}
+
+export function previewNavigationBack(state: PreviewNavigationState) {
+  const step = previewHistoryBack(state.history);
+  if (!step) return state;
+  return begin(step.state, state.history.current, step.target);
+}
+
+export function previewNavigationForward(state: PreviewNavigationState) {
+  const step = previewHistoryForward(state.history);
+  if (!step) return state;
+  return begin(step.state, state.history.current, step.target);
+}
+
+/**
+ * A report from the tracker, already normalised to display form.
+ *
+ * A report naming the route the request left is one that was in flight when the
+ * click happened: applying it would push the route just left back onto the
+ * stack, so it is dropped whole. Any other report is the answer — the target
+ * asked for, or wherever a redirect landed — and closes the wait.
+ */
+export function previewNavigationReport(
+  state: PreviewNavigationState,
+  displayPath: string,
+): PreviewNavigationState {
+  const pending = state.pending;
+  if (pending) {
+    if (displayPath === pending.from) return state;
+  }
+  return {
+    history: previewHistoryVisit(state.history, displayPath),
+    pending: null,
   };
 }
