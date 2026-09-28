@@ -250,7 +250,7 @@ export async function restoreProjectArchive(
       try {
         await runSandboxCommand(context, 'npm install --no-audit --no-fund', {
           cwd: state.appDir,
-          env: resolveSandboxNpmEnv(),
+          env: resolveSandboxNpmEnv(state.siteDomain),
           timeout: 300,
         });
       } catch {

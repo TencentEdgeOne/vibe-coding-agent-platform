@@ -27,7 +27,7 @@ async function installDependencies(context: AgentContext, state: ProjectState) {
   if (await requireSandbox(context).files.exists(`${state.appDir}/node_modules`)) return;
   await runSandboxCommand(context, 'npm install --no-audit --no-fund', {
     cwd: state.appDir,
-    env: resolveSandboxNpmEnv(),
+    env: resolveSandboxNpmEnv(state.siteDomain),
     timeout: 300,
   });
 }

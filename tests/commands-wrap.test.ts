@@ -9,7 +9,10 @@ import {
   PREVIEW_SERVER_PORT,
 } from '../agents/_lib/constants.ts';
 import { MAKERS_DEV_LAUNCH_TIMEOUT_SECONDS } from '../agents/_lib/makers/cli-dev.ts';
-import { TENCENT_NPM_REGISTRY } from '../agents/_lib/makers/npm-install.ts';
+import {
+  OFFICIAL_NPM_REGISTRY,
+  TENCENT_NPM_REGISTRY,
+} from '../agents/_lib/makers/npm-install.ts';
 import type {
   ClaudeMcpTool,
   DeploymentInfo,
@@ -147,7 +150,7 @@ test('commands in a .cool sandbox inherit the Tencent npm registry', async () =>
   });
 });
 
-test('.dev commands also override their existing registry with the Tencent mirror', async () => {
+test('.dev commands override their existing registry with the official source', async () => {
   let received: Record<string, unknown> = {};
   const commandsTool = {
     name: 'commands',
@@ -170,7 +173,7 @@ test('.dev commands also override their existing registry with the Tencent mirro
   }, {});
 
   assert.deepEqual(received.env, {
-    NPM_CONFIG_REGISTRY: TENCENT_NPM_REGISTRY,
+    NPM_CONFIG_REGISTRY: OFFICIAL_NPM_REGISTRY,
   });
 });
 

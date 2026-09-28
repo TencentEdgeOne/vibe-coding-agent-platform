@@ -163,7 +163,7 @@ export async function finishProjectWrite(
     await requireSandbox(host.context).commands
       .run(buildNpmWarmupCommand(), {
         cwd: host.state.appDir,
-        env: resolveSandboxNpmEnv(),
+        env: resolveSandboxNpmEnv(host.state.siteDomain),
       })
       .catch(() => undefined);
   }

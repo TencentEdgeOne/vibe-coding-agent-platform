@@ -126,7 +126,7 @@ async function installDependencies(
   if (!job.report) {
     const installed = await runSandboxCommand(context, 'npm install --no-audit --no-fund', {
       cwd: state.appDir,
-      env: resolveSandboxNpmEnv(),
+      env: resolveSandboxNpmEnv(state.siteDomain),
       timeout: READINESS_BUDGET_MS.dependencies / 1000,
     });
     return installed.exitCode === 0;
@@ -146,7 +146,7 @@ async function installDependencies(
       `npm install --no-audit --no-fund > ${NPM_INSTALL_LOG} 2>&1`,
       {
         cwd: state.appDir,
-        env: resolveSandboxNpmEnv(),
+        env: resolveSandboxNpmEnv(state.siteDomain),
         timeout: READINESS_BUDGET_MS.dependencies / 1000,
       },
     );

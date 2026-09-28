@@ -59,7 +59,7 @@ export async function prepareMakersSession(
     area,
     env: {
       ...buildSandboxMakersEnv(sandboxToken, state.makersApiRegion),
-      ...resolveSandboxNpmEnv(),
+      ...resolveSandboxNpmEnv(state.siteDomain),
     },
     gatewayKey: gateway.AI_GATEWAY_API_KEY || '',
   };

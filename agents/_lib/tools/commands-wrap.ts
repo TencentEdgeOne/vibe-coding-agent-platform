@@ -139,7 +139,7 @@ export function wrapSandboxTools(
         if (lifecycle) {
           nextArgs = withCommandEnvironment(
             nextArgs,
-            resolveSandboxNpmEnv(),
+            resolveSandboxNpmEnv(lifecycle.state.siteDomain),
           ) as typeof args;
         }
         let result: Awaited<ReturnType<ClaudeMcpTool['handler']>>;

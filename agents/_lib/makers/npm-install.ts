@@ -24,15 +24,16 @@
  */
 export const NPM_WARMUP_BASE = '/tmp/npm-warmup';
 
-/**
- * Every sandbox uses Tencent's public npm mirror. Keeping this in the command
- * environment instead of writing a project `.npmrc` leaves generated source
- * portable while npm, npx, and child installs inherit the acceleration.
- */
+/** Keep registry selection in the command environment so generated source stays portable. */
 export const TENCENT_NPM_REGISTRY = 'https://mirrors.tencent.com/npm/';
+export const OFFICIAL_NPM_REGISTRY = 'https://registry.npmjs.org/';
 
-export function resolveSandboxNpmEnv(): Record<string, string> {
-  return { NPM_CONFIG_REGISTRY: TENCENT_NPM_REGISTRY };
+export function resolveSandboxNpmEnv(siteDomain = ''): Record<string, string> {
+  const domain = siteDomain.trim().toLowerCase().replace(/\.$/, '');
+  const registry = domain === 'dev' || domain.endsWith('.dev')
+    ? OFFICIAL_NPM_REGISTRY
+    : TENCENT_NPM_REGISTRY;
+  return { NPM_CONFIG_REGISTRY: registry };
 }
 
 function warmupPaths(base: string) {

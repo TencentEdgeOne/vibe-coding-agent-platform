@@ -6,6 +6,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { promisify } from 'node:util';
 import {
+  OFFICIAL_NPM_REGISTRY,
   TENCENT_NPM_REGISTRY,
   NPM_WARMUP_NOTICE,
   buildNpmCacheReclaimScript,
@@ -22,9 +23,18 @@ import {
 
 const run = promisify(execFile);
 
-test('sandbox commands use the Tencent npm mirror', () => {
-  assert.deepEqual(resolveSandboxNpmEnv(), {
+test('sandbox commands select the registry from the site root domain', () => {
+  assert.deepEqual(resolveSandboxNpmEnv('edgeone.cool'), {
     NPM_CONFIG_REGISTRY: TENCENT_NPM_REGISTRY,
+  });
+  assert.deepEqual(resolveSandboxNpmEnv('localhost'), {
+    NPM_CONFIG_REGISTRY: TENCENT_NPM_REGISTRY,
+  });
+  assert.deepEqual(resolveSandboxNpmEnv('edgeone.dev'), {
+    NPM_CONFIG_REGISTRY: OFFICIAL_NPM_REGISTRY,
+  });
+  assert.deepEqual(resolveSandboxNpmEnv('preview.edgeone.dev.'), {
+    NPM_CONFIG_REGISTRY: OFFICIAL_NPM_REGISTRY,
   });
 });
 
