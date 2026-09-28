@@ -1,13 +1,13 @@
 import type { ActivityStatus } from '../../../../../shared/protocol';
 
 /**
- * Running work is open because it is the only thing there is to watch, and a
- * failure is open because it is the only thing there is to act on. Everything
- * else settles shut on its own, so a build that touched thirty files reads as
- * thirty things done rather than thirty screens of output.
+ * Running work is open because it is the only thing there is to watch.
+ * Everything that has ended settles shut on its own, so a build that touched
+ * thirty files reads as thirty things done rather than thirty screens of
+ * output.
  */
 export function autoOpenForStatus(status: ActivityStatus) {
-  return status === 'running' || status === 'failed';
+  return status === 'running';
 }
 
 /**

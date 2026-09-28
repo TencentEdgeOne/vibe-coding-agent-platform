@@ -67,8 +67,8 @@ test('a step is open while it runs and settles shut once it lands', () => {
   assert.equal(autoOpenForStatus('stopped'), false);
 });
 
-test('a failed step stays open, because it is the only thing left to act on', () => {
-  assert.equal(autoOpenForStatus('failed'), true);
+test('a failed step follows the same disclosure rule as other finished steps', () => {
+  assert.equal(autoOpenForStatus('failed'), false);
 });
 
 // A row that shuts itself while someone is reading it loses them their place,
