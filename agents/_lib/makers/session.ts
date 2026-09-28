@@ -12,6 +12,7 @@ import {
   resolveMakersMasterToken,
   resolveSandboxMakersToken,
 } from './token.ts';
+import { resolveSandboxNpmEnv } from './npm-install.ts';
 
 export type PreparedMakersSession = {
   masterToken: string;
@@ -56,7 +57,10 @@ export async function prepareMakersSession(
     sandboxToken,
     projectName,
     area,
-    env: buildSandboxMakersEnv(sandboxToken, state.makersApiRegion),
+    env: {
+      ...buildSandboxMakersEnv(sandboxToken, state.makersApiRegion),
+      ...resolveSandboxNpmEnv(),
+    },
     gatewayKey: gateway.AI_GATEWAY_API_KEY || '',
   };
 }

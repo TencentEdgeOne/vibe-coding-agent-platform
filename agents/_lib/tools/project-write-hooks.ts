@@ -1,7 +1,10 @@
 import type { HookInput, SyncHookJSONOutput } from '@anthropic-ai/claude-agent-sdk';
 import { requireSandbox, type AgentContext } from '../runtime/context.ts';
 import { markCreated } from '../project/workspace-store.ts';
-import { buildNpmWarmupCommand } from '../makers/npm-install.ts';
+import {
+  buildNpmWarmupCommand,
+  resolveSandboxNpmEnv,
+} from '../makers/npm-install.ts';
 import {
   ensureMakersAgentDeclarations,
   ensureMakersFrameworkAdapter,
@@ -158,7 +161,10 @@ export async function finishProjectWrite(
       adapterAdded = true;
     }
     await requireSandbox(host.context).commands
-      .run(buildNpmWarmupCommand(), { cwd: host.state.appDir })
+      .run(buildNpmWarmupCommand(), {
+        cwd: host.state.appDir,
+        env: resolveSandboxNpmEnv(),
+      })
       .catch(() => undefined);
   }
   for (const declaration of declared) {

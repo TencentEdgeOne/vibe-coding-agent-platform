@@ -9,6 +9,7 @@ import {
 import { ensurePreview } from '../agents/_lib/lazy/preview.ts';
 import { createProjectState } from '../agents/_lib/project/state.ts';
 import type { AgentContext, BlobStoreLike } from '../agents/_lib/runtime/context.ts';
+import { TENCENT_NPM_REGISTRY } from '../agents/_lib/makers/npm-install.ts';
 
 /**
  * A sandbox whose project directory already has files and whose dev server is
@@ -125,6 +126,30 @@ test('a project with no package.json still gets a preview', async () => {
   state.created = true;
   const preview = await ensurePreview(context, 'cid', state);
   assert.ok(preview.url, 'a static site must still resolve a preview URL');
+});
+
+test('restored projects install dependencies through the Tencent registry', async () => {
+  let commandOptions: Record<string, unknown> = {};
+  const state = createProjectState('cid-cool-dependencies');
+  state.siteDomain = 'edgeone.cool';
+  const context = {
+    sandbox: {
+      files: {
+        exists: async (target: string) => target.endsWith('/package.json'),
+      },
+      commands: {
+        run: async (_command: string, options?: Record<string, unknown>) => {
+          commandOptions = options || {};
+          return { exitCode: 0, stdout: '', stderr: '' };
+        },
+      },
+    },
+  } as unknown as AgentContext;
+
+  assert.equal(await dependenciesReady(context, state), true);
+  assert.deepEqual(commandOptions.env, {
+    NPM_CONFIG_REGISTRY: TENCENT_NPM_REGISTRY,
+  });
 });
 
 test('a deployed preview is returned untouched, with no sandbox work', async () => {

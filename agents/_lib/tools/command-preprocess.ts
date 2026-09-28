@@ -60,6 +60,20 @@ export function withCommandOptions(
   };
 }
 
+export function withCommandEnvironment(args: unknown, env: Record<string, string>) {
+  if (Object.keys(env).length === 0) return args;
+  const { record } = extractCommand(args);
+  return {
+    ...record,
+    env: {
+      ...(record.env && typeof record.env === 'object'
+        ? record.env as Record<string, unknown>
+        : {}),
+      ...env,
+    },
+  };
+}
+
 const DEV_SERVER_STOPPED_NOTICE = 'The preview dev server was stopped before this command, '
   + 'because a build or an install in the same directory races it over .next and node_modules. '
   + 'The preview is down until you run `edgeone makers dev` again.';

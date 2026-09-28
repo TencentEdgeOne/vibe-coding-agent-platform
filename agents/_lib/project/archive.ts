@@ -9,6 +9,7 @@ import { safeSegment } from '../utils/paths.ts';
 import { runSandboxCommand } from './commands.ts';
 import { assertResettableProjectPath } from './state.ts';
 import { shellQuote } from '../utils/shell.ts';
+import { resolveSandboxNpmEnv } from '../makers/npm-install.ts';
 
 type LegacyProjectSnapshot = {
   base64: string;
@@ -249,6 +250,7 @@ export async function restoreProjectArchive(
       try {
         await runSandboxCommand(context, 'npm install --no-audit --no-fund', {
           cwd: state.appDir,
+          env: resolveSandboxNpmEnv(),
           timeout: 300,
         });
       } catch {

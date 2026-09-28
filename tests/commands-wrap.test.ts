@@ -9,6 +9,7 @@ import {
   PREVIEW_SERVER_PORT,
 } from '../agents/_lib/constants.ts';
 import { MAKERS_DEV_LAUNCH_TIMEOUT_SECONDS } from '../agents/_lib/makers/cli-dev.ts';
+import { TENCENT_NPM_REGISTRY } from '../agents/_lib/makers/npm-install.ts';
 import type {
   ClaudeMcpTool,
   DeploymentInfo,
@@ -116,6 +117,85 @@ test('a command that only mentions npm install in quotes does not stop the previ
 
   assert.equal(received, 'pgrep -af "npm install|npm ci"');
   assert.doesNotMatch(received, /stop_makers_dev/);
+});
+
+test('commands in a .cool sandbox inherit the Tencent npm registry', async () => {
+  let received: Record<string, unknown> = {};
+  const commandsTool = {
+    name: 'commands',
+    description: 'run',
+    inputSchema: {},
+    handler: async (args: Record<string, unknown>) => {
+      received = args;
+      return { content: [{ type: 'text', text: 'ok' }] };
+    },
+  } as unknown as ClaudeMcpTool;
+  const [wrapped] = wrapSandboxTools([commandsTool], {
+    conversationId: 'cid-cool-registry',
+    context: {} as never,
+    state: projectState('projects/demo', { siteDomain: 'edgeone.cool' }),
+  });
+
+  await wrapped.handler({
+    command: 'npm view react version',
+    env: { KEEP_ME: 'yes', NPM_CONFIG_REGISTRY: 'https://registry.npmjs.org' },
+  }, {});
+
+  assert.deepEqual(received.env, {
+    KEEP_ME: 'yes',
+    NPM_CONFIG_REGISTRY: TENCENT_NPM_REGISTRY,
+  });
+});
+
+test('.dev commands also override their existing registry with the Tencent mirror', async () => {
+  let received: Record<string, unknown> = {};
+  const commandsTool = {
+    name: 'commands',
+    description: 'run',
+    inputSchema: {},
+    handler: async (args: Record<string, unknown>) => {
+      received = args;
+      return { content: [{ type: 'text', text: 'ok' }] };
+    },
+  } as unknown as ClaudeMcpTool;
+  const [wrapped] = wrapSandboxTools([commandsTool], {
+    conversationId: 'cid-dev-registry',
+    context: {} as never,
+    state: projectState('projects/demo', { siteDomain: 'edgeone.dev' }),
+  });
+
+  await wrapped.handler({
+    command: 'npm view react version',
+    env: { NPM_CONFIG_REGISTRY: 'https://registry.example.com' },
+  }, {});
+
+  assert.deepEqual(received.env, {
+    NPM_CONFIG_REGISTRY: TENCENT_NPM_REGISTRY,
+  });
+});
+
+test('local commands use the Tencent npm registry when no public domain is known', async () => {
+  let received: Record<string, unknown> = {};
+  const commandsTool = {
+    name: 'commands',
+    description: 'run',
+    inputSchema: {},
+    handler: async (args: Record<string, unknown>) => {
+      received = args;
+      return { content: [{ type: 'text', text: 'ok' }] };
+    },
+  } as unknown as ClaudeMcpTool;
+  const [wrapped] = wrapSandboxTools([commandsTool], {
+    conversationId: 'cid-local-registry',
+    context: {} as never,
+    state: projectState(),
+  });
+
+  await wrapped.handler({ command: 'npm install react' }, {});
+
+  assert.deepEqual(received.env, {
+    NPM_CONFIG_REGISTRY: TENCENT_NPM_REGISTRY,
+  });
 });
 
 test('allows direct Makers CLI preview but blocks token and account-management commands', async () => {
@@ -262,6 +342,7 @@ test('direct makers dev is normalized, published, and reported through the lifec
   assert.deepEqual(received.env, {
     PAGES_SOURCE: 'skills',
     PAGES_BLOB_STS_ENV: 'prod',
+    NPM_CONFIG_REGISTRY: TENCENT_NPM_REGISTRY,
   });
   assert.equal(received.timeout, MAKERS_DEV_LAUNCH_TIMEOUT_SECONDS);
   assert.match(

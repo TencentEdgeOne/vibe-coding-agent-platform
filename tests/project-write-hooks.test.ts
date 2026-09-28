@@ -6,6 +6,7 @@ import {
   type ProjectWriteHost,
 } from '../agents/_lib/tools/project-write-hooks.ts';
 import { projectState } from './helpers/fixtures.ts';
+import { TENCENT_NPM_REGISTRY } from '../agents/_lib/makers/npm-install.ts';
 
 function host(overrides: Partial<ProjectWriteHost> = {}): ProjectWriteHost {
   const made: string[] = [];
@@ -89,4 +90,33 @@ test('other tools and a failed write do not run the after-write work', async () 
     toolResponse: { isError: true },
   }), {});
   assert.deepEqual(written, []);
+});
+
+test('the package.json warmup uses the Tencent npm registry', async () => {
+  let options: Record<string, unknown> = {};
+  const target = host({
+    state: projectState('projects/demo', { siteDomain: 'edgeone.cool' }),
+    context: {
+      sandbox: {
+        files: {
+          makeDir: async () => undefined,
+          read: async () => { throw new Error('missing'); },
+          write: async () => undefined,
+        },
+        commands: {
+          run: async (_command: string, received?: Record<string, unknown>) => {
+            options = received || {};
+            return { stdout: '', stderr: '', exitCode: 0 };
+          },
+        },
+      },
+    } as ProjectWriteHost['context'],
+  });
+
+  await finishProjectWrite(target, {
+    toolName: 'files_write',
+    toolInput: { path: 'package.json', content: '{"name":"demo"}\n' },
+  });
+
+  assert.deepEqual(options.env, { NPM_CONFIG_REGISTRY: TENCENT_NPM_REGISTRY });
 });

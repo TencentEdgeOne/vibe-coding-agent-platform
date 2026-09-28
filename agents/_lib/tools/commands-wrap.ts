@@ -27,10 +27,12 @@ import {
 import {
   extractCommand,
   shouldStopDevServer,
+  withCommandEnvironment,
   withDevServerStopped,
   withWarmedInstall,
   withWrappedCommand,
 } from './command-preprocess.ts';
+import { resolveSandboxNpmEnv } from '../makers/npm-install.ts';
 import { prepareMakersCommand } from './makers-command.ts';
 import type { MakersCommandLifecycle } from './makers-lifecycle.ts';
 import { commandCallId } from './command-stream.ts';
@@ -133,6 +135,12 @@ export function wrapSandboxTools(
               isError: true,
             };
           }
+        }
+        if (lifecycle) {
+          nextArgs = withCommandEnvironment(
+            nextArgs,
+            resolveSandboxNpmEnv(),
+          ) as typeof args;
         }
         let result: Awaited<ReturnType<ClaudeMcpTool['handler']>>;
         let endCommandStream: (() => void) | undefined;

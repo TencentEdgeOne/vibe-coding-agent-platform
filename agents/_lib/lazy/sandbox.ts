@@ -21,6 +21,7 @@ import { withTimeout } from '../utils/timeout.ts';
 import { timeStage } from '../utils/timing.ts';
 import { READINESS_BUDGET_MS, SANDBOX_EXTENSION_SECONDS } from './budgets.ts';
 import { once, settled } from './inflight.ts';
+import { resolveSandboxNpmEnv } from '../makers/npm-install.ts';
 
 export type SandboxHandle = {
   state: ProjectState;
@@ -125,6 +126,7 @@ async function installDependencies(
   if (!job.report) {
     const installed = await runSandboxCommand(context, 'npm install --no-audit --no-fund', {
       cwd: state.appDir,
+      env: resolveSandboxNpmEnv(),
       timeout: READINESS_BUDGET_MS.dependencies / 1000,
     });
     return installed.exitCode === 0;
@@ -144,6 +146,7 @@ async function installDependencies(
       `npm install --no-audit --no-fund > ${NPM_INSTALL_LOG} 2>&1`,
       {
         cwd: state.appDir,
+        env: resolveSandboxNpmEnv(),
         timeout: READINESS_BUDGET_MS.dependencies / 1000,
       },
     );

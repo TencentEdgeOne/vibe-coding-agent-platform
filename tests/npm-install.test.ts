@@ -6,11 +6,13 @@ import path from 'node:path';
 import test from 'node:test';
 import { promisify } from 'node:util';
 import {
+  TENCENT_NPM_REGISTRY,
   NPM_WARMUP_NOTICE,
   buildNpmCacheReclaimScript,
   buildNpmWarmupCommand,
   buildNpmWarmupHandoffScript,
   buildNpmWarmupWaitScript,
+  resolveSandboxNpmEnv,
 } from '../agents/_lib/makers/npm-install.ts';
 import {
   isBareInstallCommand,
@@ -19,6 +21,12 @@ import {
 } from '../agents/_lib/makers/tool-phase.ts';
 
 const run = promisify(execFile);
+
+test('sandbox commands use the Tencent npm mirror', () => {
+  assert.deepEqual(resolveSandboxNpmEnv(), {
+    NPM_CONFIG_REGISTRY: TENCENT_NPM_REGISTRY,
+  });
+});
 
 /**
  * Run the real scripts against a fake npm, because what they claim is about

@@ -2,6 +2,7 @@ import { requireSandbox, type AgentContext } from '../runtime/context.ts';
 import type { ProjectState } from '../types.ts';
 import { restoreProjectArchive } from './archive.ts';
 import { runSandboxCommand } from './commands.ts';
+import { resolveSandboxNpmEnv } from '../makers/npm-install.ts';
 
 export async function restorePersistedProject(
   context: AgentContext,
@@ -26,6 +27,7 @@ async function installDependencies(context: AgentContext, state: ProjectState) {
   if (await requireSandbox(context).files.exists(`${state.appDir}/node_modules`)) return;
   await runSandboxCommand(context, 'npm install --no-audit --no-fund', {
     cwd: state.appDir,
+    env: resolveSandboxNpmEnv(),
     timeout: 300,
   });
 }
