@@ -58,7 +58,12 @@ export function WorkspaceScreen() {
   snapshotRefreshRef.current = snapshot.refresh;
 
   const t = TRANSLATIONS[language];
-  const { contactUrl, templateDeployUrl, makersModelsDocsUrl } = usePlatformLinks(language, setLanguage);
+  const {
+    contactUrl,
+    templateDeployUrl,
+    makersModelsDocsUrl,
+    changeLanguage,
+  } = usePlatformLinks(language, setLanguage);
   const live = useLiveTurn({
     language,
     model,
@@ -175,7 +180,7 @@ export function WorkspaceScreen() {
         contactUrl={contactUrl}
         templateSourceUrl={TEMPLATE_SOURCE_URL}
         templateDeployUrl={templateDeployUrl}
-        onLanguageChange={setLanguage}
+        onLanguageChange={changeLanguage}
         onBack={project.handleNewProject}
       />
       <NewProjectDialog

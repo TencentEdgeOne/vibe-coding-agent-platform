@@ -1,5 +1,6 @@
 export type Locale = 'zh' | 'en';
 
+/** An explicit choice made from the language switch. */
 export const LANGUAGE_STORAGE_KEY = 'vibe-coding-platform-language';
 
 export type HomeFeatureIcon = 'skills' | 'functions';
