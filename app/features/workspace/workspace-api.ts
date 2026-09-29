@@ -1,7 +1,6 @@
 import type { Locale } from '@/app/i18n';
 import type { ModelOption } from '../../../shared/models';
 import type {
-  PersistedActivityTurn,
   ResumeData,
   WorkspaceSnapshot,
 } from '../../../shared/protocol';
@@ -18,11 +17,25 @@ async function readJson<T>(response: Response): Promise<T | null> {
   return response.json().catch(() => null) as Promise<T | null>;
 }
 
+function withQuery(path: string, query: Record<string, string | number | undefined>) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== '') params.set(key, String(value));
+  }
+  const search = params.toString();
+  return search ? `${path}?${search}` : path;
+}
+
+/**
+ * `resume` reopens an attach that the server ended at its time limit: the
+ * turn's events continue after `afterSeq`, without reloading history.
+ */
 export function openSessionStream(
   conversationId: string,
   signal?: AbortSignal,
+  resume?: { turnId: string; afterSeq: number },
 ) {
-  return fetch('/session', {
+  return fetch(withQuery('/session', { turnId: resume?.turnId, afterSeq: resume?.afterSeq }), {
     method: 'GET',
     headers: conversationHeaders(conversationId),
     signal,
@@ -98,22 +111,27 @@ export function startPromptTurn(options: {
   });
 }
 
+export type StopOutcome = 'stopped' | 'stopping' | 'idle';
+
+/**
+ * Carries makers-conversation-id like every other agent route: session
+ * affinity is what lands the stop on the instance running the turn.
+ * Resolves to null when the server could not say what happened.
+ */
 export async function stopChatTask(
   conversationId: string,
-  turn: PersistedActivityTurn,
   options: { discardProject?: boolean } = {},
-) {
-  // No makers-conversation-id. Sticky routing would pin this request to the
-  // instance that is stuck in the run, and abortActiveRun could not reach it.
-  return fetch('/stop', {
+): Promise<StopOutcome | null> {
+  const response = await fetch('/stop', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: conversationHeaders(conversationId),
     body: JSON.stringify({
       conversation_id: conversationId,
-      turn,
       ...(options.discardProject ? { discardProject: true } : {}),
     }),
   });
+  const data = await readJson<{ ok?: boolean; status?: StopOutcome }>(response);
+  return data?.ok && data.status ? data.status : null;
 }
 
 export function fetchProjectArchive(url: string, conversationId: string) {
@@ -128,8 +146,12 @@ export function fetchProjectArchive(url: string, conversationId: string) {
   });
 }
 
-export function openTranscriptStream(conversationId: string, signal?: AbortSignal) {
-  return fetch('/transcript', {
+export function openTranscriptStream(
+  conversationId: string,
+  signal?: AbortSignal,
+  resume?: { cursor: number; sessionId: string },
+) {
+  return fetch(withQuery('/transcript', { cursor: resume?.cursor, sessionId: resume?.sessionId }), {
     method: 'GET',
     headers: conversationHeaders(conversationId),
     signal,

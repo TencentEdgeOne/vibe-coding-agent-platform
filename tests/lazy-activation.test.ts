@@ -205,6 +205,56 @@ test('npm install starts in the background and does not block activation', async
   assert.equal(ready, true);
 });
 
+test('a sandbox install failure stays a failed install and does not kill the process', async () => {
+  const fixture = sandboxContext('cid-npm-217');
+  const sandbox = (fixture.context as unknown as {
+    sandbox: { commands: { run: (command: string) => Promise<unknown> } };
+  }).sandbox;
+  sandbox.commands.run = async (command: string) => {
+    fixture.calls.commands.push(command);
+    if (command.includes('npm install')) {
+      throw new Error(
+        'Sandbox command failed [instanceId=7orydnbqxrfke42enq3cxylbye7mem3ij3sddj3h]: exit status 217 (code=SANDBOX_UNKNOWN_ERROR, operation=command)',
+      );
+    }
+    if (command.includes('find')) {
+      return { exitCode: 0, stdout: 'f\t1\t12\t./index.html\n', stderr: '' };
+    }
+    return { exitCode: 0, stdout: '', stderr: '' };
+  };
+  const state = createProjectState('cid-npm-217');
+  state.created = true;
+  await saveProjectState(fixture.context, 'cid-npm-217', state);
+
+  const rejections: unknown[] = [];
+  const onRejection = (error: unknown) => {
+    rejections.push(error);
+  };
+  const warnings: unknown[][] = [];
+  const originalWarn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    warnings.push(args);
+  };
+  process.on('unhandledRejection', onRejection);
+  try {
+    const handle = await activateSandbox(fixture.context, 'cid-npm-217');
+    assert.equal(await handle.dependenciesReady, false);
+    await setImmediate();
+    await setImmediate();
+    assert.equal(rejections.length, 0, 'the install rejection must not escape activation');
+    const install = fixture.calls.commands.find((command) => command.includes('npm install'));
+    assert.match(install || '', /echo EXIT:\$\?/);
+    assert.ok(
+      warnings.some((line) => line[0] === '[sandbox]'
+        && (line[1] as { stage?: string }).stage === 'dependencies-failed'),
+      'the failure is logged where the file read can leave it behind',
+    );
+  } finally {
+    process.off('unhandledRejection', onRejection);
+    console.warn = originalWarn;
+  }
+});
+
 test('the same sandbox skips a second probe, and a new one restores again', async () => {
   const first = sandboxContext('cid-generation');
   const present = new Set([
@@ -322,8 +372,8 @@ test('sandbox, session, and preview routes declare the lazy boundary', async () 
   assert.doesNotMatch(snapshot, /runPreviewStatusPipeline/);
   assert.match(read, /activateSandbox/);
   assert.match(download, /activateSandbox/);
-  assert.match(stop, /sandboxWasActivated\(conversationId\)/);
-  assert.match(stop, /persistProjectSnapshot/);
+  // The stopped turn snapshots its own work; stop never boots a sandbox.
+  assert.doesNotMatch(stop, /activateSandbox|persistProjectSnapshot/);
 
   const resolvePreview = preview.slice(preview.indexOf('async function resolvePreview'));
   assert.ok(
@@ -332,10 +382,7 @@ test('sandbox, session, and preview routes declare the lazy boundary', async () 
   );
   assert.match(timing, /instance: instanceId\(\)/);
   assert.match(task, /orphaned task has no live runner on this instance/);
-  assert.match(
-    task,
-    /getConversationRecord\(context, conversationId, \{ refresh: true \}\)[\s\S]*?saveConversationRecord\(/,
-  );
+  assert.match(task, /patchConversationRecord\(context, conversationId, \{\s*chatTask: task,/);
   assert.match(chat, /type: 'prepare_phase', data: \{ phase: 'workspace' \}/);
   assert.match(chat, /type: 'prepare_phase', data: \{ phase: 'agent' \}/);
   assert.match(

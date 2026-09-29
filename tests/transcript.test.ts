@@ -248,10 +248,14 @@ test('a live transcript path streams before the record is uploaded', async () =>
     { blobStore, conversation_id: 'conv-live' },
     () => ({ path: source, sessionId: 'sess-live', active }),
   );
+  // The stream sends the file once and then only what was appended; the
+  // client folds the pieces back into the file it shows.
   const snapshots: string[] = [];
+  let shown = '';
   const done = consumeEventStream<TranscriptStreamEvent>(response, (event) => {
     if (event.type !== 'transcript' || typeof event.data?.jsonl !== 'string') return;
-    snapshots.push(event.data.jsonl);
+    shown = event.data.append ? shown + event.data.jsonl : event.data.jsonl;
+    if (snapshots.at(-1) !== shown) snapshots.push(shown);
     if (snapshots.length === 1) {
       void writeFile(source, 'line-1\nline-2\n').then(() => {
         active = false;

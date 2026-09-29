@@ -1,11 +1,11 @@
 import type { AgentContext } from '../runtime/context.ts';
+import { TURN_BUDGET_MS } from '../lazy/budgets.ts';
 import { runChatPipeline } from '../turn/chat.ts';
 import { runDeployPipeline } from '../turn/deploy.ts';
 import {
   getChatTask,
-  getConversationRecord,
+  patchConversationRecord,
   saveChatTask,
-  saveConversationRecord,
 } from './store.ts';
 import { interruptLiveQuery } from './live.ts';
 import type { ChatTask, ChatTaskKind, ChatTaskStatus, StreamSend } from '../types.ts';
@@ -13,8 +13,18 @@ import { createSSEResponse, sseEvent } from '../runtime/sse.ts';
 import { resolveConversationId } from '../runtime/request.ts';
 import { resolveGatewayUserTurn } from '../../../shared/gateway-secret.ts';
 import type { ChatStreamEvent } from '../../../shared/protocol.ts';
+import { TURN_LIMIT_REPLY, replyLocaleFor } from '../../../shared/user-facing-reply.ts';
 import { instanceId } from '../runtime/instance.ts';
 import { unbindLiveWorkspace } from './live-workspace.ts';
+import {
+  FENCE_WATCH_MS,
+  FencedError,
+  PROGRESS_EVERY_WATCHES,
+  TurnRunningElsewhereError,
+  confirmEpoch,
+  enterConversation,
+  onOwnershipLost,
+} from './ownership.ts';
 
 type SequencedEvent = {
   sequence: number;
@@ -33,68 +43,117 @@ type LiveChatTask = {
   runPromise?: Promise<void>;
   gatewayApiKey?: string;
   gatewaySkip?: boolean;
+  /** Wound down by the turn budget rather than by the user. */
+  limitReached?: boolean;
 };
 
 const liveTasks = new Map<string, LiveChatTask>();
 
-export function abortLiveChatTask(conversationId: string) {
-  const trimmed = conversationId.trim();
-  if (!trimmed) return;
-  void interruptLiveQuery(trimmed);
+/**
+ * `idle`: no turn of this conversation runs in this process. `stopped`: the
+ * turn ended and its outcome is persisted. `stopping`: it was told to stop and
+ * is still saving its work.
+ */
+export type StopOutcome = 'stopped' | 'stopping' | 'idle';
+
+function abortLiveTask(liveTask: LiveChatTask) {
+  if (liveTask.abortController.signal.aborted) return;
+  liveTask.abortController.abort();
+  void interruptLiveQuery(liveTask.conversationId);
+}
+
+function findRunningLiveTask(conversationId: string) {
   for (const liveTask of liveTasks.values()) {
-    if (liveTask.conversationId === trimmed && !liveTask.abortController.signal.aborted) {
-      liveTask.abortController.abort();
-      if (liveTask.task.status === 'queued' || liveTask.task.status === 'running') {
-        liveTask.task = {
-          ...liveTask.task,
-          status: 'stopped',
-          finishedAt: Date.now(),
-        };
-      }
+    if (liveTask.conversationId === conversationId && liveTask.runPromise && isChatTaskActive(liveTask.task)) {
+      return liveTask;
     }
   }
+  return undefined;
 }
 
-export async function markChatTaskStopped(context: AgentContext, conversationId: string) {
-  const trimmed = conversationId.trim();
-  if (!trimmed) return;
-  try {
-    const existing = await getChatTask(context, trimmed);
-    if (!existing) return;
-    if (existing.status !== 'queued' && existing.status !== 'running') return;
-    await saveChatTask(context, trimmed, {
-      ...existing,
-      status: 'stopped',
-      finishedAt: Date.now(),
-    });
-  } catch (error) {
-    console.warn('[chat-task] failed to mark task stopped', error);
-  }
+/**
+ * Stop the turn this process runs for the conversation. The turn's status only
+ * changes when the turn itself finishes saving, so a new prompt cannot start
+ * against a sandbox the stopped turn is still writing to.
+ */
+export async function stopLiveChatTask(
+  conversationId: string,
+  options: { waitMs?: number } = {},
+): Promise<StopOutcome> {
+  const liveTask = findRunningLiveTask(conversationId.trim());
+  if (!liveTask?.runPromise) return 'idle';
+  abortLiveTask(liveTask);
+  const waitMs = options.waitMs ?? 0;
+  if (waitMs <= 0) return 'stopping';
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const finished = await Promise.race([
+    liveTask.runPromise.then(() => true),
+    new Promise<boolean>((resolve) => {
+      timer = setTimeout(() => resolve(false), waitMs);
+    }),
+  ]);
+  if (timer) clearTimeout(timer);
+  return finished ? 'stopped' : 'stopping';
 }
 
-export async function markOrphanedTaskFailed(context: AgentContext, conversationId: string) {
+onOwnershipLost((conversationId) => {
+  const liveTask = findRunningLiveTask(conversationId);
+  if (liveTask) abortLiveTask(liveTask);
+});
+
+/**
+ * The record says a turn is running, and this process runs none.
+ *
+ * `elsewhere`: another instance owns it and it is still making progress, as
+ * after a redeploy; it is left alone. `settled`: its owner is gone, so the
+ * conversation is claimed here and the turn recorded as stopped or failed.
+ */
+export async function settleUnrunTask(
+  context: AgentContext,
+  conversationId: string,
+  intent: 'read' | 'stop',
+): Promise<'settled' | 'elsewhere' | 'none'> {
   const existing = await getChatTask(context, conversationId);
-  if (!existing || !isChatTaskActive(existing)) return null;
-  if (hasLiveTask(conversationId, existing.id)) return existing;
-  // Sticky routing should have delivered this request to the instance that
-  // owns the run. Landing here means that process is gone, not that a sibling
-  // instance is still generating — failing the blob row is what unblocks the
-  // next prompt. The instance id is logged so a real cross-instance kill shows
-  // up instead of looking like an ordinary failure.
+  if (!isChatTaskActive(existing) || findRunningLiveTask(conversationId)) return 'none';
+  const entry = await enterConversation(context, conversationId, intent);
+  if (entry.role === 'observer') return 'elsewhere';
+  if (entry.tookOver) return 'settled';
+  // This process owns the conversation and no longer runs the turn, which is
+  // what a restart mid-turn leaves behind.
   console.warn('[chat-task] orphaned task has no live runner on this instance', {
     instance: instanceId(),
     conversationId,
     taskId: existing.id,
     status: existing.status,
   });
-  const failed: ChatTask = {
+  await saveChatTask(context, conversationId, {
     ...existing,
-    status: 'failed',
+    status: intent === 'stop' ? 'stopped' : 'failed',
     finishedAt: Date.now(),
-    error: 'The previous generation stopped when this instance restarted.',
-  };
-  await saveChatTask(context, conversationId, failed);
-  return null;
+    ...(intent === 'stop' ? {} : { error: 'The previous generation stopped before it finished.' }),
+  });
+  return 'settled';
+}
+
+const conversationLocks = new Map<string, Promise<void>>();
+
+/**
+ * One turn start at a time per conversation. Session affinity sends every
+ * request of a conversation to this process, so an in-process lock is enough.
+ */
+async function withConversationLock<T>(conversationId: string, run: () => Promise<T>): Promise<T> {
+  const previous = conversationLocks.get(conversationId) ?? Promise.resolve();
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  const tail = previous.then(() => held);
+  conversationLocks.set(conversationId, tail);
+  try {
+    await previous;
+    return await run();
+  } finally {
+    release();
+    if (conversationLocks.get(conversationId) === tail) conversationLocks.delete(conversationId);
+  }
 }
 
 function taskKey(conversationId: string, taskId: string) {
@@ -120,10 +179,6 @@ function statusFromResult(event: ChatStreamEvent): ChatTaskStatus {
   const data = event.type === 'result' && event.data ? event.data : {};
   if (data.stopped === true) return 'stopped';
   return data.ok === false ? 'failed' : 'completed';
-}
-
-function hasLiveTask(conversationId: string, taskId: string) {
-  return liveTasks.has(taskKey(conversationId, taskId));
 }
 
 function getOrCreateLiveTask(conversationId: string, task: ChatTask): LiveChatTask {
@@ -189,41 +244,50 @@ async function createChatTask(
     };
   }
 
-  const taskId = options.turnId || createTaskId();
-  const existing = await getChatTask(context, conversationId);
-  if (existing && existing.id === taskId && existing.message === message) {
-    return { ok: true as const, conversationId, task: existing };
-  }
-  if (existing && isChatTaskActive(existing)) {
-    return {
-      ok: false as const,
-      status: 409,
-      error: 'Another generation is already running for this conversation.',
-    };
-  }
+  return withConversationLock(conversationId, async () => {
+    // A turn start owns the conversation: it claims it unless a turn elsewhere
+    // is still making progress, and a claim settles the turn a gone owner left.
+    try {
+      await enterConversation(context, conversationId, 'write');
+    } catch (error) {
+      if (!(error instanceof TurnRunningElsewhereError)) throw error;
+      return { ok: false as const, status: 409, code: error.code, error: error.message };
+    }
 
-  const requestedModel = (options.model || '').trim();
-  const language = (options.language || '').trim();
-  const task: ChatTask = {
-    id: taskId,
-    message,
-    ...(options.kind === 'deploy' ? { kind: 'deploy' as const } : { kind: 'prompt' as const }),
-    ...(requestedModel ? { model: requestedModel } : {}),
-    preparePhase: 'accepted',
-    status: 'queued',
-    createdAt: Date.now(),
-  };
-  // One strong-consistency read-modify-write for all three fields the request
-  // carries. Saving the task, model, and language separately cost three extra
-  // Blob round trips before the stream could start.
-  const record = await getConversationRecord(context, conversationId, { refresh: true });
-  await saveConversationRecord(context, conversationId, {
-    ...record,
-    chatTask: task,
-    ...(requestedModel ? { modelPreference: requestedModel } : {}),
-    ...(language === 'zh' || language === 'en' ? { languagePreference: language } : {}),
+    const taskId = options.turnId || createTaskId();
+    const existing = await getChatTask(context, conversationId);
+    if (existing && existing.id === taskId && existing.message === message) {
+      return { ok: true as const, conversationId, task: existing };
+    }
+    if (findRunningLiveTask(conversationId)) {
+      return {
+        ok: false as const,
+        status: 409,
+        error: 'Another generation is already running for this conversation.',
+      };
+    }
+
+    const requestedModel = (options.model || '').trim();
+    const language = (options.language || '').trim();
+    const task: ChatTask = {
+      id: taskId,
+      message,
+      ...(options.kind === 'deploy' ? { kind: 'deploy' as const } : { kind: 'prompt' as const }),
+      ...(requestedModel ? { model: requestedModel } : {}),
+      preparePhase: 'accepted',
+      status: 'queued',
+      createdAt: Date.now(),
+    };
+    // One write for all three fields the request carries. Saving the task,
+    // model, and language separately cost two extra Blob round trips before
+    // the stream could start.
+    await patchConversationRecord(context, conversationId, {
+      chatTask: task,
+      ...(requestedModel ? { modelPreference: requestedModel } : {}),
+      ...(language === 'zh' || language === 'en' ? { languagePreference: language } : {}),
+    });
+    return { ok: true as const, conversationId, task };
   });
-  return { ok: true as const, conversationId, task };
 }
 
 function withTaskAbortSignal(context: AgentContext, signal: AbortSignal) {
@@ -233,75 +297,161 @@ function withTaskAbortSignal(context: AgentContext, signal: AbortSignal) {
   return { ...context, request };
 }
 
+function withTurnLimitReply(event: ChatStreamEvent, message: string): ChatStreamEvent {
+  if (event.type !== 'result') return event;
+  return {
+    type: 'result',
+    data: {
+      ...event.data,
+      ok: false,
+      stopped: true,
+      reply: TURN_LIMIT_REPLY[replyLocaleFor(message)],
+    },
+  };
+}
+
 async function executeLiveTask(context: AgentContext, liveTask: LiveChatTask) {
   const runningTask: ChatTask = {
     ...liveTask.task,
     status: 'running',
     startedAt: liveTask.task.startedAt || Date.now(),
+    progressAt: Date.now(),
     error: undefined,
   };
   liveTask.task = runningTask;
   let finalEvent: ChatStreamEvent | undefined;
   let error: string | undefined;
+  // A terminal event ends every subscriber's stream, including the `/prompt`
+  // request this turn runs inside. Once that request is gone the instance has
+  // no CPU guarantee, so the outcome is persisted before the event goes out.
+  const held: ChatStreamEvent[] = [];
   const send: StreamSend = (event) => {
+    if (isTerminalEvent(event)) {
+      held.push(event);
+      finalEvent = event;
+      return;
+    }
     publish(liveTask, event);
-    if (isTerminalEvent(event)) finalEvent = event;
   };
   const taskContext = withTaskAbortSignal(context, liveTask.abortController.signal);
+  const budget = setTimeout(() => {
+    liveTask.limitReached = true;
+    abortLiveTask(liveTask);
+  }, TURN_BUDGET_MS);
+  budget.unref?.();
+
+  // Each watch asks whether a newer owner took the conversation (losing it
+  // aborts this turn) and, every few watches, records progress so a request
+  // landing elsewhere can tell this turn is alive. Watches run one after
+  // another and stop before the final status is written, so a slow progress
+  // write can never land on top of it.
+  let watches = 0;
+  let finished = false;
+  let watching: Promise<void> = Promise.resolve();
+  const watch = setInterval(() => {
+    watches += 1;
+    const recordProgress = watches % PROGRESS_EVERY_WATCHES === 0;
+    watching = watching.then(async () => {
+      if (finished || !(await confirmEpoch(taskContext, liveTask.conversationId))) return;
+      if (!recordProgress || finished) return;
+      liveTask.task = { ...liveTask.task, progressAt: Date.now() };
+      await saveChatTask(taskContext, liveTask.conversationId, liveTask.task);
+    }).catch((watchError) => {
+      console.warn('[chat-task] watch failed', watchError);
+    });
+  }, FENCE_WATCH_MS);
+  watch.unref?.();
 
   try {
     await saveChatTask(taskContext, liveTask.conversationId, runningTask);
-    if (liveTask.task.kind === 'deploy') {
-      await runDeployPipeline(taskContext, liveTask.task.message, send, {
-        turnId: liveTask.task.id,
-        apiKey: liveTask.gatewayApiKey,
-        gatewaySkip: liveTask.gatewaySkip,
-      });
+    const gateway = {
+      ...(liveTask.gatewayApiKey ? { apiKey: liveTask.gatewayApiKey } : {}),
+      ...(liveTask.gatewaySkip ? { gatewaySkip: true } : {}),
+    };
+    liveTask.gatewayApiKey = undefined;
+    liveTask.gatewaySkip = undefined;
+    const input = {
+      kind: liveTask.task.kind === 'deploy' ? 'deploy' as const : 'prompt' as const,
+      message: liveTask.task.message,
+      turnId: liveTask.task.id,
+      model: liveTask.task.model,
+    };
+    if (context.runTurn) {
+      await context.runTurn(taskContext, input, send);
+    } else if (input.kind === 'deploy') {
+      await runDeployPipeline(taskContext, input.message, send, { turnId: input.turnId, ...gateway });
     } else {
-      await runChatPipeline(taskContext, liveTask.task.message, send, {
-        turnId: liveTask.task.id,
-        model: liveTask.task.model,
-        apiKey: liveTask.gatewayApiKey,
-        gatewaySkip: liveTask.gatewaySkip,
+      await runChatPipeline(taskContext, input.message, send, {
+        turnId: input.turnId,
+        model: input.model,
+        ...gateway,
       });
-      liveTask.gatewayApiKey = undefined;
-      liveTask.gatewaySkip = undefined;
     }
   } catch (runError) {
     error = runError instanceof Error ? runError.message : 'Request processing failed.';
     if (!finalEvent) {
-      publish(liveTask, { type: 'error', error });
       finalEvent = { type: 'error', error };
+      held.push(finalEvent);
     }
   } finally {
+    clearTimeout(budget);
+    clearInterval(watch);
+    finished = true;
     unbindLiveWorkspace(liveTask.conversationId);
   }
+  await watching;
 
   const current = liveTask.task;
-  const nextStatus = finalEvent?.type === 'result'
-    ? statusFromResult(finalEvent)
+  const aborted = liveTask.abortController.signal.aborted;
+  const nextStatus: ChatTaskStatus = finalEvent?.type === 'result'
+    ? (liveTask.limitReached ? 'stopped' : statusFromResult(finalEvent))
     : error
       ? 'failed'
-      : current.status === 'running' ? 'completed' : current.status;
+      : aborted ? 'stopped' : 'completed';
   const nextTask: ChatTask = {
     ...current,
     status: nextStatus,
     finishedAt: Date.now(),
     ...(error ? { error } : {}),
   };
-  liveTask.task = nextTask;
   try {
     await saveChatTask(taskContext, liveTask.conversationId, nextTask);
   } catch (persistError) {
-    console.error('[chat-task] failed to persist final task state', persistError);
+    if (persistError instanceof FencedError) {
+      console.warn('[chat-task] a newer owner took the conversation; this turn\'s outcome is not saved', {
+        instance: instanceId(),
+        conversationId: liveTask.conversationId,
+        taskId: nextTask.id,
+        epoch: taskContext.epoch,
+      });
+    } else {
+      console.error('[chat-task] failed to persist final task state', persistError);
+    }
+  }
+  // The status flips only now: a subscriber that attaches while the outcome is
+  // being saved still waits for the terminal event instead of leaving early.
+  liveTask.task = nextTask;
+  if (held.length === 0) {
+    held.push({
+      type: 'result',
+      data: {
+        ok: nextStatus === 'completed',
+        conversation_id: liveTask.conversationId,
+        ...(nextStatus === 'stopped' ? { stopped: true } : {}),
+      },
+    });
+  }
+  for (const event of held) {
+    publish(liveTask, liveTask.limitReached ? withTurnLimitReply(event, current.message) : event);
   }
 
   const key = taskKey(liveTask.conversationId, liveTask.task.id);
-  setTimeout(() => {
+  const cleanup = setTimeout(() => {
     if (liveTask.listeners.size === 0 && !isChatTaskActive(liveTask.task) && liveTasks.get(key) === liveTask) {
       liveTasks.delete(key);
     }
   }, 5 * 60 * 1_000);
+  cleanup.unref?.();
 }
 
 function ensureChatTaskStarted(
@@ -339,6 +489,19 @@ class AsyncEventQueue<T> {
 }
 
 const ABORTED = Symbol('aborted');
+const DEADLINE = Symbol('deadline');
+
+export type AttachOptions = {
+  /** Replay only events after this sequence: the last one a reopened observer saw. */
+  afterSeq?: number;
+  /** End with a `reconnect` event after this long if the turn is still running. */
+  maxMs?: number;
+};
+
+/** The turn this process holds for the conversation, running or recently finished. */
+export function findLiveChatTask(conversationId: string, turnId: string): ChatTask | null {
+  return liveTasks.get(taskKey(conversationId, turnId))?.task || null;
+}
 
 export async function* iterateLiveChatTaskEvents(
   context: AgentContext,
@@ -346,52 +509,67 @@ export async function* iterateLiveChatTaskEvents(
   task: ChatTask,
   extras?: { gatewayApiKey?: string; gatewaySkip?: boolean },
   signal?: AbortSignal,
+  options: AttachOptions = {},
 ): AsyncGenerator<string> {
   const liveTask = ensureChatTaskStarted(context, conversationId, task, extras);
-  yield sseEvent({
-    type: 'task_started',
-    data: {
-      runId: task.id,
-      conversation_id: conversationId,
-      status: task.status,
-      preparePhase: task.preparePhase || 'accepted',
-    },
-  });
+  const replayAfter = options.afterSeq ?? 0;
+  if (options.afterSeq === undefined) {
+    yield sseEvent({
+      type: 'task_started',
+      data: {
+        runId: task.id,
+        conversation_id: conversationId,
+        status: task.status,
+        preparePhase: task.preparePhase || 'accepted',
+      },
+    });
+  }
   const queue = new AsyncEventQueue<SequencedEvent>();
-  const afterSequence = liveTask.nextSequence;
+  const bufferedUpTo = liveTask.nextSequence;
+  let lastSeq = replayAfter;
   const listener: TaskListener = (record) => {
-    if (record.sequence > afterSequence) queue.push(record);
+    if (record.sequence > bufferedUpTo) queue.push(record);
   };
   liveTask.listeners.add(listener);
+  const frame = (record: SequencedEvent) => {
+    lastSeq = record.sequence;
+    return sseEvent({ ...record.event, seq: record.sequence });
+  };
+  let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
 
   try {
     for (const record of liveTask.events) {
-      if (record.sequence <= afterSequence) yield sseEvent(record.event);
+      if (record.sequence <= replayAfter || record.sequence > bufferedUpTo) continue;
+      yield frame(record);
+      if (isTerminalEvent(record.event)) return;
     }
+    if (!isChatTaskActive(liveTask.task)) return;
 
-    if (!isChatTaskActive(liveTask.task)) {
-      for (const record of liveTask.events) {
-        if (record.sequence > afterSequence) yield sseEvent(record.event);
-      }
-      return;
-    }
-
-    const abortPromise = signal
-      ? new Promise<typeof ABORTED>((resolve) => {
+    const stops: Array<Promise<typeof ABORTED | typeof DEADLINE>> = [];
+    if (signal) {
+      stops.push(new Promise((resolve) => {
         if (signal.aborted) resolve(ABORTED);
         else signal.addEventListener('abort', () => resolve(ABORTED), { once: true });
-      })
-      : null;
+      }));
+    }
+    if (options.maxMs) {
+      stops.push(new Promise((resolve) => {
+        deadlineTimer = setTimeout(() => resolve(DEADLINE), options.maxMs);
+      }));
+    }
 
     while (!signal?.aborted) {
-      const record = await (abortPromise
-        ? Promise.race([queue.next(), abortPromise])
-        : queue.next());
+      const record = await Promise.race([queue.next(), ...stops]);
       if (record === ABORTED) return;
-      yield sseEvent(record.event);
+      if (record === DEADLINE) {
+        yield sseEvent({ type: 'reconnect', data: { turnId: liveTask.task.id, afterSeq: lastSeq } });
+        return;
+      }
+      yield frame(record);
       if (isTerminalEvent(record.event)) return;
     }
   } finally {
+    if (deadlineTimer) clearTimeout(deadlineTimer);
     liveTask.listeners.delete(listener);
   }
 }

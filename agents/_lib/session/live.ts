@@ -1,10 +1,14 @@
 import {
   query,
+  type HookInput,
   type Query,
   type SDKMessage,
   type SDKResultMessage,
   type SDKUserMessage,
+  type SyncHookJSONOutput,
 } from '@anthropic-ai/claude-agent-sdk';
+import { rm } from 'node:fs/promises';
+import { OWNER_CHECK_CACHE_MS, confirmEpoch, onOwnershipLost } from './ownership.ts';
 import {
   DEFAULT_PATH,
   GATEWAY_CONVERSATION_ID_HEADER_NAME,
@@ -67,10 +71,19 @@ type LiveQuerySession = LiveSessionHandle & {
   state: ProjectState;
   pump: Promise<void>;
   idleTimer?: ReturnType<typeof setTimeout>;
+  /** The local JSONL as it stands is in Blob, so the local copy may go. */
+  transcriptSaved?: boolean;
 };
 
 /** Close a process that finished a turn and never received another, so an abandoned conversation does not leak one. */
 export const LIVE_QUERY_IDLE_MS = 5 * 60 * 1000;
+
+/**
+ * An instance hosts several conversations in 2 GB, and each warm CLI holds a
+ * few hundred MB. Past this many, idle ones are closed after a minute instead.
+ */
+const WARM_QUERIES_PER_INSTANCE = 3;
+const CROWDED_IDLE_MS = 60 * 1000;
 
 const liveQueries = new Map<string, LiveQuerySession>();
 
@@ -141,34 +154,78 @@ function clearIdleTimer(session: LiveQuerySession) {
 
 function scheduleIdleClose(session: LiveQuerySession) {
   clearIdleTimer(session);
+  const idleMs = liveQueries.size > WARM_QUERIES_PER_INSTANCE ? CROWDED_IDLE_MS : LIVE_QUERY_IDLE_MS;
   session.idleTimer = setTimeout(() => {
     if (session.turn) return;
     void disposeLiveQuery(session.conversationId);
-  }, LIVE_QUERY_IDLE_MS);
+  }, idleMs);
+  session.idleTimer.unref?.();
+}
+
+function closeLiveQuery(session: LiveQuerySession) {
+  clearIdleTimer(session);
+  if (liveQueries.get(session.conversationId) === session) liveQueries.delete(session.conversationId);
+  try {
+    session.query.close();
+  } catch (error) {
+    console.warn('[agent] failed to close the SDK query', error);
+  }
+  session.queue.close();
 }
 
 function disposeLiveQuery(conversationId: string) {
   const session = liveQueries.get(conversationId);
   if (!session || session.turn) return false;
-  clearIdleTimer(session);
-  liveQueries.delete(conversationId);
-  try {
-    session.query.close();
-  } catch (error) {
-    console.warn('[agent] failed to close the idle SDK query', error);
+  closeLiveQuery(session);
+  // The instance has 512 MB of disk for every conversation it hosts. A copy
+  // already in Blob is downloaded again if this process resumes the session.
+  if (session.transcriptSaved && session.transcriptPath) {
+    void rm(session.transcriptPath, { force: true }).catch(() => undefined);
   }
-  session.queue.close();
   return true;
+}
+
+// A newer owner may have run turns this process never saw. The in-memory CLI
+// session is behind them, so it is dropped and the next turn here resumes from
+// the transcript in Blob.
+onOwnershipLost((conversationId) => {
+  const session = liveQueries.get(conversationId);
+  if (session) closeLiveQuery(session);
+});
+
+const FENCED_REASON = 'This conversation was taken over by a newer session. Stop now; do not retry.';
+
+/** Before every tool call: a replaced owner stops instead of touching the sandbox. */
+function fenceHook(session: LiveQuerySession) {
+  return {
+    hooks: [async (input: HookInput): Promise<SyncHookJSONOutput> => {
+      if (input.hook_event_name !== 'PreToolUse') return {};
+      if (await confirmEpoch(session.context, session.conversationId, { cacheMs: OWNER_CHECK_CACHE_MS })) {
+        return {};
+      }
+      return {
+        continue: false,
+        stopReason: FENCED_REASON,
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'deny',
+          permissionDecisionReason: FENCED_REASON,
+        },
+      };
+    }],
+  };
 }
 
 async function persistTranscript(session: LiveQuerySession) {
   if (!session.sessionId || !session.transcriptPath) return;
+  session.transcriptSaved = false;
   await uploadTranscript({
     context: session.context,
     conversationId: session.conversationId,
     sessionId: session.sessionId,
     sourcePath: session.transcriptPath,
   });
+  session.transcriptSaved = true;
 }
 
 
@@ -434,14 +491,8 @@ async function pumpSession(session: LiveQuerySession) {
         ...flagsFrom(session),
       }));
     }
-    liveQueries.delete(session.conversationId);
-    clearIdleTimer(session);
-    try {
-      session.query.close();
-    } catch (error) {
-      console.warn('[agent] failed to close the SDK query', error);
-    }
-    session.queue.close();
+    // Only this session's entry: a replacement may already be registered.
+    closeLiveQuery(session);
   }
 }
 
@@ -516,6 +567,26 @@ async function startLiveQuery(options: StartLiveQueryOptions): Promise<LiveQuery
     }
   }
 
+  const writeHooks = projectWriteHooks({
+    get context() {
+      return session.context;
+    },
+    get state() {
+      return session.getState();
+    },
+    get conversationId() {
+      return session.conversationId;
+    },
+    get send() {
+      return session.getCallbacks().send;
+    },
+    onWritten: async (file) => {
+      session.flags.projectTouched = true;
+      session.flags.filesWritten = true;
+      await session.getCallbacks().onProjectFilesChanged?.(file);
+    },
+  });
+
   const sdkOptions: Parameters<typeof query>[0]['options'] = {
     model,
     permissionMode: 'dontAsk',
@@ -575,25 +646,8 @@ async function startLiveQuery(options: StartLiveQueryOptions): Promise<LiveQuery
           return {};
         }],
       }],
-      ...projectWriteHooks({
-        get context() {
-          return session.context;
-        },
-        get state() {
-          return session.getState();
-        },
-        get conversationId() {
-          return session.conversationId;
-        },
-        get send() {
-          return session.getCallbacks().send;
-        },
-        onWritten: async (file) => {
-          session.flags.projectTouched = true;
-          session.flags.filesWritten = true;
-          await session.getCallbacks().onProjectFilesChanged?.(file);
-        },
-      }),
+      ...writeHooks,
+      PreToolUse: [fenceHook(session), ...writeHooks.PreToolUse],
     },
     ...(session.sessionId ? { resume: session.sessionId } : {}),
   };
@@ -675,6 +729,8 @@ export async function runCodingAgent(options: RunCodingAgentOptions): Promise<Co
   session.flags.filesWritten = false;
   session.flags.previewTouched = false;
   session.flags.deploymentTouched = false;
+  // This turn appends to the local JSONL; only its own upload makes it safe to drop.
+  session.transcriptSaved = false;
 
   const abort = () => {
     void interruptLiveQuery(options.conversationId);

@@ -71,6 +71,11 @@ export type ChatTask = {
   status: ChatTaskStatus;
   createdAt: number;
   startedAt?: number;
+  /**
+   * Written by the running turn at a steady interval. A running turn whose
+   * progress is fresh has a live owner somewhere, even if not in this process.
+   */
+  progressAt?: number;
   finishedAt?: number;
   error?: string;
 };

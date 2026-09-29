@@ -8,9 +8,10 @@ import {
   createConversationId,
   createMessageId,
   getOrCreateCachedConversationId,
+  markLastTurnStopped,
 } from '@/app/lib/conversation';
 import type { AssistantStatus, ChatMessage } from '@/app/types/workspace';
-import { startPromptTurn } from '../workspace-api';
+import { startPromptTurn, stopChatTask } from '../workspace-api';
 import type { PreviewSurfaceApi } from './use-preview-surface';
 import type { WorkspaceStateApi } from './use-workspace-state';
 import type { WorkspaceSnapshotApi } from './use-workspace-snapshot';
@@ -253,32 +254,42 @@ export function useLiveTurn(options: {
     }
   }
 
+  // A stop settles twice: the /stop request answers, and the turn's stream
+  // delivers its stopped result. The composer stays in "stopping" until both.
+  useEffect(() => {
+    if (!loading && !stopInFlightRef.current) setStopping(false);
+  }, [loading, setStopping, stopInFlightRef]);
+
   function stopCurrentTask(stopOptions: { discardProject?: boolean } = {}) {
     const cid = conversationIdRef.current || conversationId;
     if (!loadingRef.current || !cid || stoppingRef.current || stopInFlightRef.current) return null;
     stoppingRef.current = true;
     stopInFlightRef.current = true;
     setStopping(true);
-    const workspaceEpoch = workspaceEpochRef.current;
-    const stop = beginStop({
-      conversationId: cid,
-      messages: messagesRef.current,
-      activeTurnId: activeTurnIdRef.current,
-      stopOptions,
-      workspaceEpoch,
-      currentWorkspaceEpoch: () => workspaceEpochRef.current,
-      onSettled: () => {
-        stopInFlightRef.current = false;
-        setStopping(false);
-      },
-    });
-    setMessages(stop.messages);
-    setLoading(false);
     workspace.setGatewayNeeded(false);
     workspace.setGatewayBusy(false);
     workspace.setGatewaySavedVisible(false);
-    chatAbortControllerRef.current?.abort();
-    return stop.request;
+    const workspaceEpoch = workspaceEpochRef.current;
+    const stream = chatAbortControllerRef.current;
+    // The stream carries the stopped result and is the request the server-side
+    // turn runs inside while it saves. Only leaving the project closes it now.
+    if (stopOptions.discardProject) stream?.abort();
+    return beginStop({
+      conversationId: cid,
+      discardProject: stopOptions.discardProject,
+      requestStop: stopChatTask,
+      isCurrent: () => workspaceEpochRef.current === workspaceEpoch,
+      streamOpen: () => stream !== null && chatAbortControllerRef.current === stream,
+      settleLocally: () => {
+        setMessages((current) => markLastTurnStopped(current, '').messages);
+        setLoading(false);
+        stream?.abort();
+      },
+      onSettled: () => {
+        stopInFlightRef.current = false;
+        if (!loadingRef.current) setStopping(false);
+      },
+    });
   }
 
   const applyGateway = createApplyGateway({

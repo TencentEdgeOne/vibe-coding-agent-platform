@@ -8,7 +8,10 @@ import {
   PREVIEW_PUBLIC_PORT,
   PREVIEW_SERVER_PORT,
 } from '../agents/_lib/constants.ts';
-import { MAKERS_DEV_LAUNCH_TIMEOUT_SECONDS } from '../agents/_lib/makers/cli-dev.ts';
+import {
+  MAKERS_DEV_FRONTEND_EXIT,
+  MAKERS_DEV_LAUNCH_TIMEOUT_SECONDS,
+} from '../agents/_lib/makers/cli-dev.ts';
 import {
   OFFICIAL_NPM_REGISTRY,
   TENCENT_NPM_REGISTRY,
@@ -447,6 +450,52 @@ test('direct makers dev names the missing runtime key when the sandbox CLI canno
   assert.equal(result.isError, true);
   assert.match(output, /Missing API_TOKEN in the Agent Runtime/);
   assert.doesNotMatch(output, /edgeone makers dev exited with code 1/);
+});
+
+test('a dead frontend dev server is not a reason to launch the preview again', async () => {
+  const commandsTool = {
+    name: 'commands',
+    description: 'run',
+    inputSchema: {},
+    handler: async () => ({
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          stdout: `MAKERS_DEV_EXIT:${MAKERS_DEV_FRONTEND_EXIT}\n`,
+          stderr: [
+            'edgeone makers dev is listening on port 8088, but the frontend dev server it proxies to already exited.',
+            "Error: Cannot find module 'next'",
+            '[cli] WARNING: Dev command exited with code 1',
+          ].join('\n'),
+          exitCode: 0,
+        }),
+      }],
+    }),
+  } as unknown as ClaudeMcpTool;
+  const [wrapped] = wrapSandboxTools([commandsTool], {
+    conversationId: 'cid-commands-wrap',
+    context: {
+      env: {},
+      sandbox: {
+        files: { write: async () => {} },
+        commands: {
+          run: async () => ({ stdout: '', stderr: '', exitCode: 0 }),
+        },
+      },
+    },
+    state: projectState(),
+  });
+
+  const result = await wrapped.handler({ command: 'edgeone makers dev' }, {});
+  const output = result.content.map((item) => (
+    item && typeof item === 'object' && 'text' in item ? item.text : ''
+  )).join('\n');
+
+  assert.equal(result.isError, true);
+  assert.match(output, /Cannot find module 'next'/);
+  assert.match(output, /MAKERS_DEV_FRONTEND_EXIT/);
+  assert.match(output, /"retryable":false/);
+  assert.match(output, /Do not start the preview again/);
 });
 
 test('direct makers deploy reports durable deployment state without replacing preview', async () => {

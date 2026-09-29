@@ -28,6 +28,12 @@ export const STOPPED_TURN_REPLY: Readonly<Record<ReplyLocale, string>> = {
   en: '',
 };
 
+/** A turn wound down at its time budget. The work so far is saved. */
+export const TURN_LIMIT_REPLY: Readonly<Record<ReplyLocale, string>> = {
+  zh: '这一轮已达到单轮时长上限，已保存目前的进度。发送“继续”接着完成。',
+  en: 'This turn reached its time limit and its progress is saved. Send "continue" to pick up where it left off.',
+};
+
 export function compactUserFacingReply(text: string, fallback: string) {
   const normalized = text.replace(/\r/g, '').trim();
   if (!normalized) return fallback;

@@ -1,11 +1,14 @@
 import { getStore } from '@edgeone/pages-blob';
 import { createProjectState } from '../project/state.ts';
+import { assertCanWrite, heldEpoch } from './ownership.ts';
 import type { BlobStoreLike, PersistCapable } from '../runtime/context.ts';
 import type { ChatTask, ProjectState } from '../types.ts';
 
 const BLOB_STORE_NAME = 'vibe-sessions';
 
 export type ConversationRecord = {
+  /** Latest epoch the writer of this record held. A hint: newer ones may exist. */
+  epoch?: number;
   claudeSessionId?: string;
   transcriptPath?: string;
   modelPreference?: string;
@@ -22,10 +25,24 @@ export function transcriptBlobKey(sessionId: string) {
   return `sessions/${sessionId}.jsonl`;
 }
 
+/** `@edgeone/pages-blob` throws this code when an `onlyIfNew` write finds the key taken. */
+export const PRECONDITION_FAILED = 'PRECONDITION_FAILED';
+
+export function isPreconditionFailed(error: unknown) {
+  return Boolean(error) && (error as { code?: unknown }).code === PRECONDITION_FAILED;
+}
+
+function preconditionFailed() {
+  return Object.assign(new Error('conditional write failed (key already exists)'), {
+    code: PRECONDITION_FAILED,
+  });
+}
+
 export function createMemoryBlobStore(): BlobStoreLike {
   const data = new Map<string, { kind: 'json' | 'bytes'; value: unknown }>();
   return {
-    async set(key, value) {
+    async set(key, value, options) {
+      if (options?.onlyIfNew && data.has(key)) throw preconditionFailed();
       if (typeof value === 'string') {
         data.set(key, { kind: 'bytes', value });
         return;
@@ -54,14 +71,17 @@ export function createMemoryBlobStore(): BlobStoreLike {
       }
       data.set(key, { kind: 'bytes', value: String(value) });
     },
-    async setJSON(key, value) {
-      data.set(key, { kind: 'json', value });
+    // Stored as text and parsed on every read, like the real store: two reads
+    // return two objects, never one shared reference.
+    async setJSON(key, value, options) {
+      if (options?.onlyIfNew && data.has(key)) throw preconditionFailed();
+      data.set(key, { kind: 'json', value: JSON.stringify(value) });
     },
     async get(key, options) {
       const entry = data.get(key);
       if (!entry) return null;
+      const text = String(entry.value);
       if (options?.type === 'stream') {
-        const text = entry.kind === 'bytes' ? String(entry.value) : JSON.stringify(entry.value);
         return new ReadableStream({
           start(controller) {
             controller.enqueue(new TextEncoder().encode(text));
@@ -69,10 +89,8 @@ export function createMemoryBlobStore(): BlobStoreLike {
           },
         });
       }
-      if (options?.type === 'json' || entry.kind === 'json') {
-        return entry.kind === 'json' ? entry.value : JSON.parse(String(entry.value));
-      }
-      return entry.kind === 'bytes' ? entry.value : JSON.stringify(entry.value);
+      if (options?.type === 'json' || entry.kind === 'json') return JSON.parse(text);
+      return text;
     },
     async delete(key) {
       data.delete(key);
@@ -97,14 +115,57 @@ export function getBlobStore(context?: PersistCapable): BlobStoreLike {
 }
 
 /**
- * One wake reads `conv/{id}/state.json` about a dozen times over
- * strong-consistency Blob. The request `context` is the natural lifetime for a
- * memo of it — a WeakMap on it cannot outlive the request or leak across
- * conversations. Writes stay read-modify-write against the blob so a
- * concurrent request's field is never clobbered, and refresh this entry so a
- * read after a write in the same request sees the new value.
+ * Outside the owner, one wake reads `conv/{id}/state.json` about a dozen times
+ * over strong-consistency Blob. The request `context` is the natural lifetime
+ * for a memo of it: a WeakMap on it cannot outlive the request or leak across
+ * conversations.
  */
 const recordCache = new WeakMap<object, Map<string, ConversationRecord>>();
+
+type RecordHost = { epoch: number; record: ConversationRecord; writing: Promise<void> };
+
+/** Owner copies per Blob store, so contexts with their own store do not share. */
+const DEFAULT_SCOPE = {};
+const hostsByScope = new WeakMap<object, Map<string, RecordHost>>();
+
+function hostsFor(context: { blobStore?: BlobStoreLike }) {
+  const scope: BlobStoreLike | object = context.blobStore ?? DEFAULT_SCOPE;
+  let hosts = hostsByScope.get(scope);
+  if (!hosts) {
+    hosts = new Map();
+    hostsByScope.set(scope, hosts);
+  }
+  return hosts;
+}
+
+/**
+ * The owner's copy of the record. While this process holds the conversation's
+ * epoch it is the only writer, so its in-memory record is the truth: every
+ * request reads the same object, a patch applies to it at once, and a write
+ * sends it whole. There is no read-modify-write left for two requests to race.
+ */
+function ownerHost(context: { blobStore?: BlobStoreLike }, conversationId: string) {
+  const hosts = hostsFor(context);
+  const host = hosts.get(conversationId);
+  if (!host) return undefined;
+  if (heldEpoch(context, conversationId) === host.epoch) return host;
+  hosts.delete(conversationId);
+  return undefined;
+}
+
+/** Writes go out one after another, each carrying the latest record. */
+async function writeHost(context: { blobStore?: BlobStoreLike }, conversationId: string, host: RecordHost) {
+  const write = host.writing.then(() => (
+    getBlobStore(context).setJSON(conversationKey(conversationId), host.record)
+  ));
+  host.writing = write.catch(() => undefined);
+  await write;
+  recordCacheFor(context)?.set(conversationId, host.record);
+}
+
+function mergeRecord(current: ConversationRecord, patch: Partial<ConversationRecord>): ConversationRecord {
+  return { ...current, ...patch, projectState: patch.projectState || current.projectState };
+}
 
 function recordCacheFor(context: { blobStore?: BlobStoreLike }) {
   if (!context || typeof context !== 'object') return null;
@@ -121,6 +182,9 @@ export async function getConversationRecord(
   /** `refresh` is for callers that poll for another writer's field. */
   options: { refresh?: boolean } = {},
 ): Promise<ConversationRecord> {
+  // The owner has no other writer to poll for, so even a refresh reads its copy.
+  const host = ownerHost(context, conversationId);
+  if (host) return host.record;
   const cache = recordCacheFor(context);
   if (!options.refresh) {
     const cached = cache?.get(conversationId);
@@ -137,28 +201,49 @@ export async function getConversationRecord(
   return record;
 }
 
-export async function saveConversationRecord(
-  context: { blobStore?: BlobStoreLike },
+/**
+ * The record a new owner starts from, written whole. Replaces any copy this
+ * process kept from an earlier epoch.
+ */
+export async function adoptConversationRecord(
+  context: { blobStore?: BlobStoreLike; epoch?: number },
   conversationId: string,
   record: ConversationRecord,
 ) {
-  await getBlobStore(context).setJSON(conversationKey(conversationId), record);
-  recordCacheFor(context)?.set(conversationId, record);
+  await assertCanWrite(context, conversationId);
+  const host: RecordHost = { epoch: context.epoch as number, record, writing: Promise.resolve() };
+  hostsFor(context).set(conversationId, host);
+  await writeHost(context, conversationId, host);
 }
 
+/** Every record write passes the ownership guard: a replaced owner cannot write. */
 export async function patchConversationRecord(
-  context: { blobStore?: BlobStoreLike },
+  context: { blobStore?: BlobStoreLike; epoch?: number },
   conversationId: string,
   patch: Partial<ConversationRecord>,
 ) {
+  const held = ownerHost(context, conversationId);
+  if (held) {
+    // Applied before any await, so a concurrent patch builds on this one.
+    held.record = mergeRecord(held.record, patch);
+    await assertCanWrite(context, conversationId);
+    await writeHost(context, conversationId, held);
+    return held.record;
+  }
+
   const current = await getConversationRecord(context, conversationId, { refresh: true });
-  const next: ConversationRecord = {
-    ...current,
-    ...patch,
-    projectState: patch.projectState || current.projectState,
+  // Entering may claim the conversation, and a claim adopts a fresh record.
+  await assertCanWrite(context, conversationId);
+  const adopted = ownerHost(context, conversationId);
+  const host: RecordHost = adopted ?? {
+    epoch: context.epoch as number,
+    record: current,
+    writing: Promise.resolve(),
   };
-  await saveConversationRecord(context, conversationId, next);
-  return next;
+  host.record = mergeRecord(host.record, patch);
+  hostsFor(context).set(conversationId, host);
+  await writeHost(context, conversationId, host);
+  return host.record;
 }
 
 export async function getProjectState(context: { blobStore?: BlobStoreLike }, conversationId: string) {

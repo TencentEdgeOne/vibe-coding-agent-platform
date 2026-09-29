@@ -48,6 +48,53 @@ export const MAKERS_DEV_PORT_DRIFT_EXIT = 60;
 export const MAKERS_DEV_APP_ERROR_EXIT = 61;
 
 /**
+ * The CLI is up, and the frontend process it proxies to has already exited.
+ *
+ * Distinct from 124: that one is "still starting, keep waiting", and a relaunch
+ * can be the right next step. This one is "the dev command already ended", so
+ * launching again runs the same command and fails the same way. The caller has
+ * to fix what the log names.
+ */
+export const MAKERS_DEV_FRONTEND_EXIT = 62;
+
+/**
+ * What the CLI prints once a second while its frontend port is closed.
+ *
+ * The readiness poll is what generates these, and a tail of the log is then
+ * nothing but them. The frontend's own output — the line that says the dev
+ * command exited, the missing module — sits above that and never gets read.
+ * `}` closes the Node stack `console.error` writes after `proxy error`.
+ */
+const FRONTEND_PROXY_NOISE_AWK = [
+  '/^proxy error / { skip=1; next }',
+  'skip && /^}[[:space:]]*$/ { skip=0; next }',
+  'skip { next }',
+  '{ print }',
+].join('\n');
+
+const FRONTEND_REFUSAL_SUMMARY = 'The CLI is up and proxying to its frontend dev server, which refused the connection';
+
+const FRONTEND_REFUSAL_DETAIL = 'The port in that error is the frontend (6699 unless the CLI moved it), not the agent runtime.';
+
+/**
+ * The dev log with the poll's proxy stacks removed, plus one line naming them.
+ *
+ * `logPath` is already shell-quoted, or `"$1"` inside the launcher's function.
+ * A missing file prints nothing: the boot has not written a log yet, which is
+ * not a failure of the read.
+ */
+export function makersDevLogExcerptScript(logPath: string, lines = 80) {
+  const kept = Number.isInteger(lines) && lines > 0 ? lines : 80;
+  return [
+    `proxy_refusals=$(grep -c '^proxy error ' ${logPath} 2>/dev/null || true)`,
+    'if [ "${proxy_refusals:-0}" -gt 0 ]; then',
+    `  echo "${FRONTEND_REFUSAL_SUMMARY} \${proxy_refusals} time(s). ${FRONTEND_REFUSAL_DETAIL}"`,
+    'fi',
+    `awk ${shellQuote(FRONTEND_PROXY_NOISE_AWK)} ${logPath} 2>/dev/null | tail -n ${kept}`,
+  ].join('\n');
+}
+
+/**
  * Lines that mean a request reached the app and the app threw.
  *
  * Deliberately narrow. Anything matched here ends the poll early, so a pattern
@@ -481,6 +528,11 @@ export function buildMakersDevBackgroundCommand({
     '  elif command -v lsof >/dev/null 2>&1; then lsof -ti "tcp:$1" | xargs kill -9 >/dev/null 2>&1 || true',
     '  fi',
     '}',
+    // Defined beside the other helpers so both the failure report and a live
+    // tail can drop the same stacks. See makersDevLogExcerptScript.
+    'report_makers_dev_log() {',
+    makersDevLogExcerptScript('"$1"'),
+    '}',
     ...(!forceRestart ? [
       `if preview_proxy_matches && curl --noproxy '*' -fsS ${shellQuote(readyUrl)} >/dev/null 2>&1; then`,
       '  echo "MAKERS_DEV_READY=already-running"',
@@ -531,6 +583,7 @@ export function buildMakersDevBackgroundCommand({
     '  proxy_pid=$!',
     'fi',
     "bound_port=''",
+    'frontend_dead=0',
     `for i in $(seq 1 ${MAKERS_DEV_READY_POLL_SECONDS}); do`,
     `  if curl --noproxy '*' -fsS ${shellQuote(proxyHealthUrl)} >/dev/null 2>&1 \\`,
     `    && curl --noproxy '*' -fsS ${shellQuote(readyUrl)} >/dev/null 2>&1; then`,
@@ -550,6 +603,12 @@ export function buildMakersDevBackgroundCommand({
     } 2>/dev/null | head -n 1 | tr -dc '0-9')`,
     '  fi',
     `  if [ -n "$bound_port" ] && [ "$bound_port" != "${makersPort}" ]; then break; fi`,
+    // The CLI keeps proxying after its frontend child dies, and every later
+    // second of this poll is a connection the child will never accept. The
+    // line is the CLI's own, written once, so this is a fact rather than a guess.
+    `  if grep -qE ${shellQuote('Dev command exited|Error executing dev command')} ${
+      shellQuote(MAKERS_DEV_LOG_PATH)
+    } 2>/dev/null; then frontend_dead=1; break; fi`,
     // The poll's own request is what makes the app throw, so the error count
     // climbs once per second for as long as we keep asking. Reading it turns
     // the second failure that looks like a slow start into a fact: the server
@@ -568,6 +627,19 @@ export function buildMakersDevBackgroundCommand({
     `  echo "MAKERS_DEV_EXIT:${MAKERS_DEV_PORT_DRIFT_EXIT}"`,
     '  exit 0',
     'fi',
+    // Ahead of the throw counter: a command that has exited can also have
+    // printed Error: lines, and those are the exit, not a route that throws
+    // on every request.
+    'if [ "$frontend_dead" = 1 ]; then',
+    `  echo "edgeone makers dev is listening on port ${makersPort}, but the frontend dev server it proxies to already exited, so the preview cannot become ready. Starting the preview again runs that same command and fails the same way. Fix what the log names." >&2`,
+    '  echo "--- makers-dev log ---" >&2',
+    `  report_makers_dev_log ${shellQuote(MAKERS_DEV_LOG_PATH)} >&2`,
+    '  echo "--- preview proxy log ---" >&2',
+    '  tail -n 80 /tmp/preview-proxy.log >&2 2>/dev/null || true',
+    '  kill $proxy_pid "$dev_pid" >/dev/null 2>&1 || true',
+    `  echo "MAKERS_DEV_EXIT:${MAKERS_DEV_FRONTEND_EXIT}"`,
+    '  exit 0',
+    'fi',
     `if [ "\${app_errors:-0}" -ge ${MAKERS_DEV_APP_ERROR_THRESHOLD} ]; then`,
     `  echo "edgeone makers dev is serving on port ${makersPort}, but the project throws on every request, so the preview cannot become ready. Fix what the error below names and start the preview again; relaunching on its own changes nothing." >&2`,
     // One throw repeated eighty times used to be the whole of this report, and
@@ -584,9 +656,9 @@ export function buildMakersDevBackgroundCommand({
     `  echo "MAKERS_DEV_EXIT:${MAKERS_DEV_APP_ERROR_EXIT}"`,
     '  exit 0',
     'fi',
-    `echo "edgeone makers dev did not become ready on port ${makersPort} (proxied via ${previewPort}${prefix}/)." >&2`,
+    `echo "edgeone makers dev did not become ready on port ${makersPort} (proxied via ${previewPort}${prefix}/). The CLI proxies the application to its frontend dev server; connection refused there means that server never accepted connections. Repeated proxy stacks are omitted below." >&2`,
     'echo "--- makers-dev log ---" >&2',
-    `tail -n 160 ${shellQuote(MAKERS_DEV_LOG_PATH)} >&2 2>/dev/null || true`,
+    `report_makers_dev_log ${shellQuote(MAKERS_DEV_LOG_PATH)} >&2`,
     'echo "--- preview proxy log ---" >&2',
     'tail -n 80 /tmp/preview-proxy.log >&2 2>/dev/null || true',
     'dev_status=124',

@@ -12,6 +12,7 @@ import {
   MAKERS_DEV_LOG_PATH,
   buildMakersDevBackgroundCommand,
   buildMakersDevLaunchCommand,
+  makersDevLogExcerptScript,
   parseMakersDevExitCode,
 } from '../makers/cli-dev.ts';
 import { redactSecret } from '../makers/cli-deploy.ts';
@@ -126,6 +127,7 @@ export async function followSandboxLog(
   logPath: string,
   stop: () => boolean,
   onTail: (tail: string) => void,
+  readCommand?: string,
 ) {
   let previous = '';
   while (!stop()) {
@@ -134,7 +136,7 @@ export async function followSandboxLog(
     try {
       const poll = await runSandboxCommand(
         context,
-        `tail -n 40 ${shellQuote(logPath)} 2>/dev/null || true`,
+        readCommand ?? `tail -n 40 ${shellQuote(logPath)} 2>/dev/null || true`,
         { timeout: 15 },
       );
       const tail = poll.stdout.trim();
@@ -149,20 +151,50 @@ export async function followSandboxLog(
   }
 }
 
+type PreviewServerOptions = {
+  forceRestart?: boolean;
+  /** Live text for the row a person is watching. Absent callers stay quiet. */
+  onProgress?: (text: string) => void;
+};
+
+const previewStarts = new Map<string, Promise<ReturnType<typeof previewServerInfo>>>();
+
+/**
+ * One start per project at a time. The preview panel, the agent's
+ * start_preview tool, and its own `edgeone makers dev` command all end up here,
+ * often together; a second CLI on the same port breaks the first. A caller
+ * that does not force a restart joins the start in flight; a forced restart
+ * runs after it.
+ */
+export function startPreviewServer(
+  context: AgentContext,
+  state: ProjectState,
+  options: PreviewServerOptions = {},
+) {
+  const key = state.appDir;
+  const inFlight = previewStarts.get(key);
+  if (inFlight && !options.forceRestart) return inFlight;
+  const start = (inFlight ?? Promise.resolve())
+    .catch(() => undefined)
+    .then(() => launchPreviewServer(context, state, options));
+  previewStarts.set(key, start);
+  const clear = () => {
+    if (previewStarts.get(key) === start) previewStarts.delete(key);
+  };
+  start.then(clear, clear);
+  return start;
+}
+
 /**
  * Lint the project, prepare the Makers session, launch makers dev, and report
  * where it is listening. Whether the generated pages and routes actually answer
  * is the agent's question, asked through its own tools after it has the URL — a
  * preview must not turn a slow boot or a broken route into "no preview at all".
  */
-export async function startPreviewServer(
+async function launchPreviewServer(
   context: AgentContext,
   state: ProjectState,
-  options: {
-    forceRestart?: boolean;
-    /** Live text for the row a person is watching. Absent callers stay quiet. */
-    onProgress?: (text: string) => void;
-  } = {},
+  options: PreviewServerOptions,
 ) {
   await assertMakersProjectCompatible(context, state);
   const projectName = resolveMakersProjectName(context, state);
@@ -192,7 +224,7 @@ export async function startPreviewServer(
     ? followSandboxLog(context, MAKERS_DEV_LOG_PATH, () => launchStopped, (tail) => {
       launchLog = redactSecret(redactSecret(tail, makers.sandboxToken), makers.gatewayKey);
       options.onProgress?.(formatPreviewProgress('Starting the preview server', launchLog));
-    })
+    }, makersDevLogExcerptScript(shellQuote(MAKERS_DEV_LOG_PATH), 40))
     : Promise.resolve();
   let startResult: Awaited<ReturnType<typeof runSandboxCommand>>;
   try {

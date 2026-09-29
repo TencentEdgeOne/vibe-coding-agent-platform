@@ -8,10 +8,12 @@ import path from 'node:path';
 import test from 'node:test';
 import {
   MAKERS_DEV_APP_ERROR_EXIT,
+  MAKERS_DEV_FRONTEND_EXIT,
   MAKERS_DEV_LAUNCH_TIMEOUT_SECONDS,
   MAKERS_DEV_LOG_PATH,
   MAKERS_DEV_PID_PATH,
   MAKERS_DEV_PORT_DRIFT_EXIT,
+  makersDevLogExcerptScript,
   MAKERS_DEV_READY_POLL_SECONDS,
   buildMakersDevBackgroundCommand,
   buildMakersDevLaunchCommand,
@@ -27,6 +29,7 @@ import {
   previewUpstreamClaimsPrefix,
   rewritePreviewProxyPath,
 } from '../agents/_lib/makers/cli-dev.ts';
+import { shellQuote } from '../agents/_lib/utils/shell.ts';
 import {
   MAKERS_DEV_PORT,
   PREVIEW_ASSET_PREFIX_ENV,
@@ -377,9 +380,70 @@ test('a dev server that throws on every request ends the poll instead of timing 
   assert.ok(
     appError !== 124
       && appError !== MAKERS_DEV_PORT_DRIFT_EXIT
+      && appError !== MAKERS_DEV_FRONTEND_EXIT
       && (appError < 125 || appError > 129),
     `${appError} collides`,
   );
+});
+
+// The readiness poll asks once a second, and each miss is a proxy stack the
+// CLI writes into the same log as the frontend. After a few minutes the tail
+// is only those stacks, and the reason the frontend never bound — here, the
+// dev command already exited — is above them and never reported. Relaunching
+// then looks like the remedy for a slow first build.
+test('a frontend dev server that has exited ends the poll and is not reported as proxy noise', async () => {
+  const command = buildMakersDevBackgroundCommand({
+    makersPort: MAKERS_DEV_PORT,
+    previewPort: PREVIEW_SERVER_PORT,
+    previewPath: PREVIEW_PATH_PREFIX,
+    projectName: 'vibe-coding-playground',
+    assetPrefixEnvName: PREVIEW_ASSET_PREFIX_ENV,
+  });
+
+  assert.match(command, /frontend_dead=1; break/);
+  assert.match(command, new RegExp(`MAKERS_DEV_EXIT:${MAKERS_DEV_FRONTEND_EXIT}`));
+  assert.match(command, /already exited/);
+  const frontendExit: number = MAKERS_DEV_FRONTEND_EXIT;
+  assert.ok(
+    frontendExit !== 124
+      && frontendExit !== MAKERS_DEV_PORT_DRIFT_EXIT
+      && frontendExit !== MAKERS_DEV_APP_ERROR_EXIT
+      && (frontendExit < 125 || frontendExit > 129),
+    `${frontendExit} collides`,
+  );
+
+  const stack = [
+    'proxy error Error: connect ECONNREFUSED 127.0.0.1:6699',
+    '    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:2021:16) {',
+    '  errno: -111,',
+    "  code: 'ECONNREFUSED',",
+    "  syscall: 'connect',",
+    "  address: '127.0.0.1',",
+    '  port: 6699',
+    '}',
+  ].join('\n');
+  const dir = await mkdtemp(path.join(tmpdir(), 'makers-dev-frontend-'));
+  try {
+    const logPath = path.join(dir, 'makers-dev.log');
+    await writeFile(
+      logPath,
+      [
+        'Running at: http://localhost:8088',
+        "Error: Cannot find module 'next'",
+        '[cli] WARNING: Dev command exited with code 1',
+        ...Array.from({ length: 30 }, () => stack),
+      ].join('\n') + '\n',
+    );
+    const reported = await runShell(makersDevLogExcerptScript(shellQuote(logPath)));
+    assert.match(reported, /Cannot find module 'next'/);
+    assert.match(reported, /Dev command exited with code 1/);
+    assert.match(reported, /refused the connection 30 time\(s\)/);
+    assert.match(reported, /not the agent runtime/);
+    assert.doesNotMatch(reported, /TCPConnectWrap/);
+    assert.doesNotMatch(reported, /ECONNREFUSED/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 // The report is worth as much as its signal-to-noise, and the raw log's is

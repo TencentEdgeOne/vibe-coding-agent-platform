@@ -237,10 +237,12 @@ export async function runChatPipeline(
     liveDeploymentUrl,
   );
 
+  // The result closes the request this turn runs in, and after that nothing is
+  // guaranteed to run, so the last snapshot is taken first.
   await finalizeTurn(
     assistantReply,
     modelResult.success ? 'completed' : 'failed',
-    { withState: false },
+    { withState: false, withSnapshot: true },
   );
   send({
     type: 'agent',
@@ -255,8 +257,4 @@ export async function runChatPipeline(
     reply: assistantReply,
     ...(modelResult.error ? { error: modelResult.error } : {}),
   });
-
-  // The result is already on the wire. Persisting the sandbox snapshot is the
-  // only post-result work left, and the stream can close while it runs.
-  void checkpoint.flush();
 }

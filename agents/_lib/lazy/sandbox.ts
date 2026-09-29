@@ -9,7 +9,7 @@
 import { requireSandbox, type AgentContext } from '../runtime/context.ts';
 import { getProjectState } from '../session/store.ts';
 import type { ProjectState, StreamSend } from '../types.ts';
-import { runSandboxCommand } from '../project/commands.ts';
+import { runCommandCapturingExit, runSandboxCommand } from '../project/commands.ts';
 import { getFileTree } from '../project/fs.ts';
 import { repairNestedAppDirLayout } from '../project/layout.ts';
 import { restorePersistedProject } from '../project/persistence.ts';
@@ -32,30 +32,32 @@ export type SandboxHandle = {
 };
 
 /**
- * Conversations whose sandbox this process has already booted.
- * Stop uses it to avoid persisting — and therefore booting — a sandbox that
- * was never started on this instance.
+ * The VM this process last confirmed holding the project, per conversation.
+ * A replaced VM has a new instance id, so the next activation probes and
+ * restores again. Keyed by that id rather than the sandbox object: the runtime
+ * builds a new proxy for every request, so across requests the object never
+ * matches, and session affinity is exactly what makes this cache worth having.
  */
-const activatedConversations = new Set<string>();
+const generations = new Map<string, { vm: unknown; appDir: string }>();
 
-export function sandboxWasActivated(conversationId: string) {
-  return activatedConversations.has(conversationId);
+/** The VM's instance id, once the client knows it; the proxy object otherwise. */
+function vmIdentity(sandbox: object & { getInfo?: () => { instanceId?: string } | undefined }): unknown {
+  try {
+    const instanceId = sandbox.getInfo?.()?.instanceId;
+    if (instanceId) return instanceId;
+  } catch {
+    // Not acquired yet: getInfo throws until the first sandbox call.
+  }
+  return sandbox;
 }
 
-/**
- * Files confirmed present for this sandbox object. A new VM is a new object,
- * so the next activation probes and restores again. The cached value is the
- * identity, not `ProjectState` — that object stays per request.
- */
-const generations = new Map<string, { sandbox: object; appDir: string }>();
-
-function sameGeneration(conversationId: string, sandbox: object, appDir: string) {
+function sameGeneration(conversationId: string, vm: unknown, appDir: string) {
   const entry = generations.get(conversationId);
-  return entry?.sandbox === sandbox && entry.appDir === appDir;
+  return entry !== undefined && entry.vm === vm && entry.appDir === appDir;
 }
 
-function rememberGeneration(conversationId: string, sandbox: object, appDir: string) {
-  generations.set(conversationId, { sandbox, appDir });
+function rememberGeneration(conversationId: string, vm: unknown, appDir: string) {
+  generations.set(conversationId, { vm, appDir });
 }
 
 /**
@@ -109,6 +111,15 @@ export function dependenciesReady(
     .finally(() => {
       if (installs.get(key) === job) installs.delete(key);
     });
+  // A file read starts this and returns. Node ends the process on a rejection
+  // nobody is waiting for, and the proxy reports that as a socket hang up.
+  void job.promise.catch((error: unknown) => {
+    console.warn('[sandbox]', {
+      stage: 'dependencies-failed',
+      cwd: key,
+      error: error instanceof Error ? error.message : String(error || ''),
+    });
+  });
   installs.set(key, job);
   return job.promise;
 }
@@ -123,41 +134,59 @@ async function installDependencies(
   if (await files.exists(`${state.appDir}/node_modules`)) return true;
 
   const report = (text: string) => job.report?.(text);
-  if (!job.report) {
-    const installed = await runSandboxCommand(context, 'npm install --no-audit --no-fund', {
-      cwd: state.appDir,
-      env: resolveSandboxNpmEnv(state.siteDomain),
-      timeout: READINESS_BUDGET_MS.dependencies / 1000,
-    });
-    return installed.exitCode === 0;
-  }
+  // The sandbox throws SANDBOX_UNKNOWN_ERROR for any non-zero shell and drops
+  // stdout and stderr. Echoing the status keeps the shell at 0 so npm's own
+  // log survives; runCommandCapturingExit reads that status back out.
+  const watching = Boolean(job.report);
+  if (watching) report(formatPreviewProgress('Installing dependencies'));
 
-  report(formatPreviewProgress('Installing dependencies'));
   let stopped = false;
   let detail = '';
-  const following = followSandboxLog(context, NPM_INSTALL_LOG, () => stopped, (tail) => {
-    detail = tail;
-    report(formatPreviewProgress('Installing dependencies', tail));
-  });
-  let installed: Awaited<ReturnType<typeof runSandboxCommand>>;
+  const following = watching
+    ? followSandboxLog(context, NPM_INSTALL_LOG, () => stopped, (tail) => {
+      detail = tail;
+      report(formatPreviewProgress('Installing dependencies', tail));
+    })
+    : undefined;
+
+  let failure = '';
   try {
-    installed = await runSandboxCommand(
+    const installed = await runCommandCapturingExit(
       context,
-      `npm install --no-audit --no-fund > ${NPM_INSTALL_LOG} 2>&1`,
+      watching
+        ? `npm install --no-audit --no-fund > ${NPM_INSTALL_LOG} 2>&1`
+        : 'npm install --no-audit --no-fund',
       {
         cwd: state.appDir,
         env: resolveSandboxNpmEnv(state.siteDomain),
         timeout: READINESS_BUDGET_MS.dependencies / 1000,
       },
     );
+    if (installed.exitCode !== 0) {
+      const output = [installed.stderr, installed.stdout]
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .join('\n');
+      failure = output || `npm install exited ${installed.exitCode}`;
+    }
+  } catch (error) {
+    // The runner still throws when the process dies before the echo can run,
+    // and that throw carries no npm output.
+    failure = error instanceof Error ? error.message : 'npm install failed';
   } finally {
     stopped = true;
-    await following;
+    if (following) await following;
   }
-  if (installed.exitCode !== 0) {
-    throw new Error(detail.trim() || 'npm install failed');
-  }
-  return true;
+
+  if (!failure) return true;
+  const message = detail.trim() || failure;
+  if (job.report) throw new Error(message);
+  console.warn('[sandbox]', {
+    stage: 'dependencies-failed',
+    cwd: state.appDir,
+    error: message,
+  });
+  return false;
 }
 
 function directoryAlreadyExists(error: unknown) {
@@ -228,11 +257,12 @@ async function activate(
   conversationId: string,
   options: { send?: StreamSend },
 ): Promise<SandboxHandle> {
-  activatedConversations.add(conversationId);
   const state = separateLegacyMakersDeployment(await getProjectState(context, conversationId));
   const sandbox = context.sandbox;
-  if (sandbox && sameGeneration(conversationId, sandbox, state.appDir)) {
-    await extendSandboxTimeout(context);
+  // Extending first also acquires the client, so the VM's id is known below.
+  await extendSandboxTimeout(context);
+  const vm = sandbox ? vmIdentity(sandbox) : undefined;
+  if (vm && sameGeneration(conversationId, vm, state.appDir)) {
     return {
       state,
       hasFiles: true,
@@ -240,7 +270,6 @@ async function activate(
     };
   }
 
-  await extendSandboxTimeout(context);
   await ensureWorkspaceDirectories(context, state);
 
   // A brand-new conversation has nothing to probe or unpack. The chat task
@@ -296,7 +325,7 @@ async function activate(
 
   if (hasFiles) {
     markCreated(state);
-    if (sandbox) rememberGeneration(conversationId, sandbox, state.appDir);
+    if (vm) rememberGeneration(conversationId, vm, state.appDir);
     try {
       await persistWorkspace(context, conversationId, state);
     } catch {

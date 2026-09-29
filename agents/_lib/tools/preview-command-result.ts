@@ -1,6 +1,7 @@
 import { ensurePreview } from '../lazy/preview.ts';
 import { describeMissingMakersRuntimeToken } from '../makers/token.ts';
 import {
+  MAKERS_DEV_FRONTEND_EXIT,
   MAKERS_DEV_PORT_DRIFT_EXIT,
   parseMakersDevExitCode,
 } from '../makers/cli-dev.ts';
@@ -48,6 +49,20 @@ export async function handleDevCommandResult(
           retryable: true,
           error: 'edgeone makers dev started on a port the preview proxy does not forward to, because the previous dev server still held the expected one.',
           instruction: 'Run the same preview command once more. Nothing in the generated project caused this, so do not change project files, and do not kill processes or free ports yourself — the launcher terminates the previous server before this next attempt.',
+        })),
+        isError: true,
+      };
+    }
+    // The port in the proxy error is the frontend dev server, not the agent
+    // runtime, and it has already exited. Another launch runs the same command.
+    if (devExitCode === MAKERS_DEV_FRONTEND_EXIT) {
+      return {
+        ...appendText(result, JSON.stringify({
+          status: 'error',
+          errorCode: 'MAKERS_DEV_FRONTEND_EXIT',
+          retryable: false,
+          error: 'The preview CLI is up, but the frontend dev server it proxies to already exited.',
+          instruction: 'Read the dev command output above and fix that failure. Do not start the preview again until that command can stay up; a retry runs the same command.',
         })),
         isError: true,
       };

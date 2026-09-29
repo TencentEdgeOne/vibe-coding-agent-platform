@@ -39,7 +39,7 @@ test('session is GET restore; turns go through /prompt', async () => {
   assert.match(prompt, /onRequestPost/);
   assert.match(prompt, /kind: 'prompt'/);
   assert.match(tasks, /export async function\* iterateLiveChatTaskEvents/);
-  assert.match(client, /fetch\('\/session'/);
+  assert.match(client, /fetch\(withQuery\('\/session'/);
   assert.match(client, /fetch\('\/prompt',[\s\S]*?method: 'POST'/);
   assert.doesNotMatch(client, /fetch\('\/deploy'/);
   assert.doesNotMatch(client, /fetch\('\/session-model'/);
@@ -70,7 +70,7 @@ test('initial session restore is one progressive SSE request that can attach a l
   assert.doesNotMatch(pipeline, /sessionPrepSse/);
   assert.match(pipeline, /iterateLiveChatTaskEvents/);
   assert.doesNotMatch(pipeline, /streamUrl: `\/chat\?runId=/);
-  assert.match(client, /fetch\('\/session'/);
+  assert.match(client, /fetch\(withQuery\('\/session'/);
 });
 
 test('the session tab reads the raw JSONL transcript and does not project it', async () => {
@@ -87,7 +87,7 @@ test('the session tab reads the raw JSONL transcript and does not project it', a
   assert.match(pipeline, /export async function loadTranscriptJsonl/);
   assert.match(pipeline, /export async function createTranscriptStreamResponse/);
   assert.match(pipeline, /type: 'transcript'/);
-  assert.match(client, /fetch\('\/transcript',[\s\S]*?method: 'GET'/);
+  assert.match(client, /fetch\(withQuery\('\/transcript',[\s\S]*?method: 'GET'/);
   assert.match(panel, /openTranscriptStream\(/);
   assert.match(panel, /consumeEventStream/);
   assert.match(panel, /\{state\.jsonl\}/);
@@ -118,39 +118,34 @@ test('an untouched new project does not persist an empty conversation', async ()
   assert.doesNotMatch(startBlock, /createConversationId\(/);
 });
 
-// Sticky routing pins makers-conversation-id to one agent instance. /stop is the
-// only route that must omit it: abortActiveRun has to reach a stuck instance,
-// and the header would pin the request to that same instance.
-test('/stop is the only agent route that omits makers-conversation-id', async () => {
+// Session affinity keys on makers-conversation-id, and a stop has to land on
+// the instance running the turn: the stop there is a local one, not the
+// platform's abortActiveRun, which only reaches runs in its own process.
+test('/stop carries makers-conversation-id like every other agent route', async () => {
   const client = await surface('app/features/workspace/workspace-api.ts');
   const start = client.indexOf('export async function stopChatTask');
   const end = client.indexOf('export function fetchProjectArchive');
   const stopFn = client.slice(start, end);
+  const stopRoute = await readFile('agents/stop.ts', 'utf8');
 
   assert.ok(start >= 0 && end > start);
-  assert.match(stopFn, /No makers-conversation-id/);
-  assert.doesNotMatch(stopFn, /conversationHeaders\(/);
-  assert.doesNotMatch(stopFn, /'makers-conversation-id'/);
+  assert.match(stopFn, /headers: conversationHeaders\(conversationId\)/);
   assert.match(stopFn, /conversation_id: conversationId/);
-  assert.match(stopFn, /'content-type': 'application\/json'/);
-  const others = client.replace(stopFn, '');
-  assert.match(others, /conversationHeaders\(/);
-  assert.match(others, /'makers-conversation-id': conversationId/);
+  assert.doesNotMatch(stopRoute, /utils\?\.abortActiveRun|abortActiveRun\?\.\(/);
+  assert.match(stopRoute, /stopLiveChatTask\(conversationId/);
 });
 
 test('starting a new project does not wait for the old stop request', async () => {
   const screen = await surface(NEW_PROJECT);
   const client = await surface('app/features/workspace/workspace-api.ts');
   const stopRoute = await readFile('agents/stop.ts', 'utf8');
-  const abortIndex = stopRoute.indexOf('abortActiveRun');
-  const snapshotIndex = stopRoute.indexOf('if (!discardProject &&');
 
   assert.match(screen, /void live\.stopCurrentTask\(\{ discardProject: true \}\)/);
   assert.match(screen, /startNewProject\(\)/);
   assert.doesNotMatch(screen, /await live\.stopCurrentTask/);
   assert.match(client, /options\.discardProject \? \{ discardProject: true \} : \{\}/);
-  assert.ok(abortIndex >= 0 && snapshotIndex > abortIndex);
-  assert.match(stopRoute, /if \(!discardProject && sandboxWasActivated\(conversationId\)\) \{[\s\S]*?persistProjectSnapshot/);
+  // Leaving the project answers at once instead of waiting for the save.
+  assert.match(stopRoute, /waitMs: body\.discardProject === true \? 0 : STOP_WAIT_MS/);
 });
 
 test('workspace persistence uses the sandbox SDK and Blob state.json, not context.store', async () => {

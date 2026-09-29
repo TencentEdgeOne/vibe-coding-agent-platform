@@ -245,8 +245,8 @@ test('the composer model travels on /prompt, not a session-model route', async (
   assert.match(prompt, /resolveRequestedModel\(context, body\.model\)/);
   assert.doesNotMatch(task, /getModelPreference/);
   assert.match(task, /requestedModel \? \{ model: requestedModel \}/);
-  assert.match(task, /getConversationRecord\(context, conversationId, \{ refresh: true \}\)/);
-  assert.match(task, /saveConversationRecord\(context, conversationId, \{/);
+  // The task, model, and language land in the one write that starts the turn.
+  assert.match(task, /patchConversationRecord\(context, conversationId, \{\s*chatTask: task,/);
   assert.match(task, /\.\.\.\(requestedModel \? \{ modelPreference: requestedModel \} : \{\}\)/);
   assert.doesNotMatch(task, /saveModelPreference\(/);
   assert.match(

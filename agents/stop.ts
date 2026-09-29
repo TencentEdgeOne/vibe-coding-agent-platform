@@ -1,13 +1,19 @@
 import type { AgentContext } from './_lib/runtime/context.ts';
-import { abortLiveChatTask, markChatTaskStopped } from './_lib/session/task.ts';
-import { activateSandbox, sandboxWasActivated } from './_lib/lazy/sandbox.ts';
-import { persistProjectSnapshot } from './_lib/turn/checkpoint.ts';
-import { markCreated, persistWorkspace } from './_lib/project/workspace-store.ts';
-import { getRequestBody } from './_lib/runtime/request.ts';
+import { settleUnrunTask, stopLiveChatTask } from './_lib/session/task.ts';
+import { getRequestBody, resolveConversationId } from './_lib/runtime/request.ts';
 
+/** How long a stop waits for the turn to save its work before answering. */
+const STOP_WAIT_MS = 5_000;
+
+/**
+ * Stop the running turn. The request carries `makers-conversation-id`, so
+ * session affinity lands it on the instance running the turn; the platform's
+ * `abortActiveRun` is not used.
+ */
 export async function onRequest(context: AgentContext) {
   const body = getRequestBody(context);
-  const conversationId = String(body.conversation_id || '').trim();
+  const conversationId = resolveConversationId(context).conversationId.trim()
+    || String(body.conversation_id || '').trim();
   if (!conversationId) {
     return new Response(JSON.stringify({ ok: false, error: 'missing conversation_id' }), {
       status: 400,
@@ -16,30 +22,16 @@ export async function onRequest(context: AgentContext) {
   }
 
   try {
-    const discardProject = body.discardProject === true;
-    abortLiveChatTask(conversationId);
-    await markChatTaskStopped(context, conversationId);
-    const result = await context.utils?.abortActiveRun?.(conversationId);
-    let persisted: boolean | undefined;
-    if (!discardProject && sandboxWasActivated(conversationId)) {
-      try {
-        const { state } = await activateSandbox(context, conversationId);
-        const saved = await persistProjectSnapshot(context, conversationId, state);
-        persisted = saved;
-        if (saved && !state.created) {
-          markCreated(state);
-          await persistWorkspace(context, conversationId, state);
-        }
-      } catch (error) {
-        console.warn('[stop] project snapshot failed', error);
-      }
+    const status = await stopLiveChatTask(conversationId, {
+      // Leaving the project does not wait for its last turn to finish saving.
+      waitMs: body.discardProject === true ? 0 : STOP_WAIT_MS,
+    });
+    if (status === 'idle') {
+      // No turn runs here. If the record says one is running, a stop claims the
+      // conversation, which fences whoever still runs it elsewhere.
+      await settleUnrunTask(context, conversationId, 'stop');
     }
-    return new Response(JSON.stringify({
-      ok: true,
-      conversation_id: conversationId,
-      aborted: result?.aborted === true,
-      ...(persisted !== undefined ? { persisted } : {}),
-    }), {
+    return new Response(JSON.stringify({ ok: true, conversation_id: conversationId, status }), {
       headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
     });
   } catch (error) {

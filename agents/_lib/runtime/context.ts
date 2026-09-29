@@ -33,6 +33,8 @@ export type Sandbox = {
   envdAccessToken?: string;
   browser?: { liveUrl?: string };
   extendTimeout?: (seconds: number) => unknown;
+  /** Throws until the first sandbox call acquires the client. */
+  getInfo?: () => { instanceId?: string; expiresAt?: string } | undefined;
 };
 
 export type ReadySandbox = Sandbox & {
@@ -44,6 +46,12 @@ export type ReadySandbox = Sandbox & {
 export type AgentContext = {
   conversation_id?: string;
   run_id?: string;
+  /**
+   * The conversation epoch this request acts under, set once it holds or claims
+   * the conversation. A turn keeps the epoch it started with: its writes are
+   * checked against it and never claim a newer one.
+   */
+  epoch?: number;
   env?: Record<string, string | undefined>;
   request?: {
     body?: unknown;
@@ -73,12 +81,17 @@ export type AgentContext = {
       toolUseId?: string;
     }) => void) => unknown;
   };
-  utils?: {
-    abortActiveRun?: (conversationId: string) => Promise<{ aborted?: boolean } | undefined>;
-  };
   /** Test seam: an in-memory Blob stand-in. Production uses `@edgeone/pages-blob`. */
   blobStore?: BlobStoreLike;
+  /** Test seam: replaces the chat and deploy pipelines a task runs. */
+  runTurn?: TurnRunner;
 };
+
+export type TurnRunner = (
+  context: AgentContext,
+  input: { kind: 'prompt' | 'deploy'; message: string; turnId: string; model?: string },
+  send: (event: import('../../../shared/protocol.ts').ChatStreamEvent) => void,
+) => Promise<void>;
 
 export type SandboxCapable = Pick<AgentContext, 'sandbox'>;
 export type PersistCapable = Pick<AgentContext, 'blobStore'>;

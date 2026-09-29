@@ -1,4 +1,5 @@
 import { requireSandbox, type AgentContext } from '../runtime/context.ts';
+import { assertCanWrite } from '../session/ownership.ts';
 import type { ProjectState } from '../types.ts';
 export {
   compactUserFacingReply,
@@ -82,6 +83,9 @@ export async function persistProjectSnapshot(
   state: ProjectState,
 ): Promise<boolean> {
   try {
+    // The sandbox keeps one restore point per conversation; a replaced owner
+    // must not overwrite the new owner's.
+    await assertCanWrite(context, conversationId);
     await requireSandbox(context).persist?.({ path: state.appDir });
     return true;
   } catch (error) {

@@ -123,6 +123,11 @@ type ActiveChatTask = {
   createdAt?: number;
   startedAt?: number;
   preparePhase?: PreparePhase;
+  /**
+   * Running on another instance that still owns it, as after a redeploy. Its
+   * events do not come through this stream; the client asks again shortly.
+   */
+  elsewhere?: boolean;
 };
 
 export type ResumeData = {
@@ -170,7 +175,27 @@ export type TranscriptData = {
   jsonl?: string;
   /** The live query still has a turn in flight; more snapshots may follow. */
   live?: boolean;
+  /** `jsonl` continues what was already sent instead of replacing it. */
+  append?: boolean;
+  /** Byte offset in the file just past `jsonl`; send it back to resume. */
+  cursor?: number;
   error?: string;
+};
+
+/**
+ * An observer stream reached its time limit while the turn was still going.
+ * The client reopens it with the cursor it carries. Only the turn's own
+ * `/prompt` stream stays open until the turn ends: a stream whose reader went
+ * away keeps holding an instance's request slot until the server closes it.
+ */
+export type ReconnectEvent = {
+  type: 'reconnect';
+  data?: {
+    turnId?: string;
+    afterSeq?: number;
+    cursor?: number;
+    sessionId?: string;
+  };
 };
 
 export type ChatResponse = {
@@ -264,12 +289,15 @@ export type ResumeStreamEvent =
   | { type: 'resume_history'; data?: ResumeData }
   | { type: 'resume_workspace'; data?: ResumeData }
   | { type: 'file_changed'; data?: { paths?: string[] } }
+  | ReconnectEvent
   | { type: 'error'; error?: string }
   | { type: 'ping'; ts?: number };
 
 export type TranscriptStreamEvent =
   | { type: 'transcript'; data?: TranscriptData }
+  | ReconnectEvent
   | { type: 'error'; error?: string }
   | { type: 'ping'; ts?: number };
 
-export type SessionStreamEvent = ChatStreamEvent | ResumeStreamEvent | TranscriptStreamEvent;
+/** `seq` numbers a live turn's events, so a reopened stream resumes after it. */
+export type SessionStreamEvent = (ChatStreamEvent | ResumeStreamEvent | TranscriptStreamEvent) & { seq?: number };

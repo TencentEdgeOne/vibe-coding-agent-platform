@@ -61,22 +61,37 @@ export const SessionPanel = memo(function SessionPanel({
     };
 
     (async () => {
+      // The server sends the file once, then only what is appended, and ends
+      // the stream at a time limit; `resume` reopens it where it stopped.
+      let jsonl = '';
+      let resume: { cursor: number; sessionId: string } | undefined;
       try {
-        const response = await openTranscriptStream(conversationId, controller.signal);
-        const contentType = response.headers.get('content-type') || '';
-        if (cancelled) return;
-        if (!response.ok || !response.body || !contentType.includes('text/event-stream')) {
-          setState({ status: 'error', error: copy.failed });
-          return;
-        }
-        await consumeEventStream<TranscriptStreamEvent>(response, (event) => {
-          if (cancelled || event.type === 'ping') return;
-          if (event.type === 'error') {
-            setState({ status: 'error', error: event.error || copy.failed });
+        do {
+          const response = await openTranscriptStream(conversationId, controller.signal, resume);
+          const contentType = response.headers.get('content-type') || '';
+          if (cancelled) return;
+          if (!response.ok || !response.body || !contentType.includes('text/event-stream')) {
+            setState({ status: 'error', error: copy.failed });
             return;
           }
-          if (event.type === 'transcript' && event.data) apply(event.data);
-        });
+          let reopen: typeof resume;
+          await consumeEventStream<TranscriptStreamEvent>(response, (event) => {
+            if (cancelled || event.type === 'ping') return;
+            if (event.type === 'error') {
+              setState({ status: 'error', error: event.error || copy.failed });
+              return;
+            }
+            if (event.type === 'reconnect') {
+              reopen = { cursor: event.data?.cursor ?? 0, sessionId: event.data?.sessionId || '' };
+              return;
+            }
+            if (event.type === 'transcript' && event.data) {
+              jsonl = event.data.append ? jsonl + (event.data.jsonl || '') : event.data.jsonl || '';
+              apply({ ...event.data, jsonl });
+            }
+          });
+          resume = reopen;
+        } while (resume && !cancelled);
       } catch (error) {
         if (cancelled || (error instanceof DOMException && error.name === 'AbortError')) return;
         if (error instanceof Error && error.name === 'AbortError') return;

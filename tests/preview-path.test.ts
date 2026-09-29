@@ -423,7 +423,13 @@ test('the host does no preview work after the coding agent returns', async () =>
   assert.doesNotMatch(chat, /createFileTreePushController|fileTreePush/);
   assert.match(chat, /const handlePreviewReady = async/);
   assert.match(chat, /await persistWorkspace\(context, conversationId, state\)/);
-  assert.match(chat, /void checkpoint\.flush\(\)/);
+  // The final snapshot lands before the result, which ends the request the
+  // turn runs in; nothing is left to run after it.
+  assert.doesNotMatch(chat, /void checkpoint\.flush\(\)/);
+  assert.ok(
+    chat.lastIndexOf('withSnapshot: true') < chat.lastIndexOf('finishResult({'),
+    'the last snapshot precedes the result',
+  );
   assert.doesNotMatch(assemble, /onWorkspaceReady/);
   const sessionOpen = resume.slice(resume.indexOf('export async function createProjectResumeStreamResponse'));
   assert.match(sessionOpen, /type: 'resume_history'/);

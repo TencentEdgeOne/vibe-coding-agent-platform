@@ -4,17 +4,24 @@ import {
   getConversationRecord,
   getProjectState,
 } from './store.ts';
-import { hasLiveChatTask, isChatTaskActive, iterateLiveChatTaskEvents, markOrphanedTaskFailed } from './task.ts';
+import {
+  findLiveChatTask,
+  hasLiveChatTask,
+  isChatTaskActive,
+  iterateLiveChatTaskEvents,
+  settleUnrunTask,
+} from './task.ts';
 import { loadTranscriptJsonl } from './transcript.ts';
 import { projectTranscript, turnsToMessages } from './projection.ts';
-import { READINESS_BUDGET_MS } from '../lazy/budgets.ts';
+import { OBSERVER_STREAM_MAX_MS, READINESS_BUDGET_MS } from '../lazy/budgets.ts';
 import { ensurePreview } from '../lazy/preview.ts';
 import { activateSandbox } from '../lazy/sandbox.ts';
 import { separateLegacyMakersDeployment } from '../project/state.ts';
 import type { PersistedActivity, PersistedActivityTurn, ProjectState } from '../types.ts';
+import type { ResumeData } from '../../../shared/protocol.ts';
 import { createSSEResponse, sseEvent } from '../runtime/sse.ts';
 import { isMakersDeployCommand, isMakersDevCommand } from '../makers/tool-phase.ts';
-import { resolveConversationId } from '../runtime/request.ts';
+import { getRequestQueryParam, resolveConversationId } from '../runtime/request.ts';
 import { withTimeout } from '../utils/timeout.ts';
 
 function toolNameImpliesProject(name: string) {
@@ -77,7 +84,7 @@ async function loadProjectResumeHistory(context: AgentContext, conversationId: s
   const activityHistory = projectTranscript(jsonl, state.appDir);
   const messages = turnsToMessages(activityHistory);
   const storedTask = record.chatTask || null;
-  let activeTask = isChatTaskActive(storedTask)
+  let activeTask: ResumeData['activeTask'] = isChatTaskActive(storedTask)
     && hasLiveChatTask(conversationId, storedTask.id)
     ? {
         id: storedTask.id,
@@ -89,7 +96,19 @@ async function loadProjectResumeHistory(context: AgentContext, conversationId: s
       }
     : null;
   if (isChatTaskActive(storedTask) && !activeTask) {
-    await markOrphanedTaskFailed(context, conversationId);
+    // Still making progress on another instance (after a redeploy, say): show
+    // it running and let the client look again, rather than fail a live turn.
+    if (await settleUnrunTask(context, conversationId, 'read') === 'elsewhere') {
+      activeTask = {
+        id: storedTask.id,
+        message: storedTask.message,
+        status: storedTask.status,
+        createdAt: storedTask.createdAt,
+        startedAt: storedTask.startedAt,
+        preparePhase: storedTask.preparePhase,
+        elsewhere: true,
+      };
+    }
   }
 
   const hasProject = Boolean(state.created) || activityHistoryImpliesProject(activityHistory);
@@ -172,21 +191,40 @@ export async function runProjectResumePreviewPipeline(context: AgentContext): Pr
  * History, and a live task if this instance is still running one.
  * The sandbox and the coding agent stay cold until a prompt, a file read, or
  * a preview asks for them.
+ *
+ * `turnId` + `afterSeq` reopen an observer that hit its time limit: the turn's
+ * events continue after that sequence, without reloading history. If this
+ * process no longer holds the turn, it falls back to a full resume.
  */
 export async function createProjectResumeStreamResponse(context: AgentContext): Promise<Response> {
   const { conversationId } = resolveConversationId(context, { allowQuery: true });
   if (!conversationId) {
     return jsonResponse({ ok: false, error: 'missing conversation_id' }, 400);
   }
+  const turnId = getRequestQueryParam(context, 'turnId').value;
+  const afterSeq = Number.parseInt(getRequestQueryParam(context, 'afterSeq').value, 10);
+  const resumingTask = turnId && Number.isFinite(afterSeq)
+    ? findLiveChatTask(conversationId, turnId)
+    : null;
 
   return createSSEResponse(async function* (signal) {
+    if (resumingTask) {
+      yield* iterateLiveChatTaskEvents(context, conversationId, resumingTask, undefined, signal, {
+        afterSeq,
+        maxMs: OBSERVER_STREAM_MAX_MS,
+      });
+      return;
+    }
+
     const history = await loadProjectResumeHistory(context, conversationId);
     if (signal?.aborted) return;
     yield sseEvent({ type: 'resume_history', data: history });
 
     const storedTask = await getChatTask(context, conversationId);
     if (isChatTaskActive(storedTask) && hasLiveChatTask(conversationId, storedTask.id)) {
-      yield* iterateLiveChatTaskEvents(context, conversationId, storedTask, undefined, signal);
+      yield* iterateLiveChatTaskEvents(context, conversationId, storedTask, undefined, signal, {
+        maxMs: OBSERVER_STREAM_MAX_MS,
+      });
     }
   }, context?.request?.signal);
 }

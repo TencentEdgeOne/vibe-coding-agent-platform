@@ -3,6 +3,11 @@
 import { useEffect, useLayoutEffect, useRef, useState, type MutableRefObject } from 'react';
 
 const useClientLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
+
+/** How soon to ask again about a turn another instance is still running. */
+const ELSEWHERE_RETRY_MS = 5_000;
+
+const sleep = (ms: number) => new Promise<void>((resolve) => { setTimeout(resolve, ms); });
 import { dropTrailingSummaryEcho } from '../../../../shared/timeline';
 import type { Locale } from '@/app/i18n';
 import {
@@ -204,39 +209,60 @@ export function useSessionResume(options: {
         } | null,
       };
       try {
-        const response = await openSessionStream(existing, resumeController.signal);
-        const contentType = response.headers.get('content-type') || '';
-        if (!response.ok || !response.body || !contentType.includes('text/event-stream')) {
-          return;
-        }
-
-        await consumeEventStream<SessionStreamEvent>(response, (event) => {
-          if (cancelled || workspaceEpoch !== workspaceEpochRef.current || event.type === 'ping') return;
-
-          if (event.type === 'resume_history' && event.data?.ok) {
-            const historyData = event.data;
-            const { restored, liveTaskId } = applyHistory(historyData);
-            if (!restored) {
-              clearCachedConversationId();
-              conversationIdRef.current = null;
-              setConversationId(null);
-              setResumeChecked(true);
-            }
-
-            if (liveTaskId) {
-              const conversationForRun = historyData.conversation_id || existing;
-              liveAttach.session = live.startLiveChatSessionRef.current({
-                requestConversationId: conversationForRun,
-                assistantMessageId: liveTaskId,
-                abortController: resumeController,
-              });
-              live.chatAbortControllerRef.current = resumeController;
-            }
+        // The server ends an attach at a time limit while the turn runs on;
+        // `resume` reopens it after the last event it delivered.
+        let resume: { turnId: string; afterSeq: number } | undefined;
+        let again = false;
+        do {
+          const response = await openSessionStream(existing, resumeController.signal, resume);
+          const contentType = response.headers.get('content-type') || '';
+          if (!response.ok || !response.body || !contentType.includes('text/event-stream')) {
             return;
           }
 
-          liveAttach.session?.handleStreamEvent(event as ChatStreamEvent);
-        });
+          let reopen: typeof resume;
+          let elsewhere = false;
+          await consumeEventStream<SessionStreamEvent>(response, (event) => {
+            if (cancelled || workspaceEpoch !== workspaceEpochRef.current || event.type === 'ping') return;
+
+            if (event.type === 'reconnect') {
+              if (liveAttach.session && event.data?.turnId) {
+                reopen = { turnId: event.data.turnId, afterSeq: event.data.afterSeq ?? 0 };
+              }
+              return;
+            }
+
+            if (event.type === 'resume_history' && event.data?.ok) {
+              const historyData = event.data;
+              elsewhere = historyData.activeTask?.elsewhere === true;
+              const { restored, liveTaskId } = applyHistory(historyData);
+              if (!restored) {
+                clearCachedConversationId();
+                conversationIdRef.current = null;
+                setConversationId(null);
+                setResumeChecked(true);
+              }
+
+              if (liveTaskId) {
+                const conversationForRun = historyData.conversation_id || existing;
+                liveAttach.session = live.startLiveChatSessionRef.current({
+                  requestConversationId: conversationForRun,
+                  assistantMessageId: liveTaskId,
+                  abortController: resumeController,
+                });
+                live.chatAbortControllerRef.current = resumeController;
+              }
+              return;
+            }
+
+            liveAttach.session?.handleStreamEvent(event as ChatStreamEvent);
+          });
+          resume = reopen;
+          // The turn runs on another instance (after a redeploy, say) and its
+          // events cannot come through here: ask again until it ends or moves.
+          again = Boolean(reopen) || elsewhere;
+          if (elsewhere && !reopen) await sleep(ELSEWHERE_RETRY_MS);
+        } while (again && !cancelled && workspaceEpoch === workspaceEpochRef.current);
       } catch (error) {
         if (!(error instanceof Error && error.name === 'AbortError')) {
           // Resume is best-effort.

@@ -23,10 +23,11 @@ test('stop exposes an in-flight state separate from generation and abort teardow
   assert.match(stopBody, /beginStop\(\{/);
   assert.match(stopBody, /stopInFlightRef\.current = false/);
   assert.match(stopBody, /setStopping\(false\)/);
-  assert.match(stopHelper, /stopChatTask\(conversationId, turn, options\)/);
-  assert.match(stopHelper, /\.finally\(\(\) => \{/);
-  assert.match(stopHelper, /markLastTurnStopped\(options\.messages, ''\)/);
-  assert.match(stopHelper, /assistant: ''/);
+  assert.match(stopBody, /requestStop: stopChatTask/);
+  assert.match(stopBody, /markLastTurnStopped\(current, ''\)/);
+  // Only leaving the project closes the stream before the server answers.
+  assert.match(stopBody, /if \(stopOptions\.discardProject\) stream\?\.abort\(\)/);
+  assert.match(stopHelper, /finally \{\s*request\.onSettled\(\);/);
 });
 
 test('the composer reports stopping and refuses another send until the stop settles', async () => {

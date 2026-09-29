@@ -16,3 +16,23 @@ export const READINESS_BUDGET_MS = {
 } as const;
 
 export const SANDBOX_EXTENSION_SECONDS = 1800;
+
+/**
+ * `agents.timeout` in edgeone.json. The platform ends a request at this age,
+ * and a turn is only guaranteed CPU while its `/prompt` request is in flight.
+ * Kept equal to the config by a test, not read from it at runtime.
+ */
+export const AGENT_RUN_TIMEOUT_SECONDS = 1800;
+
+/** Left for the final snapshot, transcript upload, and status write. */
+const TURN_FINALIZE_RESERVE_SECONDS = 180;
+
+/**
+ * Longest an observer stream (`/session` attach, `/transcript`) stays open. The
+ * platform does not tell a handler its reader left, so a closed tab's stream
+ * holds a request slot until the server ends it.
+ */
+export const OBSERVER_STREAM_MAX_MS = 60_000;
+
+/** A turn that runs this long is wound down so it ends inside its request. */
+export const TURN_BUDGET_MS = (AGENT_RUN_TIMEOUT_SECONDS - TURN_FINALIZE_RESERVE_SECONDS) * 1000;

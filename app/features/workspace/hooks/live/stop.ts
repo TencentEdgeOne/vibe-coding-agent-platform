@@ -1,52 +1,52 @@
-import { markLastTurnStopped } from '@/app/lib/conversation';
-import type { PersistedActivityTurn } from '../../../../../shared/protocol';
-import type { ChatMessage } from '@/app/types/workspace';
-import { stopChatTask } from '../../workspace-api';
+import type { StopOutcome } from '../../workspace-api';
 
-function requestStop(
-  conversationId: string,
-  turn: PersistedActivityTurn,
-  options: {
-    discardProject?: boolean;
-    workspaceEpoch: number;
-    currentWorkspaceEpoch: () => number;
-    onSettled: () => void;
-  },
-) {
-  return stopChatTask(conversationId, turn, options)
-    .catch(() => null)
-    .finally(() => {
-      if (options.currentWorkspaceEpoch() !== options.workspaceEpoch) return;
-      options.onSettled();
-    });
-}
+/** How long a stop the server confirmed may take to arrive on the turn's own stream. */
+export const STOPPED_STREAM_GRACE_MS = 3_000;
 
-export function beginStop(options: {
+/** How long a stop the server is still saving may take before the screen stops waiting. */
+export const STOPPING_STREAM_GRACE_MS = 20_000;
+
+const STREAM_POLL_MS = 200;
+
+export type StopRequest = {
   conversationId: string;
-  messages: ChatMessage[];
-  activeTurnId: string;
-  stopOptions: { discardProject?: boolean };
-  workspaceEpoch: number;
-  currentWorkspaceEpoch: () => number;
+  discardProject?: boolean;
+  requestStop: (conversationId: string, options: { discardProject?: boolean }) => Promise<StopOutcome | null>;
+  /** The workspace that asked is still the one on screen. */
+  isCurrent: () => boolean;
+  /** The turn's stream has not delivered its result yet. */
+  streamOpen: () => boolean;
+  /** Mark the turn stopped on screen without the server's result. */
+  settleLocally: () => void;
   onSettled: () => void;
-}) {
-  const stopped = markLastTurnStopped(options.messages, '');
-  const stoppedTurn = {
-    id: options.activeTurnId,
-    user: stopped.userContent,
-    assistant: '',
-    status: 'stopped' as const,
-    createdAt: Date.now(),
-    activities: stopped.activities,
-  };
+  wait?: (ms: number) => Promise<void>;
+};
 
-  return {
-    messages: stopped.messages,
-    request: requestStop(options.conversationId, stoppedTurn, {
-      ...options.stopOptions,
-      workspaceEpoch: options.workspaceEpoch,
-      currentWorkspaceEpoch: options.currentWorkspaceEpoch,
-      onSettled: options.onSettled,
-    }),
-  };
+const sleep = (ms: number) => new Promise<void>((resolve) => { setTimeout(resolve, ms); });
+
+/**
+ * Ask the server to stop the turn, then let the turn's own stream deliver the
+ * stopped result: that stream is the request keeping the turn alive while it
+ * saves its work. The screen settles on its own only when the server has no
+ * running turn, could not be reached, or the result never arrives.
+ */
+export async function beginStop(request: StopRequest): Promise<StopOutcome | null> {
+  const wait = request.wait ?? sleep;
+  let outcome: StopOutcome | null = null;
+  try {
+    outcome = await request.requestStop(request.conversationId, {
+      ...(request.discardProject ? { discardProject: true } : {}),
+    }).catch(() => null);
+    if (!request.isCurrent()) return outcome;
+    if (outcome === 'stopped' || outcome === 'stopping') {
+      const grace = outcome === 'stopped' ? STOPPED_STREAM_GRACE_MS : STOPPING_STREAM_GRACE_MS;
+      for (let waited = 0; waited < grace && request.streamOpen(); waited += STREAM_POLL_MS) {
+        await wait(STREAM_POLL_MS);
+      }
+    }
+    if (request.isCurrent() && request.streamOpen()) request.settleLocally();
+    return outcome;
+  } finally {
+    request.onSettled();
+  }
 }
