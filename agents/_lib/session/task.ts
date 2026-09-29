@@ -15,6 +15,7 @@ import { resolveGatewayUserTurn } from '../../../shared/gateway-secret.ts';
 import type { ChatStreamEvent } from '../../../shared/protocol.ts';
 import { TURN_LIMIT_REPLY, replyLocaleFor } from '../../../shared/user-facing-reply.ts';
 import { instanceId } from '../runtime/instance.ts';
+import { consumePromptQuota } from '../rate-limit.ts';
 import { unbindLiveWorkspace } from './live-workspace.ts';
 import {
   FENCE_WATCH_MS,
@@ -265,6 +266,15 @@ async function createChatTask(
         status: 409,
         error: 'Another generation is already running for this conversation.',
       };
+    }
+
+    // Deploy turns do not call the model. A replay of the same turn returned
+    // above, so only a new prompt spends a unit of the daily geo quota.
+    if (options.kind !== 'deploy') {
+      const quota = await consumePromptQuota(context, options.language);
+      if (!quota.allowed) {
+        return { ok: false as const, status: 429, error: quota.error };
+      }
     }
 
     const requestedModel = (options.model || '').trim();
