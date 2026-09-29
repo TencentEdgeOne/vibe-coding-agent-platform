@@ -64,6 +64,12 @@ type TurnWaiter = {
 type LiveQuerySession = LiveSessionHandle & {
   queue: PromptQueue;
   query: Query;
+  /**
+   * Passed to `query()` as `abortController`. Aborting it SIGTERMs the CLI.
+   * That is the stop path when the traced `query()` wrapper has dropped
+   * `Query.interrupt` and `Query.close`.
+   */
+  sdkAbort: AbortController;
   sessionId?: string;
   transcriptPath?: string;
   model: string;
@@ -165,12 +171,48 @@ function scheduleIdleClose(session: LiveQuerySession) {
 function closeLiveQuery(session: LiveQuerySession) {
   clearIdleTimer(session);
   if (liveQueries.get(session.conversationId) === session) liveQueries.delete(session.conversationId);
+  closeSdkQuery(session.query, session.sdkAbort);
+  session.queue.close();
+}
+
+type SdkQueryControls = {
+  interrupt?: () => Promise<void> | void;
+  close?: () => void;
+};
+
+/**
+ * Stop the current turn.
+ *
+ * A real SDK `Query` exposes `interrupt()`, which ends the turn and leaves
+ * the process up. The platform traces `query()` by replacing that object
+ * with a plain async iterable, so `interrupt` is not a function. The
+ * `AbortController` passed into `query()` still reaches the CLI.
+ */
+export async function stopSdkQuery(query: SdkQueryControls, sdkAbort: AbortController) {
   try {
-    session.query.close();
+    if (typeof query.interrupt === 'function') {
+      await query.interrupt();
+      return true;
+    }
+    sdkAbort.abort();
+    return true;
+  } catch (error) {
+    console.warn('[agent] interrupt failed', error);
+    return false;
+  }
+}
+
+/** Drop the CLI. `close()` is missing on the same traced wrapper as `interrupt()`. */
+export function closeSdkQuery(query: SdkQueryControls, sdkAbort: AbortController) {
+  try {
+    if (typeof query.close === 'function') {
+      query.close();
+      return;
+    }
+    sdkAbort.abort();
   } catch (error) {
     console.warn('[agent] failed to close the SDK query', error);
   }
-  session.queue.close();
 }
 
 function disposeLiveQuery(conversationId: string) {
@@ -522,6 +564,7 @@ async function startLiveQuery(options: StartLiveQueryOptions): Promise<LiveQuery
     });
   }
 
+  const sdkAbort = new AbortController();
   const session = {
     conversationId,
     context,
@@ -536,6 +579,7 @@ async function startLiveQuery(options: StartLiveQueryOptions): Promise<LiveQuery
     },
     queue: new PromptQueue(),
     query: null as unknown as Query,
+    sdkAbort,
     model,
     pump: Promise.resolve(),
   } as LiveQuerySession;
@@ -589,6 +633,7 @@ async function startLiveQuery(options: StartLiveQueryOptions): Promise<LiveQuery
 
   const sdkOptions: Parameters<typeof query>[0]['options'] = {
     model,
+    abortController: sdkAbort,
     permissionMode: 'dontAsk',
     maxTurns: 100,
     tools: ['Skill'],
@@ -669,19 +714,17 @@ export function getLiveQuery(conversationId: string) {
 export async function interruptLiveQuery(conversationId: string) {
   const live = liveQueries.get(conversationId);
   if (!live) return false;
-  try {
-    await live.query.interrupt();
-    return true;
-  } catch (error) {
-    console.warn('[agent] interrupt failed', error);
-    return false;
-  }
+  return stopSdkQuery(live.query, live.sdkAbort);
 }
 
 export async function setLiveQueryModel(conversationId: string, model: string) {
   const live = liveQueries.get(conversationId);
   if (!live) return false;
   live.model = model;
+  if (typeof live.query.setModel !== 'function') {
+    console.warn('[agent] setModel is not available on the live query');
+    return false;
+  }
   try {
     await live.query.setModel(model);
     return true;
