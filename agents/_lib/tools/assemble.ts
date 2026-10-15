@@ -101,16 +101,7 @@ export function assembleAgentTools(session: LiveSessionHandle) {
   ));
   const mcpTools = [
     ...sandboxTools,
-    buildLoadMakersSkillTool({
-      context,
-      get state() {
-        return session.getState();
-      },
-      conversationId: session.conversationId,
-      get send() {
-        return session.getCallbacks().send;
-      },
-    }),
+    buildLoadMakersSkillTool(),
     buildStartPreviewTool({
       context,
       conversationId: session.conversationId,

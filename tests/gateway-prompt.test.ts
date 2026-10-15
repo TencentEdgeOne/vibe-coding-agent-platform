@@ -235,24 +235,17 @@ test('the coding agent has no request_gateway_credentials tool', async () => {
   assert.doesNotMatch(chat, /hiddenToolUseIds/);
 });
 
-test('loading makers-agents offers the gateway card without ending the turn', async () => {
-  const events: Array<Record<string, unknown>> = [];
-  const state = projectState();
-  const tool = buildLoadMakersSkillTool({
-    context: { sandbox: { files: {} } } as never,
-    state,
-    conversationId: 'conv-skill',
-    send: (event) => { events.push(event); },
-  });
+test('loading makers-agents does not offer the gateway card', async () => {
+  const skills = await readFile('agents/_lib/tools/makers-skills.ts', 'utf8');
+  assert.doesNotMatch(skills, /askUserForGatewayCredentials/);
 
+  const tool = buildLoadMakersSkillTool();
   const result = await tool.handler({ skill: 'makers-agents' }, {});
   const text = result.content?.[0] && 'text' in result.content[0]
     ? String(result.content[0].text)
     : '';
   assert.match(text, /makers-agents|SKILL/);
-  assert.equal(events[0]?.type, 'gateway_credentials');
-  assert.equal((events[0]?.data as { status?: string })?.status, 'needed');
-  assert.equal(state.gatewayPromptPending, true);
+  assert.notEqual(result.isError, true);
 });
 
 test('writing agents/ or a gateway .env.example offers the card immediately', async () => {
