@@ -597,13 +597,23 @@ export type DeployOfferActivity = {
   status?: string;
   name?: string;
   inputSummary?: string;
+  startedAt?: number;
+  endedAt?: number;
 };
 
 export type DeployOfferMessage = {
   id?: string;
   role: string;
   status?: string;
+  startedAt?: number;
+  endedAt?: number;
   activities?: DeployOfferActivity[];
+};
+
+export type DeployOfferDeployment = {
+  status?: string;
+  startedAt?: number;
+  finishedAt?: number;
 };
 
 export function isDeployProjectActivity(activity: DeployOfferActivity) {
@@ -624,17 +634,50 @@ export function lastFinishedAssistant<T extends DeployOfferMessage>(messages: re
   return undefined;
 }
 
+/**
+ * Whether this publish is the turn on screen, rather than an older one.
+ *
+ * The activity row is not a reliable witness: a publish the classifier does
+ * not label as a deploy still leaves the site live, and the offer would then
+ * ask to publish the turn the user just watched finish.
+ */
+export function deploymentFinishedDuringTurn(
+  deployment: DeployOfferDeployment | null | undefined,
+  turn: DeployOfferMessage | undefined,
+) {
+  if (deployment?.status !== 'success' || typeof deployment.finishedAt !== 'number' || !turn) {
+    return false;
+  }
+  const starts = [turn.startedAt, ...(turn.activities ?? []).map((activity) => activity.startedAt)]
+    .filter((value): value is number => typeof value === 'number');
+  if (starts.length === 0) return false;
+  const startedAt = Math.min(...starts);
+  if (deployment.finishedAt < startedAt) return false;
+  const ends = [turn.endedAt, ...(turn.activities ?? []).map((activity) => activity.endedAt)]
+    .filter((value): value is number => typeof value === 'number');
+  if (
+    ends.length > 0
+    && typeof deployment.startedAt === 'number'
+    && deployment.startedAt > Math.max(...ends)
+  ) {
+    return false;
+  }
+  return true;
+}
+
 export function resolveDeployOffer(
   messages: readonly DeployOfferMessage[],
   options: {
     canDownload: boolean;
     loading: boolean;
     hasLiveDeployment?: boolean;
+    deployment?: DeployOfferDeployment | null;
   },
 ): DeployOfferKind | null {
   if (options.loading || !options.canDownload) return null;
   const last = lastFinishedAssistant(messages);
   if (!last || last.status !== 'done') return null;
+  if (deploymentFinishedDuringTurn(options.deployment, last)) return null;
   const lastActivities = last.activities ?? [];
   const hasSuccessfulDeploy = (activities: readonly DeployOfferActivity[]) =>
     activities.some((activity) => isDeployProjectActivity(activity) && activity.status === 'completed');

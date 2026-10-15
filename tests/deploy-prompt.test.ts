@@ -61,6 +61,47 @@ test('a live deployment without a deploy row still offers republish', () => {
   );
 });
 
+test('a publish that finishes during the turn does not offer republish', () => {
+  const publishTurn: DeployOfferMessage = {
+    id: 'a-publish',
+    role: 'assistant',
+    status: 'done',
+    startedAt: 1_000,
+    endedAt: 47_000,
+    activities: [
+      {
+        kind: 'tool',
+        name: 'commands',
+        inputSummary: 'publish site',
+        status: 'completed',
+        startedAt: 1_200,
+        endedAt: 46_600,
+      },
+    ],
+  };
+  assert.equal(
+    resolveDeployOffer([publishTurn], {
+      canDownload: true,
+      loading: false,
+      hasLiveDeployment: true,
+      deployment: { status: 'success', startedAt: 1_500, finishedAt: 46_000 },
+    }),
+    null,
+  );
+});
+
+test('an edit after an earlier publish still offers republish', () => {
+  assert.equal(
+    resolveDeployOffer([{ ...writeTurn, startedAt: 50_000, endedAt: 60_000 }], {
+      canDownload: true,
+      loading: false,
+      hasLiveDeployment: true,
+      deployment: { status: 'success', startedAt: 1_500, finishedAt: 46_000 },
+    }),
+    'again',
+  );
+});
+
 test('a successful deploy turn does not ask again', () => {
   assert.equal(
     resolveDeployOffer([deployTurn('completed')], { canDownload: true, loading: false }),

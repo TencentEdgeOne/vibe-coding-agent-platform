@@ -23,6 +23,7 @@ export function useDeployOffer(options: {
     canDownload: hasDeployableProject,
     loading: deployRunning,
     hasLiveDeployment: workspace.deployment?.status === 'success',
+    deployment: workspace.deployment,
   });
   const deployOfferTurnId = lastFinishedAssistant(messages)?.id || '';
   const deployOffer = deployOfferKind && deployOfferTurnId && deployOfferTurnId !== workspace.dismissedDeployTurnId
